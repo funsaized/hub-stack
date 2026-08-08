@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""
+Research Hub CLI - submit jobs, poll status, query the knowledge base.
+
+Usage:
+    research submit "your topic here" --depth 10 --tags tag1 tag2
+    research status <job_id>
+    research list
+    research query "what did the research find about X?"
+    research rag "answer this question using the knowledge base"
+"""
+
+import argparse
+import json
+import sys
+import time
+from urllib.parse import urljoin
+
+try:
+    import httpx
+except ImportError:
+    print("httpx not installed. Run: pip install httpx", file=sys.stderr)
+    sys.exit(1)
+
+DEFAULT_URL = "http://localhost:8000"
+
+
+def _print_json(data):
+    print(json.dumps(data, indent=2, default=str))
+
+
+def cmd_submit(args):
+    payload = {
+        "topic": args.topic,
+        "depth": args.depth,
+        "max_sources": args.max_sources,
+        "language": args.language,
+        "tags": args.tags or [],
+    }
+    r = httpx.post(f"{args.url}/research", json=payload, timeout=30.0)
+    r.raise_for_status()
+    job = r.json()
+    print(f"Submitted job: {job['job_id']}")
+    print(f"Status: {job['status']}")
+    if args.wait:
+        _wait_for_job(args.url, job["job_id"], args.poll_interval)
+
+
+def _wait_for_job(url, job_id, poll_interval):
+    print(f"Polling every {poll_interval}s. Ctrl-C to stop.")
+    last_status = None
+    try:
+        while True:
+            r = httpx.get(f"{url}/research/{job_id}", timeout=10.0)
+            r.raise_for_status()
+            job = r.json()
+            status = job["status"]
+            if status != last_status:
+                print(f"[{status}] {job.get('progress', {})}")
+                last_status = status
+            if status in ("completed", "failed"):
+                _print_json(job)
+                return
+            time.sleep(poll_interval)
+    except KeyboardInterrupt:
+        print(f"\nStopped polling. Job {job_id} is still {last_status}.")
+
+
+def cmd_status(args):
+    r = httpx.get(f"{args.url}/research/{args.job_id}", timeout=10.0)
+    if r.status_code == 404:
+        print(f"Job {args.job_id} not found", file=sys.stderr)
+        sys.exit(1)
+    r.raise_for_status()
+    _print_json(r.json())
+
+
+def cmd_list(args):
+    r = httpx.get(f"{args.url}/research", params={"limit": args.limit}, timeout=10.0)
+    r.raise_for_status()
+    jobs = r.json()
+    if not jobs:
+        print("No jobs yet.")
+        return
+    print(f"{'JOB ID':<38} {'STATUS':<12} {'SOURCES':<8} {'CHUNKS':<8} TOPIC")
+    print("-" * 100)
+    for j in jobs:
+        topic = j["topic"][:40] + "..." if len(j["topic"]) > 40 else j["topic"]
+        print(f"{j['job_id']:<38} {j['status']:<12} {j['sources_count']:<8} {j['chunks_count']:<8} {topic}")
+
+
+def cmd_query(args):
+    payload = {
+        "query": args.query,
+        "top_k": args.top_k,
+    }
+    if args.topic:
+        payload["topic_filter"] = args.topic
+    r = httpx.post(f"{args.url}/query", json=payload, timeout=60.0)
+    r.raise_for_status()
+    data = r.json()
+    print(f"Query: {data['query']}\n")
+    for i, c in enumerate(data["chunks"], 1):
+        print(f"[{i}] {c['source_title']} ({c['source_url']})")
+        print(f"    Score: {c['score']:.3f}")
+        print(f"    {c['text'][:300]}{'...' if len(c['text']) > 300 else ''}")
+        print()
+
+
+def cmd_rag(args):
+    payload = {
+        "query": args.query,
+        "top_k": args.top_k,
+    }
+    if args.topic:
+        payload["topic_filter"] = args.topic
+    r = httpx.post(f"{args.url}/rag", json=payload, timeout=120.0)
+    r.raise_for_status()
+    data = r.json()
+    print(f"Q: {data['query']}\n")
+    print(f"A ({data['model']}):\n{data['answer']}\n")
+    print(f"Sources: {len(data['sources'])}")
+    for i, c in enumerate(data["sources"], 1):
+        print(f"  [{i}] {c['source_title']} - {c['source_url']}")
+
+
+def cmd_health(args):
+    r = httpx.get(f"{args.url}/health", timeout=10.0)
+    r.raise_for_status()
+    data = r.json()
+    print(f"Status: {data['status']}")
+    for svc, ok in data["services"].items():
+        if svc == "all_ok":
+            continue
+        marker = "✓" if ok else "✗"
+        print(f"  {marker} {svc}")
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="research", description="Research Hub CLI")
+    parser.add_argument("--url", default=DEFAULT_URL, help="Base URL of research-hub API")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("submit", help="Submit a new research job")
+    p.add_argument("topic", help="Research topic")
+    p.add_argument("--depth", type=int, default=10, help="Number of URLs to crawl")
+    p.add_argument("--max-sources", type=int, default=20, help="Max search results")
+    p.add_argument("--language", default="en", help="Search language")
+    p.add_argument("--tags", nargs="*", help="Tags for filtering later")
+    p.add_argument("--wait", action="store_true", help="Wait for job to finish")
+    p.add_argument("--poll-interval", type=int, default=10, help="Seconds between polls")
+    p.set_defaults(func=cmd_submit)
+
+    p = sub.add_parser("status", help="Get job status")
+    p.add_argument("job_id", help="Job ID")
+    p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser("list", help="List recent jobs")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=cmd_list)
+
+    p = sub.add_parser("query", help="Search the knowledge base")
+    p.add_argument("query", help="Search query")
+    p.add_argument("--top-k", type=int, default=5)
+    p.add_argument("--topic", help="Filter by topic")
+    p.set_defaults(func=cmd_query)
+
+    p = sub.add_parser("rag", help="Ask a question using RAG")
+    p.add_argument("query", help="Question")
+    p.add_argument("--top-k", type=int, default=5)
+    p.add_argument("--topic", help="Filter by topic")
+    p.set_defaults(func=cmd_rag)
+
+    p = sub.add_parser("health", help="Check service health")
+    p.set_defaults(func=cmd_health)
+
+    args = parser.parse_args()
+    try:
+        args.func(args)
+    except httpx.HTTPStatusError as e:
+        print(f"HTTP {e.response.status_code}: {e.response.text}", file=sys.stderr)
+        sys.exit(1)
+    except httpx.RequestError as e:
+        print(f"Connection error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

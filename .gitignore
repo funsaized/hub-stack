@@ -1,0 +1,89 @@
+# Docker
+.docker/
+**/*.pid
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Node
+node_modules/
+.npm
+
+# Rust
+target/
+**/*.rs.bk
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Secrets - never commit
+*.pem
+*.key
+*.crt
+secrets/
+.env.secret
+
+# Docker data volumes (not committed, but protection if accidentally)
+data/
+volumes/
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test outputs
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.cache
+
+# Build artifacts
+*.tar.gz
+*.tar
+*.zip
+*.tgz
+
+# Local state
+.env.local
+.secret

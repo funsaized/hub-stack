@@ -1,0 +1,31 @@
+# Application Configuration
+# Bind to 0.0.0.0 so other containers in the Docker network can reach us
+app:
+  title: "Crawl4AI API"
+  version: "1.0.0"
+  host: "0.0.0.0"
+  port: 11235
+  reload: False
+  workers: 1
+  timeout_keep_alive: 300
+
+# LLM Configuration (uses Ollama inside the same network)
+llm:
+  provider: "ollama/llama3.1"
+  api_key: "ollama"
+  base_url: "http://hub-ollama:11434/v1"
+
+# Redis Configuration (use our hub-redis)
+redis:
+  host: "hub-redis"
+  port: 6379
+  db: 0
+  password: ""
+  task_ttl_seconds: 3600
+  ssl: False
+
+# Rate limiting / auth
+security:
+  enabled: true
+  trusted_hosts: ["*"]
+  api_token: "hub-crawl4ai-shared-token"

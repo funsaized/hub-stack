@@ -1,0 +1,244 @@
+name: hub
+
+services:
+  # =====================================================================
+  # Local LLM server (OpenAI-compatible API on :11434)
+  # =====================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: hub-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./healthcheck:/healthcheck:ro
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_NUM_PARALLEL=2
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "bash", "/healthcheck/healthcheck.sh", "11434"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # =====================================================================
+  # Vector database for RAG over crawled content
+  # =====================================================================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: hub-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+      - ./healthcheck:/healthcheck:ro
+    healthcheck:
+      test: ["CMD", "bash", "/healthcheck/healthcheck.sh", "6333"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # =====================================================================
+  # Redis
+  # =====================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: hub-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # =====================================================================
+  # PostgreSQL with pgvector
+  # =====================================================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: hub-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: hub
+      POSTGRES_USER: hub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hub_dev_password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hub -d hub"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # =====================================================================
+  # Dozzle — Docker log viewer
+  # =====================================================================
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: hub-dozzle
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      DOZZLE_ENABLE_ACTIONS: "true"
+      DOZZLE_NO_ANALYTICS: "true"
+
+  # =====================================================================
+  # Uptime Kuma
+  # =====================================================================
+  uptime-kuma:
+    image: louislam/uptime-kuma:latest
+    container_name: hub-uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # =====================================================================
+  # SearXNG — private meta-search
+  # =====================================================================
+  searxng:
+    image: searxng/searxng:latest
+    container_name: hub-searxng
+    restart: unless-stopped
+    ports:
+      - "8889:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./healthcheck:/healthcheck:ro
+    environment:
+      - SEARXNG_SECRET=changeme_in_production
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    healthcheck:
+      test: ["CMD", "python3", "/healthcheck/healthcheck-py3.py", "8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # =====================================================================
+  # Crawl4AI — web crawler
+  # =====================================================================
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: hub-crawl4ai
+    restart: unless-stopped
+    ports:
+      - "11235:11235"
+    volumes:
+      - crawl4ai_data:/app/data
+      - ./healthcheck:/healthcheck:ro
+      - ./crawl4ai-config.yml:/app/config.yml:ro
+    environment:
+      - CRAWL4AI_LLM_PROVIDER=ollama
+      - OLLAMA_BASE_URL=http://hub-ollama:11434
+      - OLLAMA_MODEL=qwen2.5:7b
+      - CRAWL4AI_API_TOKEN=hub-crawl4ai-shared-token
+      - APP_HOST=0.0.0.0
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bash", "/healthcheck/healthcheck.sh", "11235"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # =====================================================================
+  # Research Hub API — FastAPI orchestrator
+  # =====================================================================
+  research-hub:
+    build:
+      context: ./research-hub
+      dockerfile: Dockerfile
+    container_name: hub-research-hub
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - research_hub_data:/app/data
+    environment:
+      - REDIS_URL=redis://hub-redis:6379/0
+      - QDRANT_URL=http://hub-qdrant:6333
+      - OLLAMA_URL=http://hub-ollama:11434
+      - LLM_MODEL=qwen2.5:7b
+      - EMBEDDING_MODEL=nomic-embed-text
+      - SEARXNG_URL=http://hub-searxng:8080
+      - CRAWL4AI_URL=http://hub-crawl4ai:11235
+      - CRAWL4AI_TOKEN=hub-crawl4ai-shared-token
+      - LOG_LEVEL=info
+    depends_on:
+      ollama:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
+      crawl4ai:
+        condition: service_healthy
+    # Healthcheck defined in Dockerfile (uses curl)
+
+  # =====================================================================
+  # Open WebUI — chat interface
+  # =====================================================================
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: hub-open-webui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - open_webui_data:/app/backend/data
+    environment:
+      - OLLAMA_BASE_URL=http://hub-ollama:11434
+      - WEBUI_AUTH=true
+      - WEBUI_SECRET_KEY=changeme_in_production
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8080' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  ollama_data:
+  qdrant_data:
+  redis_data:
+  postgres_data:
+  uptime_kuma_data:
+  crawl4ai_data:
+  research_hub_data:
+  open_webui_data:

@@ -1,0 +1,26 @@
+# SearXNG settings - minimal private search config
+# Most options use defaults; the key one is allowing JSON output for the crawler
+use_default_settings: true
+
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  secret_key: "changeme_in_production"
+
+search:
+  formats:
+    - html
+    - json
+
+# Enable JSON output for the crawler to consume
+engines:
+  - name: duckduckgo
+    disabled: false
+  - name: bing
+    disabled: true
+  - name: google
+    disabled: true
+  - name: brave
+    disabled: true
+  - name: startpage
+    disabled: true
