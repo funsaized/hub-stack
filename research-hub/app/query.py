@@ -1,7 +1,10 @@
 """Query layer: search the knowledge base, run RAG via Ollama."""
 
+import time
+
 from .clients import OllamaClient, QdrantClient
 from .models import QueryRequest, QueryResponse, QueryChunk, RAGRequest, RAGResponse
+from .observability import EMBED_LATENCY, GENERATION_LATENCY, GENERATION_TOKENS, RETRIEVAL_SCORE
 
 
 class QueryEngine:
@@ -12,7 +15,9 @@ class QueryEngine:
         self.qdrant = qdrant
 
     async def search(self, req: QueryRequest) -> QueryResponse:
+        started = time.monotonic()
         vector = await self.ollama.embed(req.query)
+        EMBED_LATENCY.observe(time.monotonic() - started)
         filters: dict = {}
         if req.topic_filter:
             filters["topic"] = req.topic_filter
@@ -21,6 +26,8 @@ class QueryEngine:
 
         hits = await _run_sync(self.qdrant.search, vector, req.top_k, filters if filters else None)
         chunks = [QueryChunk(**h) for h in hits]
+        for chunk in chunks:
+            RETRIEVAL_SCORE.observe(chunk.score)
         context = "\n\n---\n\n".join(
             f"[{i+1}] {c.source_title} ({c.source_url})\n{c.text}" for i, c in enumerate(chunks)
         )
@@ -32,6 +39,7 @@ class QueryEngine:
             query=req.query,
             top_k=req.top_k,
             topic_filter=req.topic_filter,
+            tags_filter=req.tags_filter,
         )
         sr = await self.search(query_req)
 
@@ -51,7 +59,10 @@ class QueryEngine:
         context = sr.context[: req.max_context_tokens * 4]  # rough char-to-token cutoff
         prompt = f"Context:\n{context}\n\nQuestion: {req.query}\n\nAnswer:"
 
+        started = time.monotonic()
         answer = await self.ollama.generate(prompt, system=system, max_tokens=1024)
+        GENERATION_LATENCY.observe(time.monotonic() - started)
+        GENERATION_TOKENS.inc(max(1, len(answer) // 4))
         return RAGResponse(
             query=req.query,
             answer=answer,

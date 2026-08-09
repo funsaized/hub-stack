@@ -98,7 +98,7 @@ later ────────────────────────�
    ┌─────────────────┐
    │  Research-Hub   │
    │  embed query    │  nomic-embed-text
-   │  search Qdrant  │  top 5 similar
+   │  search Qdrant  │  top 5 simila
    └────────┬────────┘
             │
             ▼ (if /rag)
@@ -122,7 +122,7 @@ later ────────────────────────�
 - Created on first startup, persists across restarts (named volume)
 
 ### Redis
-- Durable FIFO queue + state for the research API and dedicated worker
+- Durable FIFO queue + state for the research API and dedicated worke
 - Job metadata keyed by `research:job:{uuid}`
 - Job index list at `research:jobs`
 - Pending/processing lists and expiring claim leases prevent duplicate execution
@@ -143,7 +143,7 @@ later ────────────────────────�
 - Headless browser crawler with LLM-aware extraction
 - Returns clean markdown (no nav, ads, scripts)
 - Defaults to 4 concurrent crawlers
-- Authenticated via `CRAWL4AI_API_TOKEN` env var
+- Authenticated via `CRAWL4AI_API_TOKEN` env va
 
 ### Research-Hub
 - FastAPI API process; accepts and durably enqueues research jobs
@@ -168,9 +168,16 @@ later ────────────────────────�
 - Live Docker log viewer on :8888
 - Replaces `docker logs -f` with a searchable web UI
 
+### Prometheus and Grafana
+- Prometheus scrapes the API and dedicated worker without a push gateway
+- Grafana provisions a pipeline dashboard from version-controlled JSON
+- Alert rules cover job failures, API errors, and slow generation
+- See `docs/OBSERVABILITY.md` for the metric and correlation contract
+
 ### Uptime Kuma
 - Service health monitor on :3001
-- 9 monitors configured (all 10 services except Dozzle which doesn't have a healthcheck)
+- Core service uptime monitors are configured manually; pipeline metrics and
+  alert evaluation live in Prometheus/Grafana
 - Push notifications via Discord/Telegram webhook
 
 ## Why these choices

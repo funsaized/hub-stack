@@ -134,7 +134,7 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ## P1 — Daily-use reliability
 
-### HUB-007 — Replace in-process background tasks with a durable worker
+### HUB-007 — Replace in-process background tasks with a durable worke
 
 **Status:** ✅ Done
 
@@ -279,6 +279,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-014 — Make the API contract strict and remove documentation drift
 
+**Status:** ✅ Done
+
 **Problem:** Unknown fields are silently discarded, `RAGRequest` lacks documented `tags_filter`, and `ResearchRequest.time_limit` is accepted but unused.
 
 **Work:**
@@ -297,6 +299,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 - Persistence and healthcheck documentation matches regression-tested behavior.
 
 ### HUB-015 — Add structured application observability
+
+**Status:** ✅ Done
 
 **Problem:** Container logs and uptime monitoring do not expose pipeline quality, latency, or failure stages.
 
@@ -484,7 +488,7 @@ Evaluate Postgres only when job/source relationships, audit history, or complex 
 
 **Revisit trigger:** source/version metadata requires transactional cross-entity queries or durable audit history.
 
-### HUB-027 — Evaluate a knowledge graph layer
+### HUB-027 — Evaluate a knowledge graph laye
 
 Do not add a graph until hybrid retrieval, reranking, citation validation, and a retrieval evaluation set are in place.
 

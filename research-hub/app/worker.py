@@ -6,12 +6,14 @@ import logging
 import signal
 import time
 import uuid
+from prometheus_client import start_http_serve
 
 import redis.asyncio as redis_async
 
 from .config import Config, load_config
 from .models import JobStatus
-from .research import ResearchOrchestrator
+from .research import ResearchOrchestrato
+from .observability import ACTIVE_JOBS, JOBS, configure_logging, correlation_id
 
 logger = logging.getLogger(__name__)
 
@@ -140,13 +142,17 @@ class IngestionWorker:
             )
 
     async def process(self, job_id: str, token: str):
+        context_token = correlation_id.set(job_id)
         job = await self.orchestrator.get_job(job_id)
         if not job or job.get("status") in {JobStatus.COMPLETED.value, JobStatus.FAILED.value}:
             await self.finish(job_id, token)
+            correlation_id.reset(context_token)
             return
         attempts = int(job.get("attempts", 0)) + 1
         await self.orchestrator._update_job(job_id, attempts=attempts, error=None)
         heartbeat = asyncio.create_task(self.heartbeat(job_id, token))
+        ACTIVE_JOBS.inc()
+        logger.info("job_started", extra={"job_id": job_id, "phase": "worker", "retry_count": attempts - 1})
         execution = asyncio.create_task(asyncio.wait_for(
             self.orchestrator.run_job(job_id), timeout=self.cfg.job_timeout_seconds
         ))
@@ -160,6 +166,7 @@ class IngestionWorker:
                 await heartbeat
             await execution
             await self.finish(job_id, token)
+            JOBS.labels("completed", "none").inc()
         except LeaseLostError:
             execution.cancel()
             await asyncio.gather(execution, return_exceptions=True)
@@ -170,6 +177,7 @@ class IngestionWorker:
             await self.release(job_id, token, "Worker shutdown")
             raise
         except Exception as exc:
+            category = type(exc).__name__
             message = f"Attempt {attempts}/{self.cfg.job_max_attempts} failed: {exc}"
             if attempts >= self.cfg.job_max_attempts:
                 await self.orchestrator._update_job(
@@ -177,12 +185,15 @@ class IngestionWorker:
                     error=message, progress={"phase": "failed", "attempts": attempts},
                 )
                 await self.finish(job_id, token)
+                JOBS.labels("failed", category).inc()
             else:
                 await self.release(job_id, token, message)
                 await self.orchestrator._update_job(job_id, error=message)
         finally:
+            ACTIVE_JOBS.dec()
             heartbeat.cancel()
             await asyncio.gather(heartbeat, return_exceptions=True)
+            correlation_id.reset(context_token)
 
     async def run(self):
         await self.init()
@@ -207,6 +218,8 @@ class IngestionWorker:
 
 async def main():
     cfg = load_config()
+    configure_logging(cfg.log_level)
+    start_http_server(9000)
     worker = IngestionWorker(cfg)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):

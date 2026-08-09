@@ -21,6 +21,8 @@ A reusable research service that searches the web, crawls results, extracts clea
 | Open WebUI | `127.0.0.1:8080` | Chat interface |
 | Dozzle | `127.0.0.1:8888` | Live Docker log viewer |
 | Uptime Kuma | `127.0.0.1:3001` | Service health monitoring |
+| Prometheus | `127.0.0.1:9090` | Pipeline metrics and alert evaluation |
+| Grafana | `127.0.0.1:3002` | Provisioned Research Hub dashboard |
 
 ## Quick start
 
@@ -63,6 +65,7 @@ uv run --with-requirements requirements.txt python -m unittest discover -s tests
 - [docs/MODELS.md](docs/MODELS.md) — current model choices, swap instructions
 - [docs/DOCUMENT_STORE.md](docs/DOCUMENT_STORE.md) — retained sources, deletion, and index rebuilds
 - [docs/NETWORKING.md](docs/NETWORKING.md) — default bindings and optional remote Ollama access
+- [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) — JSON logs, correlation IDs, metrics, dashboard, and alerts
 
 ## Hardware
 
@@ -75,8 +78,9 @@ Validated on:
 
 ## Status
 
-The full eleven-service stack is deployed locally. HUB-002 network boundaries,
+The thirteen-service Compose stack is defined locally. HUB-002 network boundaries,
 HUB-005 health/readiness, and
-HUB-007 through HUB-011 durable, retained, batched ingestion and tests are verified; see
+HUB-007 through HUB-011 durable, retained, batched ingestion and tests, plus
+HUB-014 strict contracts and HUB-015 observability, are implemented; see
 [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
 Other P0 and later work remains tracked in [backlog.md](backlog.md).

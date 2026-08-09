@@ -19,7 +19,7 @@
 
 ### Enable WSL2
 ```powershell
-# Run in PowerShell as Administrator
+# Run in PowerShell as Administrato
 wsl --install
 wsl --set-default-version 2
 ```
@@ -46,7 +46,7 @@ Reboot → enter BIOS → enable:
 2. Install with WSL2 backend (default)
 3. Restart
 4. Accept the license agreement
-5. Wait for "Engine running" indicator
+5. Wait for "Engine running" indicato
 
 ## 2. WSL2 Ubuntu setup
 
@@ -114,7 +114,7 @@ Reload: `source ~/.bashrc`
 ### Install lazydocker binary (curl fallback)
 ```bash
 curl -fsSL https://github.com/jesseduffield/lazydocker/releases/download/v0.23.3/lazydocker_0.23.3_Linux_x86_64.tar.gz | tar -xz -C /tmp/
-sudo mv /tmp/lazydocker /usr/local/bin/lazydocker && chmod +x /usr/local/bin/lazydocker
+sudo mv /tmp/lazydocker /usr/local/bin/lazydocker && chmod +x /usr/local/bin/lazydocke
 ```
 
 ## 3. Docker setup
@@ -160,7 +160,7 @@ docker compose up -d
 ```
 
 First run takes 5-10 minutes:
-- Downloads/builds the images for 11 services (~8 GB total)
+- Downloads/builds the images for 13 services (size varies with image versions)
 - Builds the research-hub image locally
 - Ollama pulls qwen2.5:7b (~5 GB) and nomic-embed-text (~300 MB) on first run
 
@@ -176,8 +176,8 @@ The Research Worker has no host port. It consumes the durable Redis queue and
 shares the Research-Hub image. After application changes, rebuild both processes:
 
 ```bash
-docker compose up -d --build research-hub research-worker
-docker compose logs --tail=100 research-worker
+docker compose up -d --build research-hub research-worke
+docker compose logs --tail=100 research-worke
 ```
 
 Worker behavior can be tuned in `.env` with `WORKER_LEASE_SECONDS`,
@@ -189,11 +189,16 @@ The heartbeat must remain shorter than the lease. On shutdown, the worker drains
 its current task or releases it; after an unclean stop, lease expiry and periodic
 reconciliation requeue the job.
 
+Pipeline metrics and alert rules start with Compose. Open Grafana at
+http://localhost:3002 for the provisioned dashboard or Prometheus at
+http://localhost:9090. See `docs/OBSERVABILITY.md` for metric names, structured
+log fields, correlation behavior, and thresholds.
+
 ## 6. Set up Uptime Kuma monitors
 
 1. Open http://localhost:3001
 2. Create admin account on first visit
-3. Add 9 monitors:
+3. Add the core service monitors:
 
 | Name | Type | URL |
 |---|---|---|
@@ -238,7 +243,7 @@ export PATH="/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Fil
 docker version
 ```
 
-### "qwen2.5:7b not found" from inside a container
+### "qwen2.5:7b not found" from inside a containe
 The model exists on disk but is not in Ollama's running index. Restart Ollama:
 ```bash
 docker compose restart ollama
@@ -294,6 +299,7 @@ Paste the webhook URL, test, save. Then enable on each monitor.
 ## Next steps
 
 - Add 9 monitors in Uptime Kuma
+- Review Prometheus alerts and the Grafana pipeline dashboard
 - Run a research job and verify RAG works
 - Tailscale for remote access
 - See NEXT_STEPS.md for the roadmap

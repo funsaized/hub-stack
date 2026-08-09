@@ -2,16 +2,20 @@
 
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+import time
+import uuid
+from contextlib import asynccontextmanage
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .config import load_config
 from .models import ResearchRequest, JobInfo, QueryRequest, QueryResponse, RAGRequest, RAGResponse
 from .research import ResearchOrchestrator, canonicalize_url, ensure_embedding_model
 from .query import QueryEngine
+from .observability import REQUESTS, REQUEST_LATENCY, configure_logging, correlation_id
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+configure_logging(load_config().log_level)
 logger = logging.getLogger("research-hub")
 
 cfg = load_config()
@@ -19,7 +23,7 @@ orchestrator: ResearchOrchestrator | None = None
 query_engine: QueryEngine | None = None
 
 
-@asynccontextmanager
+@asynccontextmanage
 async def lifespan(app: FastAPI):
     global orchestrator, query_engine
     logger.info("Starting research hub...")
@@ -43,6 +47,34 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def correlate_and_measure(request: Request, call_next):
+    supplied = request.headers.get("X-Request-ID", "")
+    request_id = supplied if 0 < len(supplied) <= 128 else str(uuid.uuid4())
+    token = correlation_id.set(request_id)
+    started = time.monotonic()
+    status = 500
+    route = request.url.path
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        route_obj = request.scope.get("route")
+        route = getattr(route_obj, "path", route)
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        elapsed = time.monotonic() - started
+        REQUESTS.labels(request.method, route, str(status)).inc()
+        REQUEST_LATENCY.labels(request.method, route).observe(elapsed)
+        logger.info("http_request", extra={"duration_seconds": round(elapsed, 4)})
+        correlation_id.reset(token)
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health")
@@ -101,6 +133,7 @@ async def submit_research(req: ResearchRequest):
     if not orchestrator:
         raise HTTPException(503, "Orchestrator not ready")
     job_id = await orchestrator.submit_job(req)
+    logger.info("job_submitted", extra={"job_id": job_id, "phase": "queued"})
     job = await orchestrator.get_job(job_id)
     return JobInfo(**job)
 
@@ -185,6 +218,6 @@ async def root():
             "DELETE /documents?url={source_url}",
             "GET /documents/{document_id}",
             "POST /query {query, top_k, topic_filter, tags_filter}",
-            "POST /rag {query, top_k, topic_filter, max_context_tokens}",
+            "POST /rag {query, top_k, topic_filter, tags_filter, max_context_tokens}",
         ],
     }

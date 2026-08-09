@@ -1,0 +1,18 @@
+groups:
+  - name: research-hub
+    rules:
+      - alert: ResearchJobFailures
+        expr: increase(hub_jobs_total{outcome="failed"}[15m]) > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: "A research job failed"}
+      - alert: ResearchApiHighErrorRate
+        expr: sum(rate(hub_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(hub_http_requests_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "Research API 5xx rate exceeds 5%"}
+      - alert: ResearchP95GenerationSlow
+        expr: histogram_quantile(0.95, sum by (le) (rate(hub_generation_duration_seconds_bucket[15m]))) > 60
+        for: 15m
+        labels: {severity: warning}
+        annotations: {summary: "RAG p95 generation latency exceeds 60 seconds"}

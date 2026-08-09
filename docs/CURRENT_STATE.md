@@ -4,8 +4,8 @@ Last verified: 2026-08-09 on the local Windows 11 workstation.
 
 ## Deployment model
 
-The repository is stored on the Windows filesystem under OneDrive. Docker
-Desktop runs the Linux containers through WSL2; application images and Docker
+The repository is stored on the Windows filesystem under OneDrive. Docke
+Desktop runs the Linux containers through WSL2; application images and Docke
 named volumes are therefore separate from the repository checkout. Editing
 `research-hub/app` does not update the live API until the research-hub image is
 rebuilt and its container is recreated.
@@ -16,9 +16,10 @@ Open WebUI, Crawl4AI, and Uptime Kuma state live in Docker named volumes.
 
 ## Running services
 
-The full eleven-service Compose topology is deployed locally. At the last check,
-all eleven containers were running and every service with a configured Docker
-healthcheck was healthy. Dozzle has no container healthcheck.
+The original eleven-service Compose topology was deployed locally at the last
+runtime check; every configured Docker healthcheck was healthy and Dozzle had no
+container healthcheck. Prometheus and Grafana are now defined in Compose but need
+runtime verification after the next rebuild/deployment.
 
 Research-Hub currently uses Ollama, Qdrant, Redis, SearXNG, and Crawl4AI.
 The API only enqueues ingestion; the dedicated Research Worker claims and executes
@@ -80,9 +81,21 @@ failures reach a terminal state with the attempt error. Redis uses AOF and
 Canonical URLs plus content hashes produce stable document IDs, and stable chunk
 IDs include the document, chunk index, and chunker version. Re-ingesting unchanged
 content skips existing chunks; changed content is completely embedded before its
-old chunks are removed. `DELETE /documents?url=...` removes every version/chunk for
+old chunks are removed. `DELETE /documents?url=...` removes every version/chunk fo
 a canonical source URL.
 
-Important remaining limitations include hardcoded/default credentials, crawler
+Important remaining limitations include hardcoded/default credentials, crawle
 SSRF protections, backups, and CI coverage. Redis AOF improves
 durability but is not a backup or a high-availability queue.
+
+## Implemented API contract and observability
+
+HUB-014 makes every public Pydantic model reject unknown fields. The unused
+`ResearchRequest.time_limit` field was removed, and `/rag` now supports the same
+`tags_filter` as `/query`. Deterministic tests validate documented payloads against
+the OpenAPI models and assert clear 422 responses for unsupported fields.
+
+HUB-015 adds request IDs, job correlation, secret-safe JSON logs, API and worke
+Prometheus endpoints, version-controlled alert rules, and a provisioned Grafana
+pipeline dashboard. The optional monitoring path and thresholds are documented in
+`docs/OBSERVABILITY.md`.

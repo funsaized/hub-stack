@@ -4,7 +4,13 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ContractModel(BaseModel):
+    """Public API model: reject misspellings instead of silently discarding them."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class JobStatus(str, Enum):
@@ -16,16 +22,15 @@ class JobStatus(str, Enum):
     FAILED = "failed"
 
 
-class ResearchRequest(BaseModel):
+class ResearchRequest(ContractModel):
     topic: str = Field(..., min_length=3, max_length=500, description="The research topic/query")
     depth: int = Field(default=10, ge=1, le=100, description="Number of URLs to crawl")
     max_sources: int = Field(default=20, ge=1, le=100, description="Max search results to consider")
     language: str = Field(default="en", description="Search language code")
-    time_limit: Optional[str] = Field(default=None, description="Crawl4AI time limit per page")
     tags: list[str] = Field(default_factory=list, description="Optional tags for the job")
 
 
-class JobInfo(BaseModel):
+class JobInfo(ContractModel):
     job_id: str
     topic: str
     status: JobStatus
@@ -37,14 +42,14 @@ class JobInfo(BaseModel):
     chunks_count: int = 0
 
 
-class QueryRequest(BaseModel):
+class QueryRequest(ContractModel):
     query: str = Field(..., min_length=3, max_length=500)
     top_k: int = Field(default=5, ge=1, le=50)
     topic_filter: Optional[str] = None
     tags_filter: Optional[list[str]] = None
 
 
-class QueryChunk(BaseModel):
+class QueryChunk(ContractModel):
     text: str
     source_url: str
     source_title: str
@@ -52,21 +57,22 @@ class QueryChunk(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
-class QueryResponse(BaseModel):
+class QueryResponse(ContractModel):
     query: str
     chunks: list[QueryChunk]
     context: str = Field(..., description="Concatenated chunks for RAG prompting")
 
 
-class RAGRequest(BaseModel):
+class RAGRequest(ContractModel):
     query: str
     top_k: int = Field(default=5, ge=1, le=50)
     topic_filter: Optional[str] = None
+    tags_filter: Optional[list[str]] = None
     max_context_tokens: int = Field(default=3000, ge=500, le=8000)
     system_prompt: Optional[str] = None
 
 
-class RAGResponse(BaseModel):
+class RAGResponse(ContractModel):
     query: str
     answer: str
     sources: list[QueryChunk]

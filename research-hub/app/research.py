@@ -18,6 +18,10 @@ from .config import Config
 from .clients import OllamaClient, QdrantClient, SearXNGClient, Crawl4AIClient
 from .models import JobStatus, ResearchRequest
 from .document_store import DocumentStore
+from .observability import (
+    CHUNKS, CRAWLS, EMBED_LATENCY, JOB_PHASE_LATENCY, SEARCH_RESULTS,
+    UPSERT_LATENCY, phase_timer,
+)
 from tenacity import (
     AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential,
 )
@@ -257,6 +261,7 @@ class ResearchOrchestrator:
 
     async def run_job(self, job_id: str):
         """Execute a claimed job. Queue ownership and retries belong to IngestionWorker."""
+        phase = "load"
         try:
             job = await self.get_job(job_id)
             if not job:
@@ -268,9 +273,14 @@ class ResearchOrchestrator:
             tags = job["tags"]
 
             # Phase 1: Search
+            phase = "search"
             await self._update_job(job_id, status=JobStatus.SEARCHING.value,
                                    progress={"phase": "searching", "topic": topic})
-            search_results = await self.searxng.search(topic, max_results=max_sources, language=language)
+            with phase_timer("search", logger, job_id=job_id):
+                search_results = await self.searxng.search(
+                    topic, max_results=max_sources, language=language
+                )
+            SEARCH_RESULTS.observe(len(search_results))
             if not search_results:
                 raise RuntimeError("No search results found")
 
@@ -282,14 +292,34 @@ class ResearchOrchestrator:
             })
 
             # Phase 2: Crawl (concurrent)
+            phase = "crawl"
             await self._update_job(job_id, status=JobStatus.CRAWLING.value,
                                    progress={"phase": "crawling", "crawled": 0, "total": len(urls_to_crawl)})
             crawl_results = []
+            crawl_phase_started = time.monotonic()
             sem = asyncio.Semaphore(4)  # 4 concurrent
 
             async def crawl_one(url: str, idx: int):
                 async with sem:
-                    res = await self.crawl4ai.crawl(url)
+                    domain = urlsplit(url).hostname or "unknown"
+                    started = time.monotonic()
+                    try:
+                        res = await self.crawl4ai.crawl(url)
+                    except Exception:
+                        CRAWLS.labels("failed").inc()
+                        logger.exception("crawl_failed", extra={
+                            "job_id": job_id, "phase": "crawl", "source_url": url,
+                            "source_domain": domain,
+                            "duration_seconds": round(time.monotonic() - started, 4),
+                            "failure_category": "dependency_error",
+                        })
+                        raise
+                    CRAWLS.labels("success" if res else "failed").inc()
+                    logger.info("crawl_completed", extra={
+                        "job_id": job_id, "phase": "crawl", "source_url": url,
+                        "source_domain": domain,
+                        "duration_seconds": round(time.monotonic() - started, 4),
+                    })
                     if res:
                         crawl_results.append(res)
                     await self._update_job(job_id, progress={
@@ -299,16 +329,24 @@ class ResearchOrchestrator:
                     })
 
             await asyncio.gather(*[crawl_one(u, i) for i, u in enumerate(urls_to_crawl)])
+            crawl_phase_elapsed = time.monotonic() - crawl_phase_started
+            JOB_PHASE_LATENCY.labels("crawl").observe(crawl_phase_elapsed)
+            logger.info("phase_completed", extra={
+                "job_id": job_id, "phase": "crawl",
+                "duration_seconds": round(crawl_phase_elapsed, 4),
+            })
             await self._update_job(job_id, sources_count=len(crawl_results))
 
             if not crawl_results:
                 raise RuntimeError("No pages crawled successfully")
 
             # Phase 3: retain canonical documents, then chunk/embed in bounded batches.
+            phase = "ingest"
             await self._update_job(job_id, status=JobStatus.EMBEDDING.value,
                                    progress={"phase": "embedding", "embedded": 0, "total": 0})
 
             duplicate_sources = 0
+            ingest_phase_started = time.monotonic()
             skipped_chunks = 0
             chunks_ingested = 0
             total_batch_seconds = 0.0
@@ -318,6 +356,7 @@ class ResearchOrchestrator:
                 if not md:
                     continue
                 chunks = chunk_text(md, self.cfg.chunk_size, self.cfg.chunk_overlap)
+                CHUNKS.observe(len(chunks))
                 canonical_url, content_hash, document_id = document_identity(res["url"], md)
                 fetched_at = utcnow()
                 await asyncio.to_thread(self.documents.save, {
@@ -354,7 +393,9 @@ class ResearchOrchestrator:
                     self.cfg.embedding_batch_chars,
                 ):
                     started = time.monotonic()
+                    embed_started = time.monotonic()
                     vectors = await self._retry_async(self.ollama.embed_batch, batch)
+                    EMBED_LATENCY.observe(time.monotonic() - embed_started)
                     points = []
                     for offset, (chunk, vector) in enumerate(zip(batch, vectors)):
                         chunk_index = start + offset
@@ -370,7 +411,9 @@ class ResearchOrchestrator:
                                 "tags": tags, "job_id": job_id, "ingested_at": utcnow(),
                             },
                         })
+                    upsert_started = time.monotonic()
                     await self._retry_async(asyncio.to_thread, self.qdrant.upsert, points)
+                    UPSERT_LATENCY.observe(time.monotonic() - upsert_started)
                     completed = start + len(batch)
                     await asyncio.to_thread(
                         self.documents.set_checkpoint, self.qdrant.collection,
@@ -391,6 +434,12 @@ class ResearchOrchestrator:
                         canonical_url, except_document_id=document_id,
                     )
 
+            ingest_phase_elapsed = time.monotonic() - ingest_phase_started
+            JOB_PHASE_LATENCY.labels("ingest").observe(ingest_phase_elapsed)
+            logger.info("phase_completed", extra={
+                "job_id": job_id, "phase": "ingest",
+                "duration_seconds": round(ingest_phase_elapsed, 4),
+            })
             await self._update_job(
                 job_id,
                 status=JobStatus.COMPLETED.value,
@@ -409,7 +458,12 @@ class ResearchOrchestrator:
             )
 
         except Exception as e:
-            logger.exception(f"Job {job_id} failed")
+            source = locals().get("res")
+            source_url = source.get("url") if isinstance(source, dict) else None
+            logger.exception("job_pipeline_failed", extra={
+                "job_id": job_id, "phase": phase, "source_url": source_url,
+                "failure_category": type(e).__name__,
+            })
             raise
 
     async def _retry_async(self, operation, *args):
