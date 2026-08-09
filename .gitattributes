@@ -1,0 +1,2 @@
+healthcheck/healthcheck.sh text eol=lf
+research-hub/bin/research text eol=lf

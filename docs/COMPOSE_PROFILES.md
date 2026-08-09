@@ -19,6 +19,9 @@ backup set, and may be inspected and removed separately by an operator.
 | `uptime` | Uptime Kuma | `docker compose --profile uptime up -d` | +119 MiB |
 | `observability` | Prometheus and Grafana | `docker compose --profile observability up -d` | +75 MiB |
 
+The `webui` profile configures two chat paths: direct Ollama models and the
+`research-corpus` OpenAI-compatible model backed by Research-Hub retrieval.
+
 Profiles are independent and can be combined. The figures are one
 `docker stats --no-stream` sample on the documented Windows 11/WSL2 workstation
 on 2026-08-09, rounded to MiB. Ollama accounted for 341 MiB of the default sample

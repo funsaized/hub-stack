@@ -625,14 +625,14 @@ class ResearchOrchestrator:
             })
             raise
 
-    async def _retry_async(self, operation, *args):
+    async def _retry_async(self, operation, *args, **kwargs):
         async for attempt in AsyncRetrying(
             stop=stop_after_attempt(self.cfg.dependency_max_attempts),
             wait=wait_exponential(multiplier=0.25, min=0.25, max=4),
             retry=retry_if_exception_type(Exception), reraise=True,
         ):
             with attempt:
-                return await operation(*args)
+                return await operation(*args, **kwargs)
 
 
 def embedding_batches(

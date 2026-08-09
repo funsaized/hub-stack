@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -94,3 +94,45 @@ class RAGResponse(ContractModel):
     answer: str
     sources: list[QueryChunk]
     model: str
+
+
+class ChatMessage(ContractModel):
+    role: Literal["system", "user", "assistant"]
+    content: str = Field(..., min_length=1)
+
+
+class ChatCompletionRequest(ContractModel):
+    model: str
+    messages: list[ChatMessage] = Field(..., min_length=1)
+    stream: bool = False
+    temperature: float = Field(default=0.2, ge=0, le=2)
+    top_p: float = Field(default=0.9, gt=0, le=1)
+    max_tokens: int = Field(default=1024, ge=1, le=4096)
+    stop: Optional[str | list[str]] = None
+
+
+class ChatCompletionChoice(ContractModel):
+    index: int = 0
+    message: ChatMessage
+    finish_reason: str = "stop"
+
+
+class ChatCompletionResponse(ContractModel):
+    id: str
+    object: str = "chat.completion"
+    created: int
+    model: str
+    choices: list[ChatCompletionChoice]
+    usage: dict[str, int] = Field(default_factory=dict)
+
+
+class ModelInfo(ContractModel):
+    id: str
+    object: str = "model"
+    created: int = 0
+    owned_by: str = "research-hub"
+
+
+class ModelList(ContractModel):
+    object: str = "list"
+    data: list[ModelInfo]

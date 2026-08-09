@@ -194,6 +194,7 @@ services:
     environment:
       - REDIS_URL=redis://hub-redis:6379/0
       - QDRANT_URL=http://hub-qdrant:6333
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-research_corpus__nomic_embed_text_768}
       - OLLAMA_URL=http://hub-ollama:11434
       - LLM_MODEL=qwen2.5:7b
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
@@ -237,6 +238,7 @@ services:
     environment:
       - REDIS_URL=redis://hub-redis:6379/0
       - QDRANT_URL=http://hub-qdrant:6333
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-research_corpus__nomic_embed_text_768}
       - OLLAMA_URL=http://hub-ollama:11434
       - LLM_MODEL=qwen2.5:7b
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
@@ -273,7 +275,7 @@ services:
   # =====================================================================
   open-webui:
     profiles: [webui]
-    image: ghcr.io/open-webui/open-webui:main
+    image: ghcr.io/open-webui/open-webui:v0.10.0
     container_name: hub-open-webui
     restart: unless-stopped
     ports:
@@ -281,11 +283,18 @@ services:
     volumes:
       - open_webui_data:/app/backend/data
     environment:
-      - OLLAMA_BASE_URL=http://hub-ollama:11434
-      - WEBUI_AUTH=true
-      - WEBUI_SECRET_KEY=changeme_in_production
+      OLLAMA_BASE_URL: http://hub-ollama:11434
+      WEBUI_AUTH: "true"
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-changeme_in_production}
+      ENABLE_OPENAI_API: "true"
+      OPENAI_API_BASE_URLS: http://hub-research-hub:8000/v1
+      OPENAI_API_KEYS: hub-local
+      OPENAI_API_CONFIGS: '{"0":{"enable":true,"model_ids":["research-corpus"],"tags":["Research Hub"]}}'
+      ENABLE_PERSISTENT_CONFIG: "false"
     depends_on:
       ollama:
+        condition: service_healthy
+      research-hub:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8080' || exit 1"]

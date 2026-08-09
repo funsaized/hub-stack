@@ -7,11 +7,16 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .config import load_config
-from .models import (ResearchRequest, JobInfo, ResearchReport, QueryRequest,
-                     QueryResponse, RAGRequest, RAGResponse)
+from .models import (
+    ChatCompletionChoice, ChatCompletionRequest, ChatCompletionResponse,
+    ChatMessage, JobInfo, ModelInfo, ModelList, QueryRequest, QueryResponse,
+    RAGRequest, RAGResponse, ResearchReport, ResearchRequest,
+)
+from .openai_compat import CORPUS_MODEL, sse_chunk
 from .research import ResearchOrchestrator, canonicalize_url, ensure_embedding_model
 from .query import QueryEngine
 from .observability import REQUESTS, REQUEST_LATENCY, configure_logging, correlation_id
@@ -22,6 +27,18 @@ logger = logging.getLogger("research-hub")
 cfg = load_config()
 orchestrator: ResearchOrchestrator | None = None
 query_engine: QueryEngine | None = None
+
+
+def public_job(job: dict) -> JobInfo:
+    """Project persisted records onto the strict public contract.
+
+    Older deployments stored request fields alongside job state. Keeping the
+    response projection explicit lets those records remain inspectable without
+    weakening unknown-field rejection for API callers.
+    """
+    return JobInfo(**{
+        name: job[name] for name in JobInfo.model_fields if name in job
+    })
 
 
 @asynccontextmanager
@@ -141,7 +158,7 @@ async def submit_research(req: ResearchRequest):
     job_id = await orchestrator.submit_job(req)
     logger.info("job_submitted", extra={"job_id": job_id, "phase": "queued"})
     job = await orchestrator.get_job(job_id)
-    return JobInfo(**job)
+    return public_job(job)
 
 
 @app.get("/research/{job_id}", response_model=JobInfo)
@@ -151,7 +168,7 @@ async def get_research_status(job_id: str):
     job = await orchestrator.get_job(job_id)
     if not job:
         raise HTTPException(404, f"Job {job_id} not found")
-    return JobInfo(**job)
+    return public_job(job)
 
 
 @app.get("/research/{job_id}/report", response_model=ResearchReport)
@@ -189,7 +206,7 @@ async def list_research_jobs(limit: int = 50):
     if not orchestrator:
         raise HTTPException(503, "Orchestrator not ready")
     jobs = await orchestrator.list_jobs(limit=limit)
-    return [JobInfo(**j) for j in jobs]
+    return [public_job(job) for job in jobs]
 
 
 @app.delete("/documents")
@@ -241,6 +258,81 @@ async def rag(req: RAGRequest):
         raise HTTPException(403, str(exc)) from exc
 
 
+@app.get("/v1/models", response_model=ModelList)
+async def list_models():
+    return ModelList(data=[ModelInfo(id=CORPUS_MODEL)])
+
+
+@app.post("/v1/chat/completions")
+async def chat_completions(req: ChatCompletionRequest):
+    if not query_engine:
+        raise HTTPException(503, "Query engine not ready")
+    if req.model != CORPUS_MODEL:
+        raise HTTPException(404, f"Model {req.model!r} not found")
+    try:
+        prepared = await query_engine.prepare_chat(req.messages)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+    created = int(time.time())
+
+    async def content_stream():
+        first_token_at = None
+        generation_started = time.perf_counter()
+        try:
+            async for token in query_engine.stream_prepared_chat(
+                prepared, max_tokens=req.max_tokens, temperature=req.temperature,
+                top_p=req.top_p, stop=req.stop,
+            ):
+                if first_token_at is None:
+                    first_token_at = time.perf_counter()
+                yield token
+        finally:
+            logger.info(
+                "corpus_chat",
+                extra={
+                    "phase": "generation",
+                    "query": prepared.query[:100],
+                    "rewrite_ms": round(prepared.timings["rewrite_ms"], 1),
+                    "retrieval_ms": round(prepared.timings["retrieval_ms"], 1),
+                    "ttft_ms": round(
+                        ((first_token_at or time.perf_counter()) - generation_started) * 1000, 1
+                    ),
+                    "generation_ms": round(
+                        (time.perf_counter() - generation_started) * 1000, 1
+                    ),
+                    "sources_count": len(prepared.sources),
+                },
+            )
+
+    if not req.stream:
+        answer = "".join([token async for token in content_stream()])
+        answer += query_engine.format_sources(prepared.sources)
+        return ChatCompletionResponse(
+            id=completion_id, created=created, model=CORPUS_MODEL,
+            choices=[ChatCompletionChoice(
+                message=ChatMessage(role="assistant", content=answer)
+            )],
+            usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        )
+
+    async def event_stream():
+        yield sse_chunk(completion_id, created, {"role": "assistant"})
+        async for token in content_stream():
+            yield sse_chunk(completion_id, created, {"content": token})
+        sources = query_engine.format_sources(prepared.sources)
+        if sources:
+            yield sse_chunk(completion_id, created, {"content": sources})
+        yield sse_chunk(completion_id, created, {}, finish_reason="stop")
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/")
 async def root():
     return {
@@ -260,5 +352,7 @@ async def root():
             "GET /documents/{document_id}",
             "POST /query {query, top_k, topic_filter, tags_filter}",
             "POST /rag {query, top_k, topic_filter, tags_filter, max_context_tokens}",
+            "GET /v1/models",
+            "POST /v1/chat/completions",
         ],
     }

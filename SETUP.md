@@ -198,6 +198,15 @@ log fields, correlation behavior, and thresholds.
 
 ## 6. Set up Uptime Kuma monitors
 
+To use corpus-backed chat, start Open WebUI with:
+
+```bash
+docker compose --profile webui up -d
+```
+
+Open http://localhost:8080 and select `research-corpus`. Direct Ollama models
+do not query the retained research corpus.
+
 Start it first with `docker compose --profile uptime up -d`. Other optional
 services only resolve from Kuma when their profiles are also running.
 

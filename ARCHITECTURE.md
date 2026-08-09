@@ -176,8 +176,10 @@ later ────────────────────────�
 ### Open WebUI
 - Chat interface for qwen2.5:7b
 - Has memory, conversation history, code highlighting
-- Not yet wired to the research-hub knowledge base (planned)
 - Optional Compose profile: `webui`
+- Direct Ollama models provide plain chat
+- The `research-corpus` OpenAI-compatible route provides conversation-aware RAG
+  with bounded untrusted evidence and the exact ordered sources used for generation
 
 ### Dozzle
 - Live Docker log viewer on :8888

@@ -4,12 +4,37 @@ import asyncio
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from app.clients import OllamaClient
+from app.clients import OllamaClient, crawl_markdown_text
 from app.document_store import DocumentStore
 from app.rebuild import versioned_collection
-from app.research import embedding_batches
+from app.research import ResearchOrchestrator, embedding_batches
+
+
+class CrawlResponseTests(unittest.TestCase):
+    def test_structured_markdown_prefers_complete_raw_text(self):
+        self.assertEqual(crawl_markdown_text({
+            "raw_markdown": "complete source",
+            "fit_markdown": "short source",
+        }), "complete source")
+
+    def test_unknown_markdown_shape_is_ignored(self):
+        self.assertEqual(crawl_markdown_text({"raw_markdown": {"bad": True}}), "")
+
+
+class RetryWrapperTests(unittest.IsolatedAsyncioTestCase):
+    async def test_keyword_arguments_are_forwarded(self):
+        operation = AsyncMock(return_value="ok")
+        owner = SimpleNamespace(
+            cfg=SimpleNamespace(dependency_max_attempts=1)
+        )
+        result = await ResearchOrchestrator._retry_async(
+            owner, operation, "value", flag=True
+        )
+        self.assertEqual(result, "ok")
+        operation.assert_awaited_once_with("value", flag=True)
 
 
 class DocumentStoreTests(unittest.TestCase):

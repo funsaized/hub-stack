@@ -35,6 +35,19 @@ optional capabilities with `--profile webui`, `--profile logs`, `--profile
 uptime`, or `--profile observability`; see
 [docs/COMPOSE_PROFILES.md](docs/COMPOSE_PROFILES.md).
 
+### Corpus chat in Open WebUI
+
+Start the optional UI with `docker compose --profile webui up -d`, then open
+http://localhost:8080. Choose `research-corpus` to retrieve from Qdrant through
+Research-Hub with conversation-aware search, streaming answers, and an ordered
+source list. Ollama models in the same picker remain direct, non-retrieval chat.
+Compose owns the OpenAI-compatible connection; WebUI accounts and chats remain
+in the existing `open_webui_data` volume.
+
+The default active Qdrant index is the model/dimension-versioned
+`research_corpus__nomic_embed_text_768` collection. This prevents legacy or
+incompatible points from being mixed into current retrieval.
+
 First run takes 5-10 minutes (image pulls, model download). After that, the stack comes up in under 90 seconds.
 
 ## Quick verification
@@ -87,7 +100,8 @@ The seven-container default Compose stack is deployed locally. HUB-002 network b
 HUB-005 health/readiness, and
 HUB-007 through HUB-011 durable, retained, batched ingestion and tests, plus
 HUB-014 strict contracts, HUB-015 observability, HUB-016 topology profiles, and
-HUB-018/HUB-020/HUB-021 context, prompt, and crawl-policy hardening, plus HUB-022
-persisted evidence-backed research reports, are implemented; see
+HUB-018/HUB-020/HUB-021 context, prompt, and crawl-policy hardening, HUB-022
+persisted evidence-backed research reports, and corpus-backed Open WebUI chat
+are implemented; see
 [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
 Other P0 and later work remains tracked in [backlog.md](backlog.md).
