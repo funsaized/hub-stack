@@ -6,13 +6,13 @@ import logging
 import signal
 import time
 import uuid
-from prometheus_client import start_http_serve
+from prometheus_client import start_http_server
 
 import redis.asyncio as redis_async
 
 from .config import Config, load_config
 from .models import JobStatus
-from .research import ResearchOrchestrato
+from .research import ResearchOrchestrator
 from .observability import ACTIVE_JOBS, JOBS, configure_logging, correlation_id
 
 logger = logging.getLogger(__name__)

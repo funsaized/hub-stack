@@ -4,8 +4,8 @@ Last verified: 2026-08-09 on the local Windows 11 workstation.
 
 ## Deployment model
 
-The repository is stored on the Windows filesystem under OneDrive. Docke
-Desktop runs the Linux containers through WSL2; application images and Docke
+The repository is stored on the Windows filesystem under OneDrive. Docker
+Desktop runs the Linux containers through WSL2; application images and Docker
 named volumes are therefore separate from the repository checkout. Editing
 `research-hub/app` does not update the live API until the research-hub image is
 rebuilt and its container is recreated.
@@ -81,10 +81,10 @@ failures reach a terminal state with the attempt error. Redis uses AOF and
 Canonical URLs plus content hashes produce stable document IDs, and stable chunk
 IDs include the document, chunk index, and chunker version. Re-ingesting unchanged
 content skips existing chunks; changed content is completely embedded before its
-old chunks are removed. `DELETE /documents?url=...` removes every version/chunk fo
+old chunks are removed. `DELETE /documents?url=...` removes every version/chunk for
 a canonical source URL.
 
-Important remaining limitations include hardcoded/default credentials, crawle
+Important remaining limitations include hardcoded/default credentials, crawler
 SSRF protections, backups, and CI coverage. Redis AOF improves
 durability but is not a backup or a high-availability queue.
 
@@ -95,7 +95,7 @@ HUB-014 makes every public Pydantic model reject unknown fields. The unused
 `tags_filter` as `/query`. Deterministic tests validate documented payloads against
 the OpenAPI models and assert clear 422 responses for unsupported fields.
 
-HUB-015 adds request IDs, job correlation, secret-safe JSON logs, API and worke
+HUB-015 adds request IDs, job correlation, secret-safe JSON logs, API and worker
 Prometheus endpoints, version-controlled alert rules, and a provisioned Grafana
 pipeline dashboard. The optional monitoring path and thresholds are documented in
 `docs/OBSERVABILITY.md`.

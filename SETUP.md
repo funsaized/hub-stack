@@ -19,7 +19,7 @@
 
 ### Enable WSL2
 ```powershell
-# Run in PowerShell as Administrato
+# Run in PowerShell as Administrator
 wsl --install
 wsl --set-default-version 2
 ```
@@ -46,7 +46,7 @@ Reboot → enter BIOS → enable:
 2. Install with WSL2 backend (default)
 3. Restart
 4. Accept the license agreement
-5. Wait for "Engine running" indicato
+5. Wait for "Engine running" indicator
 
 ## 2. WSL2 Ubuntu setup
 
@@ -114,7 +114,7 @@ Reload: `source ~/.bashrc`
 ### Install lazydocker binary (curl fallback)
 ```bash
 curl -fsSL https://github.com/jesseduffield/lazydocker/releases/download/v0.23.3/lazydocker_0.23.3_Linux_x86_64.tar.gz | tar -xz -C /tmp/
-sudo mv /tmp/lazydocker /usr/local/bin/lazydocker && chmod +x /usr/local/bin/lazydocke
+sudo mv /tmp/lazydocker /usr/local/bin/lazydocker && chmod +x /usr/local/bin/lazydocker
 ```
 
 ## 3. Docker setup
@@ -176,8 +176,8 @@ The Research Worker has no host port. It consumes the durable Redis queue and
 shares the Research-Hub image. After application changes, rebuild both processes:
 
 ```bash
-docker compose up -d --build research-hub research-worke
-docker compose logs --tail=100 research-worke
+docker compose up -d --build research-hub research-worker
+docker compose logs --tail=100 research-worker
 ```
 
 Worker behavior can be tuned in `.env` with `WORKER_LEASE_SECONDS`,
@@ -243,7 +243,7 @@ export PATH="/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Fil
 docker version
 ```
 
-### "qwen2.5:7b not found" from inside a containe
+### "qwen2.5:7b not found" from inside a container
 The model exists on disk but is not in Ollama's running index. Restart Ollama:
 ```bash
 docker compose restart ollama

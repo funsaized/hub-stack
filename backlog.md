@@ -134,7 +134,7 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ## P1 — Daily-use reliability
 
-### HUB-007 — Replace in-process background tasks with a durable worke
+### HUB-007 — Replace in-process background tasks with a durable worker
 
 **Status:** ✅ Done
 
@@ -488,7 +488,7 @@ Evaluate Postgres only when job/source relationships, audit history, or complex 
 
 **Revisit trigger:** source/version metadata requires transactional cross-entity queries or durable audit history.
 
-### HUB-027 — Evaluate a knowledge graph laye
+### HUB-027 — Evaluate a knowledge graph layer
 
 Do not add a graph until hybrid retrieval, reranking, citation validation, and a retrieval evaluation set are in place.
 

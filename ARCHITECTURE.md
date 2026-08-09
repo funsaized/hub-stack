@@ -98,7 +98,7 @@ later ────────────────────────�
    ┌─────────────────┐
    │  Research-Hub   │
    │  embed query    │  nomic-embed-text
-   │  search Qdrant  │  top 5 simila
+   │  search Qdrant  │  top 5 similar
    └────────┬────────┘
             │
             ▼ (if /rag)
@@ -122,7 +122,7 @@ later ────────────────────────�
 - Created on first startup, persists across restarts (named volume)
 
 ### Redis
-- Durable FIFO queue + state for the research API and dedicated worke
+- Durable FIFO queue + state for the research API and dedicated worker
 - Job metadata keyed by `research:job:{uuid}`
 - Job index list at `research:jobs`
 - Pending/processing lists and expiring claim leases prevent duplicate execution
@@ -143,7 +143,7 @@ later ────────────────────────�
 - Headless browser crawler with LLM-aware extraction
 - Returns clean markdown (no nav, ads, scripts)
 - Defaults to 4 concurrent crawlers
-- Authenticated via `CRAWL4AI_API_TOKEN` env va
+- Authenticated via `CRAWL4AI_API_TOKEN` env var
 
 ### Research-Hub
 - FastAPI API process; accepts and durably enqueues research jobs

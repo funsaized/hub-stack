@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 import uuid
-from contextlib import asynccontextmanage
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -23,7 +23,7 @@ orchestrator: ResearchOrchestrator | None = None
 query_engine: QueryEngine | None = None
 
 
-@asynccontextmanage
+@asynccontextmanager
 async def lifespan(app: FastAPI):
     global orchestrator, query_engine
     logger.info("Starting research hub...")

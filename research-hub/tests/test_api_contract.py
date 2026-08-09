@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock
 
 from fastapi.testclient import TestClient
-from pydantic import ValidationErro
+from pydantic import ValidationError
 
 from app import main
 from app.models import QueryRequest, RAGRequest, ResearchRequest
@@ -77,7 +77,7 @@ class QueryConstructionTests(unittest.IsolatedAsyncioTestCase):
 
 class DocumentContractTests(unittest.TestCase):
     def setUp(self):
-        self.previous = main.orchestrato
+        self.previous = main.orchestrator
         documents = Mock()
         documents.get.return_value = {
             "document_id": "doc-1", "markdown": "exact", "http_metadata": {},

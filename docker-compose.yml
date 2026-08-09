@@ -9,7 +9,7 @@ services:
     container_name: hub-ollama
     restart: unless-stopped
     ports:
-      # Localhost by default. Set OLLAMA_BIND_ADDRESS to a trusted LAN o
+      # Localhost by default. Set OLLAMA_BIND_ADDRESS to a trusted LAN or
       # Tailscale interface address only when remote model access is intended.
       - "${OLLAMA_BIND_ADDRESS:-127.0.0.1}:${OLLAMA_HOST_PORT:-11435}:11434"
     volumes:
@@ -132,7 +132,7 @@ services:
       - "127.0.0.1:3002:3000"
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewe
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
     volumes:
       - grafana_data:/var/lib/grafana
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -237,7 +237,7 @@ services:
     build:
       context: ./research-hub
       dockerfile: Dockerfile
-    container_name: hub-research-worke
+    container_name: hub-research-worker
     restart: unless-stopped
     command: ["python", "-m", "app.worker"]
     stop_grace_period: 30s
