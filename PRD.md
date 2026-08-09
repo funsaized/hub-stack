@@ -61,7 +61,7 @@ A self-hosted, GPU-accelerated research workstation that runs entirely on a sing
 - Qdrant for vectors
 - Redis AOF for the durable FIFO queue, job state, claim leases, and retry metadata
 - Re-ingestion uses canonical URLs and deterministic document/chunk IDs so unchanged content is skipped and changed versions replace stale chunks
-- Postgres available but unused
+- SQLite retains source documents; Postgres is intentionally absent until a real owner exists
 
 ### Query
 - POST /query returns top-k chunks with metadata
@@ -69,9 +69,9 @@ A self-hosted, GPU-accelerated research workstation that runs entirely on a sing
 - Optional: filter by topic, tags, date range
 
 ### Observability
-- Dozzle for logs
-- Uptime Kuma for service health
-- 9 monitors configured
+- Optional Dozzle profile for logs
+- Optional Uptime Kuma profile for service health
+- Optional Prometheus/Grafana profile for pipeline metrics
 
 ## Non-functional requirements
 

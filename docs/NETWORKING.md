@@ -8,12 +8,12 @@ between containers by Compose DNS but have no host or LAN listener.
 |---|---:|---|
 | Ollama | `127.0.0.1:11435` | Local model API; optionally configurable |
 | Research Hub | `127.0.0.1:8000` | Research/query API |
-| Open WebUI | `127.0.0.1:8080` | Chat UI |
-| Dozzle | `127.0.0.1:8888` | Container logs |
+| Open WebUI (`webui`) | `127.0.0.1:8080` | Optional chat UI |
+| Dozzle (`logs`) | `127.0.0.1:8888` | Optional container logs |
 | SearXNG | `127.0.0.1:8889` | Search UI |
-| Uptime Kuma | `127.0.0.1:3001` | Monitoring UI |
+| Uptime Kuma (`uptime`) | `127.0.0.1:3001` | Optional monitoring UI |
 
-Redis, Postgres, Qdrant, and Crawl4AI publish no host ports. Use `docker compose
+Redis, Qdrant, and Crawl4AI publish no host ports. Use `docker compose
 exec` for maintenance and Compose service names such as `hub-qdrant:6333` for
 container-to-container monitoring.
 

@@ -20,6 +20,7 @@ docker compose logs research-hub research-worker
 
 ## Metrics and dashboard
 
+Start this optional stack with `docker compose --profile observability up -d`.
 The API exposes `/metrics`; the worker exposes port 9000 only on the Compose
 network. Prometheus scrapes both every 15 seconds. Grafana is available at
 http://localhost:3002 with the provisioned **Research Hub Pipeline** dashboard.

@@ -67,28 +67,10 @@ services:
       retries: 5
 
   # =====================================================================
-  # PostgreSQL with pgvector
-  # =====================================================================
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: hub-postgres
-    restart: unless-stopped
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      POSTGRES_DB: hub
-      POSTGRES_USER: hub
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hub_dev_password}
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hub -d hub"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
-  # =====================================================================
   # Dozzle — Docker log viewer
   # =====================================================================
   dozzle:
+    profiles: [logs]
     image: amir20/dozzle:latest
     container_name: hub-dozzle
     restart: unless-stopped
@@ -97,13 +79,14 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      DOZZLE_ENABLE_ACTIONS: "true"
+      DOZZLE_ENABLE_ACTIONS: "false"
       DOZZLE_NO_ANALYTICS: "true"
 
   # =====================================================================
   # Uptime Kuma
   # =====================================================================
   uptime-kuma:
+    profiles: [uptime]
     image: louislam/uptime-kuma:latest
     container_name: hub-uptime-kuma
     restart: unless-stopped
@@ -114,6 +97,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
   prometheus:
+    profiles: [observability]
     image: prom/prometheus:v3.1.0
     container_name: hub-prometheus
     restart: unless-stopped
@@ -125,6 +109,7 @@ services:
       - prometheus_data:/prometheus
 
   grafana:
+    profiles: [observability]
     image: grafana/grafana:11.4.0
     container_name: hub-grafana
     restart: unless-stopped
@@ -283,6 +268,7 @@ services:
   # Open WebUI — chat interface
   # =====================================================================
   open-webui:
+    profiles: [webui]
     image: ghcr.io/open-webui/open-webui:main
     container_name: hub-open-webui
     restart: unless-stopped
@@ -308,7 +294,6 @@ volumes:
   ollama_data:
   qdrant_data:
   redis_data:
-  postgres_data:
   uptime_kuma_data:
   crawl4ai_data:
   research_hub_data:

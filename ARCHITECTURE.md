@@ -2,6 +2,11 @@
 
 ## System overview
 
+The default runtime is Ollama, Qdrant, Redis, SearXNG, Crawl4AI,
+Research-Hub, and its worker. UI and operations components shown below are
+optional Compose profiles. Postgres in the historical host diagram is no longer
+part of Compose; see `docs/COMPOSE_PROFILES.md` for the executable topology.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                          Windows 11 host                                 │
@@ -129,11 +134,6 @@ later ────────────────────────�
 - AOF persistence and `noeviction` protect queue records; heartbeats, bounded retries,
   timeouts, and periodic reconciliation recover abandoned work
 
-### Postgres
-- Not currently used by research-hub
-- Available for relational data: agent memory, user prefs, audit logs
-- pgvector extension available for SQL-side similarity search
-
 ### SearXNG
 - Private meta-search proxy
 - Currently configured to use DuckDuckGo only
@@ -163,22 +163,26 @@ later ────────────────────────�
 - Chat interface for qwen2.5:7b
 - Has memory, conversation history, code highlighting
 - Not yet wired to the research-hub knowledge base (planned)
+- Optional Compose profile: `webui`
 
 ### Dozzle
 - Live Docker log viewer on :8888
 - Replaces `docker logs -f` with a searchable web UI
+- Optional Compose profile: `logs`; container actions are disabled
 
 ### Prometheus and Grafana
 - Prometheus scrapes the API and dedicated worker without a push gateway
 - Grafana provisions a pipeline dashboard from version-controlled JSON
 - Alert rules cover job failures, API errors, and slow generation
 - See `docs/OBSERVABILITY.md` for the metric and correlation contract
+- Optional Compose profile: `observability`
 
 ### Uptime Kuma
 - Service health monitor on :3001
 - Core service uptime monitors are configured manually; pipeline metrics and
   alert evaluation live in Prometheus/Grafana
 - Push notifications via Discord/Telegram webhook
+- Optional Compose profile: `uptime`
 
 ## Why these choices
 
@@ -200,7 +204,7 @@ later ────────────────────────�
 - **No compose-level healthcheck override for research-hub**: Dockerfile's curl-based healthcheck is used (wget has IPv6 issues on slim images)
 - **Qdrant collection is persistent and validated on startup**: research-hub creates a missing collection once, preserves an existing collection, and refuses to start without modifying data when its vector size or distance is incompatible with the configured embedding model
 - **Loopback-only ingress by default**: local UIs and the API bind to `127.0.0.1`;
-  Redis, Postgres, Qdrant, and Crawl4AI have no published host ports. Ollama is
+  Redis, Qdrant, and Crawl4AI have no published host ports. Ollama is
   loopback-only unless `OLLAMA_BIND_ADDRESS` selects a trusted interface.
 - **gpu=nvidia, count=1**: only Ollama gets GPU; the rest run on CPU
 - **Separate liveness and readiness**: Docker probes research-hub `/livez`; capability readiness and dependency diagnostics use `/readyz` and `/health/full`. See `docs/HEALTHCHECKS.md` and `docs/CURRENT_STATE.md`.
@@ -211,6 +215,6 @@ later ────────────────────────�
 
 - No authentication on the API, so it remains loopback-only. Add an authenticated
   reverse proxy before intentionally making it remote.
-- No backup strategy. Postgres + Redis + Qdrant volumes have the only state.
+- No backup strategy. Redis, Qdrant, Research-Hub, and optional-service volumes hold state.
 - No rate limiting. The crawler will hammer sites if you set depth=100.
 - No multi-tenant. All jobs go to the same Qdrant collection.

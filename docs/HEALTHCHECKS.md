@@ -22,7 +22,6 @@ Both mounted via `./healthcheck:/healthcheck:ro` into the container.
 | ollama | bash `/healthcheck/healthcheck.sh 11434` | has bash |
 | qdrant | bash `/healthcheck/healthcheck.sh 6333` | has bash |
 | redis | `redis-cli ping` | built-in |
-| postgres | `pg_isready -U hub -d hub` | built-in |
 | searxng | python3 socket probe | no bash |
 | crawl4ai | bash `/healthcheck/healthcheck.sh 11235` | has bash |
 | research-hub | Dockerfile `curl -f http://localhost:8000/livez` | process liveness; has curl, IPv6-safe |
@@ -36,7 +35,7 @@ capability-specific dependency readiness. `/health/full` is a diagnostic view
 and remains HTTP 200 when dependencies are degraded.
 
 These probes run inside their containers and do not require host-published ports.
-Uptime Kuma should likewise use Compose service names (`qdrant:6333`,
+Optional Uptime Kuma should likewise use Compose service names (`qdrant:6333`,
 `redis:6379`, and so on); see `SETUP.md`.
 
 The API research readiness confirms its dependencies, not that a worker is

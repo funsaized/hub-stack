@@ -13,16 +13,14 @@ A reusable research service that searches the web, crawls results, extracts clea
 | Ollama | `127.0.0.1:11435` (configurable) | Local LLM + embeddings |
 | Qdrant | Internal only | Vector DB for RAG |
 | Redis | Internal only | Durable ingestion queue and job state |
-| Postgres | Internal only | Relational store with pgvector |
 | SearXNG | `127.0.0.1:8889` | Private meta-search |
 | Crawl4AI | Internal only | Web crawler with LLM-friendly extraction |
 | Research-Hub | `127.0.0.1:8000` | FastAPI orchestrator |
 | Research Worker | Internal only | Durable search/crawl/embed/store worker |
-| Open WebUI | `127.0.0.1:8080` | Chat interface |
-| Dozzle | `127.0.0.1:8888` | Live Docker log viewer |
-| Uptime Kuma | `127.0.0.1:3001` | Service health monitoring |
-| Prometheus | `127.0.0.1:9090` | Pipeline metrics and alert evaluation |
-| Grafana | `127.0.0.1:3002` | Provisioned Research Hub dashboard |
+| Open WebUI (`webui`) | `127.0.0.1:8080` | Optional chat interface |
+| Dozzle (`logs`) | `127.0.0.1:8888` | Optional Docker log viewer |
+| Uptime Kuma (`uptime`) | `127.0.0.1:3001` | Optional service monitoring |
+| Prometheus + Grafana (`observability`) | `127.0.0.1:9090`, `:3002` | Optional metrics and dashboard |
 
 ## Quick start
 
@@ -31,6 +29,11 @@ A reusable research service that searches the web, crawls results, extracts clea
 cd ~/hub-stack
 docker compose up -d
 ```
+
+This starts only the seven-container research/RAG runtime. Add independent
+optional capabilities with `--profile webui`, `--profile logs`, `--profile
+uptime`, or `--profile observability`; see
+[docs/COMPOSE_PROFILES.md](docs/COMPOSE_PROFILES.md).
 
 First run takes 5-10 minutes (image pulls, model download). After that, the stack comes up in under 90 seconds.
 
@@ -67,6 +70,8 @@ uv run --with-requirements requirements.txt python -m unittest discover -s tests
 - [docs/NETWORKING.md](docs/NETWORKING.md) — default bindings and optional remote Ollama access
 - [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) — JSON logs, correlation IDs, metrics, dashboard, and alerts
 
+- [docs/COMPOSE_PROFILES.md](docs/COMPOSE_PROFILES.md) — default topology, profiles, and resource measurements
+
 ## Hardware
 
 Validated on:
@@ -78,9 +83,9 @@ Validated on:
 
 ## Status
 
-The thirteen-service Compose stack is deployed locally. HUB-002 network boundaries,
+The seven-container default Compose stack is deployed locally. HUB-002 network boundaries,
 HUB-005 health/readiness, and
 HUB-007 through HUB-011 durable, retained, batched ingestion and tests, plus
-HUB-014 strict contracts and HUB-015 observability, are implemented; see
+HUB-014 strict contracts, HUB-015 observability, and HUB-016 topology profiles are implemented; see
 [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
 Other P0 and later work remains tracked in [backlog.md](backlog.md).

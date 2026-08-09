@@ -11,22 +11,21 @@ named volumes are therefore separate from the repository checkout. Editing
 rebuilt and its container is recreated.
 
 Ollama is the only service with NVIDIA GPU access and uses the workstation's
-RTX 3080 Ti. Qdrant corpus data, Redis job metadata, Ollama models, Postgres,
-Open WebUI, Crawl4AI, and Uptime Kuma state live in Docker named volumes.
+RTX 3080 Ti. Qdrant corpus data, Redis job metadata, Ollama models,
+Research-Hub documents, Crawl4AI, and optional UI state live in Docker named volumes.
 
 ## Running services
 
-The thirteen-service Compose topology is deployed locally. At the latest runtime
-check, Research-Hub was healthy, the dedicated worker was stable, Prometheus and
-Grafana were running, and both application scrape targets reported `up`.
+The seven-container default Compose topology is deployed locally. At the latest
+runtime check, Research-Hub was healthy and the dedicated worker was stable.
 
 Research-Hub currently uses Ollama, Qdrant, Redis, SearXNG, and Crawl4AI.
 The API only enqueues ingestion; the dedicated Research Worker claims and executes
 jobs with leases, heartbeats, timeouts, bounded retries, and orphan reconciliation.
-Postgres, Open WebUI, Dozzle, and Uptime Kuma are adjacent services; Postgres is
-not currently part of the research/query data path.
+Open WebUI, Dozzle, Uptime Kuma, Prometheus, and Grafana are independent optional
+profiles. Postgres was removed because it owned no application data.
 
-HUB-002 is deployed: Redis, Postgres, Qdrant, and Crawl4AI have no published host
+HUB-002 is deployed: Redis, Qdrant, and Crawl4AI have no published host
 ports. Research Hub, Open WebUI, SearXNG, Dozzle, and Uptime Kuma bind only to
 `127.0.0.1`. Ollama also defaults to loopback, with an explicit
 `OLLAMA_BIND_ADDRESS` opt-in for a trusted LAN or Tailscale interface. See
@@ -103,3 +102,15 @@ HUB-014 and HUB-015 were rebuilt and deployed on 2026-08-09. Live verification
 confirmed strict unknown-field rejection with HTTP 422, the API liveness response,
 both Prometheus scrape targets, all three alert rules, and the provisioned Grafana
 dashboard.
+
+## Verified simplified Compose topology
+
+HUB-016 is implemented and deployed locally. Default Compose starts only Ollama,
+Qdrant, Redis, SearXNG, Crawl4AI, Research-Hub, and its worker. Open WebUI,
+Dozzle, Uptime Kuma, and the Prometheus/Grafana pair are opt-in profiles. Postgres
+is absent from Compose; its old named volume was retained rather than deleted.
+
+All profile configurations rendered successfully. A stopped, already-pulled
+default stack reached healthy API status in 39.4 seconds and used approximately
+1,014 MiB in a post-start idle sample. See `docs/COMPOSE_PROFILES.md` for profile
+commands, per-profile measurements, and measurement caveats.

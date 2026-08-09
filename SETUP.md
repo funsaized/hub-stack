@@ -160,16 +160,17 @@ docker compose up -d
 ```
 
 First run takes 5-10 minutes:
-- Downloads/builds the images for 13 services (size varies with image versions)
+- Downloads/builds the images for seven required services (size varies with image versions)
 - Builds the research-hub image locally
 - Ollama pulls qwen2.5:7b (~5 GB) and nomic-embed-text (~300 MB) on first run
 
-Subsequent starts take ~90 seconds.
+On the reference workstation, an already-pulled stopped stack reached API health
+in 39.4 seconds. First-time image and model downloads take longer.
 
 ### Verify
 ```bash
 docker compose ps
-# All services should show "healthy" after 90 seconds
+# Required services with healthchecks should become healthy
 ```
 
 The Research Worker has no host port. It consumes the durable Redis queue and
@@ -189,12 +190,16 @@ The heartbeat must remain shorter than the lease. On shutdown, the worker drains
 its current task or releases it; after an unclean stop, lease expiry and periodic
 reconciliation requeue the job.
 
-Pipeline metrics and alert rules start with Compose. Open Grafana at
+Pipeline metrics and alert rules are optional. Start them with
+`docker compose --profile observability up -d`, then open Grafana at
 http://localhost:3002 for the provisioned dashboard or Prometheus at
 http://localhost:9090. See `docs/OBSERVABILITY.md` for metric names, structured
 log fields, correlation behavior, and thresholds.
 
 ## 6. Set up Uptime Kuma monitors
+
+Start it first with `docker compose --profile uptime up -d`. Other optional
+services only resolve from Kuma when their profiles are also running.
 
 1. Open http://localhost:3001
 2. Create admin account on first visit
@@ -205,7 +210,6 @@ log fields, correlation behavior, and thresholds.
 | Ollama | HTTP(s) | http://ollama:11434/api/tags |
 | Qdrant | HTTP(s) | http://qdrant:6333/healthz |
 | Redis | TCP Port | redis:6379 |
-| Postgres | TCP Port | postgres:5432 |
 | Dozzle | HTTP(s) | http://dozzle:8080/ |
 | SearXNG | HTTP(s) | http://searxng:8080/ |
 | Crawl4AI | HTTP(s) | http://crawl4ai:11235/health |

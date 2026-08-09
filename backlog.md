@@ -320,6 +320,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-016 — Simplify the default Compose topology
 
+**Status:** ✅ Done
+
 **Problem:** Ten always-on services create unnecessary operational and security surface for an application under 1,000 lines.
 
 **Work:**
