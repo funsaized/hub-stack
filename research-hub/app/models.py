@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -109,6 +109,10 @@ class ChatCompletionRequest(ContractModel):
     top_p: float = Field(default=0.9, gt=0, le=1)
     max_tokens: int = Field(default=1024, ge=1, le=4096)
     stop: Optional[str | list[str]] = None
+    # Open WebUI includes its enabled tool schemas on OpenAI-compatible calls.
+    # Corpus chat does not execute them, but accepting the standard field keeps
+    # the adapter compatible while preserving strict validation elsewhere.
+    tools: Optional[list[dict[str, Any]]] = None
 
 
 class ChatCompletionChoice(ContractModel):

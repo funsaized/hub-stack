@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from app.clients import QdrantClient
 from app.openai_compat import sse_chunk
-from app.models import ChatMessage, QueryChunk
+from app.models import ChatCompletionRequest, ChatMessage, QueryChunk
 from app.query import PreparedChat, QueryEngine
 
 
@@ -131,6 +131,23 @@ class QueryEngineTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_open_webui_tools_are_accepted(self):
+        request = ChatCompletionRequest(**{
+            "model": "research-corpus",
+            "messages": [{"role": "user", "content": "What is indexed?"}],
+            "stream": True,
+            "tools": [{
+                "type": "function",
+                "function": {
+                    "name": "get_current_timestamp",
+                    "description": "Get the current timestamp.",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }],
+        })
+
+        self.assertEqual(request.tools[0]["function"]["name"], "get_current_timestamp")
+
     def test_sse_chunk_is_openai_compatible(self):
         chunk = sse_chunk("chatcmpl-test", 123, {"content": "hello"})
         self.assertTrue(chunk.startswith("data: "))
