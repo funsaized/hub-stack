@@ -39,7 +39,7 @@ class StubOrchestrator:
 class WorkerRedisIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.redis = redis_async.from_url(
-            os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/0"), decode_responses=True
+            os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15"), decode_responses=True
         )
         try:
             await self.redis.ping()
@@ -58,7 +58,7 @@ class WorkerRedisIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     def worker(self, orchestrator, attempts=3):
         cfg = Config(
-            redis_url="redis://localhost:6379/0", qdrant_url="", ollama_url="",
+            redis_url="redis://localhost:6379/15", qdrant_url="", ollama_url="",
             llm_model="", embedding_model="", searxng_url="", crawl4ai_url="",
             crawl4ai_token="", log_level="info", worker_lease_seconds=30,
             worker_heartbeat_seconds=5, job_timeout_seconds=5,

@@ -177,6 +177,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-009 — Persist canonical source documents outside the vector index
 
+**Status:** ✅ Done
+
 **Problem:** Only chunks are retained. The system cannot reliably re-chunk, re-embed, inspect extraction, compare versions, or rebuild Qdrant.
 
 **Work:**
@@ -194,6 +196,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 - Deleting a source removes both canonical content and derived vectors.
 
 ### HUB-010 — Batch embeddings and checkpoint Qdrant writes
+
+**Status:** ✅ Done
 
 **Problem:** Embeddings are generated one at a time, accumulated in memory, and written in one final upsert.
 
@@ -213,6 +217,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 - An integration benchmark shows throughput improvement over sequential requests.
 
 ### HUB-011 — Add real automated tests
+
+**Status:** ✅ Done
 
 **Problem:** `test_research.py` and `test_query.py` are executable smoke scripts, not an isolated or repeatable test suite.
 

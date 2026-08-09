@@ -95,6 +95,9 @@ class FailedEmbeddingSafetyTests(unittest.IsolatedAsyncioTestCase):
     async def test_embedding_failure_does_not_replace_prior_version(self):
         subject = object.__new__(ResearchOrchestrator)
         subject.cfg = SimpleNamespace(chunk_size=8, chunk_overlap=0)
+        subject.cfg.embedding_batch_size = 16
+        subject.cfg.embedding_batch_chars = 12000
+        subject.cfg.dependency_max_attempts = 1
         subject.get_job = AsyncMock(return_value={
             "topic": "topic", "depth": 1, "max_sources": 1,
             "language": "en", "tags": [],
@@ -108,7 +111,9 @@ class FailedEmbeddingSafetyTests(unittest.IsolatedAsyncioTestCase):
             "title": "Page",
             "markdown": "first.\n\nsecond.",
         }))
-        subject.ollama = Mock(embed=AsyncMock(side_effect=[[1.0, 0.0], RuntimeError("embed down")]))
+        subject.ollama = Mock(embed_batch=AsyncMock(side_effect=RuntimeError("embed down")))
+        subject.documents = Mock()
+        subject.documents.checkpoint.return_value = 0
         subject.qdrant = Mock()
         subject.qdrant.document_chunks.return_value = [{
             "id": "prior", "payload": {"document_id": "prior-version"},
@@ -130,6 +135,7 @@ class DocumentDeletionEndpointTests(unittest.TestCase):
         ]
         self.qdrant = qdrant
         main.orchestrator = Mock(qdrant=qdrant)
+        main.orchestrator.documents.delete_url.return_value = 1
         self.client = TestClient(main.app)
 
     def tearDown(self):
@@ -143,6 +149,7 @@ class DocumentDeletionEndpointTests(unittest.TestCase):
         self.assertEqual(response.json(), {
             "canonical_url": "https://example.com/page",
             "chunks_deleted": 2,
+            "documents_deleted": 1,
         })
         self.qdrant.delete_document.assert_called_once_with("https://example.com/page")
 

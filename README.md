@@ -46,7 +46,7 @@ python3 test_research.py
 # Query the knowledge base
 python3 test_query.py
 
-# Automated collection-persistence regression tests
+# Automated unit and integration regression tests
 cd research-hub
 uv run --with-requirements requirements.txt python -m unittest discover -s tests -v
 ```
@@ -61,6 +61,7 @@ uv run --with-requirements requirements.txt python -m unittest discover -s tests
 - [docs/HEALTHCHECKS.md](docs/HEALTHCHECKS.md) — how the Docker healthcheck system works
 - [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) — dated local deployment and health-contract snapshot
 - [docs/MODELS.md](docs/MODELS.md) — current model choices, swap instructions
+- [docs/DOCUMENT_STORE.md](docs/DOCUMENT_STORE.md) — retained sources, deletion, and index rebuilds
 
 ## Hardware
 
@@ -74,6 +75,6 @@ Validated on:
 ## Status
 
 The full eleven-service stack is deployed locally. HUB-005 health/readiness and
-HUB-007/HUB-008 durable, idempotent ingestion are rebuilt and verified; see
+HUB-007 through HUB-011 durable, retained, batched ingestion and tests are verified; see
 [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
 Other P0 and later work remains tracked in [backlog.md](backlog.md).
