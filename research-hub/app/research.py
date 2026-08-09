@@ -8,6 +8,8 @@ import re
 import uuid
 import posixpath
 import time
+from collections import Counter
+from email.utils import parsedate_to_datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from datetime import datetime, timezone
 from typing import Any
@@ -31,6 +33,12 @@ logger = logging.getLogger(__name__)
 CHUNKER_VERSION = "recursive-v1"
 EXTRACTION_VERSION = "crawl4ai-markdown-v1"
 TRACKING_QUERY_PARAMETERS = {"fbclid", "gclid", "mc_cid", "mc_eid"}
+INJECTION_PATTERNS = (
+    re.compile(r"(?i)\b(ignore|disregard|forget)\b.{0,40}\b(previous|prior|system)\b.{0,30}\b(instruction|prompt)s?\b"),
+    re.compile(r"(?i)\b(system|developer)\s*(message|prompt)\s*:"),
+    re.compile(r"(?i)\b(reveal|print|return|exfiltrate)\b.{0,40}\b(secret|token|password|api[ _-]?key|environment)\b"),
+    re.compile(r"(?i)\b(call|use|invoke)\b.{0,20}\b(tool|function|shell|terminal)\b"),
+)
 
 
 def canonicalize_url(url: str) -> str:
@@ -78,6 +86,96 @@ def document_is_complete(existing: list[dict], document_id: str, chunk_count: in
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def classify_and_sanitize(text: str) -> tuple[str, list[str]]:
+    """Neutralize instruction-like spans in derived chunks; retained source stays exact."""
+    labels: list[str] = []
+    sanitized = text
+    for index, pattern in enumerate(INJECTION_PATTERNS, 1):
+        if pattern.search(sanitized):
+            labels.append(f"prompt_injection_pattern_{index}")
+            sanitized = pattern.sub("[potential prompt-injection text removed]", sanitized)
+    return sanitized, labels
+
+
+def normalize_domain(value: str) -> str:
+    return value.strip().lower().lstrip(".")
+
+
+def domain_matches(hostname: str, configured: set[str]) -> bool:
+    return any(hostname == domain or hostname.endswith(f".{domain}") for domain in configured)
+
+
+def parse_source_date(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            parsed = parsedate_to_datetime(str(value))
+        except (TypeError, ValueError):
+            return None
+    return parsed.replace(tzinfo=parsed.tzinfo or timezone.utc).astimezone(timezone.utc)
+
+
+def source_quality_score(result: dict) -> float:
+    """Transparent authority/completeness heuristic, separate from relevance."""
+    host = (urlsplit(result.get("url", "")).hostname or "").lower()
+    score = 0.5
+    if host.endswith((".gov", ".edu")):
+        score += 0.25
+    if result.get("title"):
+        score += 0.1
+    if result.get("snippet"):
+        score += 0.1
+    return round(min(score, 1.0), 3)
+
+
+def apply_source_policy(results: list[dict], req: ResearchRequest,
+                        now: datetime | None = None) -> tuple[list[dict], list[dict]]:
+    """Normalize, deduplicate, filter, and annotate ordered search results."""
+    allowed = {normalize_domain(v) for v in req.allowed_domains if normalize_domain(v)}
+    blocked = {normalize_domain(v) for v in req.blocked_domains if normalize_domain(v)}
+    domain_counts: Counter[str] = Counter()
+    seen: set[str] = set()
+    accepted: list[dict] = []
+    decisions: list[dict] = []
+    cutoff = (now or datetime.now(timezone.utc))
+    for result in results:
+        original = result.get("url", "")
+        canonical = canonicalize_url(original)
+        host = (urlsplit(canonical).hostname or "").lower()
+        reason = "accepted"
+        published = parse_source_date(result.get("published_at"))
+        if not host or urlsplit(canonical).scheme not in {"http", "https"}:
+            reason = "invalid_url"
+        elif canonical in seen:
+            reason = "duplicate"
+        elif allowed and not domain_matches(host, allowed):
+            reason = "not_allowed"
+        elif domain_matches(host, blocked):
+            reason = "blocked"
+        elif domain_counts[host] >= req.per_domain_limit:
+            reason = "domain_limit"
+        elif req.freshness_days and (
+            published is None or (cutoff - published).days > req.freshness_days
+        ):
+            reason = "stale_or_undated"
+        decision = {"url": original, "canonical_url": canonical, "domain": host,
+                    "decision": reason}
+        decisions.append(decision)
+        seen.add(canonical)
+        if reason != "accepted":
+            continue
+        domain_counts[host] += 1
+        enriched = dict(result, url=canonical, canonical_url=canonical,
+                        published_at=published.isoformat() if published else None,
+                        quality_score=source_quality_score(result),
+                        freshness_days=(cutoff - published).days if published else None)
+        accepted.append(enriched)
+    return accepted, decisions
 
 
 def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> list[str]:
@@ -223,6 +321,10 @@ class ResearchOrchestrator:
             "max_sources": req.max_sources,
             "language": req.language,
             "tags": req.tags,
+            "allowed_domains": req.allowed_domains,
+            "blocked_domains": req.blocked_domains,
+            "per_domain_limit": req.per_domain_limit,
+            "freshness_days": req.freshness_days,
             "status": JobStatus.PENDING.value,
             "created_at": now,
             "updated_at": now,
@@ -271,6 +373,15 @@ class ResearchOrchestrator:
             max_sources = job["max_sources"]
             language = job["language"]
             tags = job["tags"]
+            respect_robots = getattr(self.cfg, "respect_robots_txt", True)
+            request = ResearchRequest(
+                topic=topic, depth=depth, max_sources=max_sources,
+                language=language, tags=tags,
+                allowed_domains=job.get("allowed_domains", []),
+                blocked_domains=job.get("blocked_domains", []),
+                per_domain_limit=job.get("per_domain_limit", 2),
+                freshness_days=job.get("freshness_days"),
+            )
 
             # Phase 1: Search
             phase = "search"
@@ -284,11 +395,15 @@ class ResearchOrchestrator:
             if not search_results:
                 raise RuntimeError("No search results found")
 
-            # Take top N URLs by depth
-            urls_to_crawl = [r["url"] for r in search_results[:depth]]
+            policy_results, policy_decisions = apply_source_policy(search_results, request)
+            selected_results = policy_results[:depth]
+            urls_to_crawl = [r["url"] for r in selected_results]
+            if not urls_to_crawl:
+                raise RuntimeError("No search results passed crawl policy")
             await self._update_job(job_id, progress={
                 "phase": "searching_done",
                 "candidate_urls": len(urls_to_crawl),
+                "crawl_policy": policy_decisions,
             })
 
             # Phase 2: Crawl (concurrent)
@@ -304,7 +419,9 @@ class ResearchOrchestrator:
                     domain = urlsplit(url).hostname or "unknown"
                     started = time.monotonic()
                     try:
-                        res = await self.crawl4ai.crawl(url)
+                        res = await self.crawl4ai.crawl(
+                            url, respect_robots_txt=respect_robots
+                        )
                     except Exception:
                         CRAWLS.labels("failed").inc()
                         logger.exception("crawl_failed", extra={
@@ -321,6 +438,7 @@ class ResearchOrchestrator:
                         "duration_seconds": round(time.monotonic() - started, 4),
                     })
                     if res:
+                        res["policy_metadata"] = selected_results[idx]
                         crawl_results.append(res)
                     await self._update_job(job_id, progress={
                         "phase": "crawling",
@@ -355,6 +473,19 @@ class ResearchOrchestrator:
                 md = res.get("markdown", "")
                 if not md:
                     continue
+                policy_metadata = res.setdefault("policy_metadata", {})
+                if not policy_metadata.get("published_at"):
+                    http_metadata = res.get("http_metadata", {})
+                    published = parse_source_date(
+                        http_metadata.get("published_time")
+                        or http_metadata.get("date")
+                        or http_metadata.get("last_modified")
+                    )
+                    if published:
+                        policy_metadata["published_at"] = published.isoformat()
+                        policy_metadata["freshness_days"] = max(
+                            0, (datetime.now(timezone.utc) - published).days
+                        )
                 chunks = chunk_text(md, self.cfg.chunk_size, self.cfg.chunk_overlap)
                 CHUNKS.observe(len(chunks))
                 canonical_url, content_hash, document_id = document_identity(res["url"], md)
@@ -399,16 +530,23 @@ class ResearchOrchestrator:
                     points = []
                     for offset, (chunk, vector) in enumerate(zip(batch, vectors)):
                         chunk_index = start + offset
+                        safe_chunk, security_labels = classify_and_sanitize(chunk)
                         points.append({
                             "id": chunk_identity(document_id, chunk_index),
                             "vector": vector,
                             "payload": {
-                                "text": chunk, "source_url": canonical_url,
+                                "text": safe_chunk, "source_url": canonical_url,
                                 "source_title": res.get("title", ""),
                                 "canonical_url": canonical_url, "content_hash": content_hash,
                                 "document_id": document_id, "chunk_index": chunk_index,
                                 "chunker_version": CHUNKER_VERSION, "topic": topic,
                                 "tags": tags, "job_id": job_id, "ingested_at": utcnow(),
+                                "published_at": res.get("policy_metadata", {}).get("published_at"),
+                                "fetched_at": fetched_at,
+                                "source_quality_score": res.get("policy_metadata", {}).get("quality_score", 0.5),
+                                "source_freshness_days": res.get("policy_metadata", {}).get("freshness_days"),
+                                "security_labels": security_labels,
+                                "robots_respected": respect_robots,
                             },
                         })
                     upsert_started = time.monotonic()
@@ -454,6 +592,8 @@ class ResearchOrchestrator:
                     "average_batch_seconds": round(
                         total_batch_seconds / batches_completed, 3
                     ) if batches_completed else 0,
+                    "crawl_policy": policy_decisions,
+                    "robots_respected": respect_robots,
                 },
             )
 

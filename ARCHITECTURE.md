@@ -69,7 +69,7 @@ the evidence and integration work required before adopting it.
    │  (DuckDuckGo)   │  returns 20 URLs
    └────────┬────────┘
             │
-            ▼  filter top N (depth parameter)
+            ▼  canonicalize, deduplicate, domain/freshness policy, then top N
    ┌─────────────────┐
    │    Crawl4AI     │  Playwright + LLM extraction
    │  parallel 4x    │  returns markdown
@@ -143,6 +143,7 @@ later ────────────────────────�
 - Headless browser crawler with LLM-aware extraction
 - Returns clean markdown (no nav, ads, scripts)
 - Defaults to 4 concurrent crawlers
+- Receives `check_robots_txt` from the worker; enabled by default
 - Authenticated via `CRAWL4AI_API_TOKEN` env var
 
 ### Research-Hub
@@ -158,6 +159,16 @@ later ────────────────────────�
 - Canonical URLs and content hashes form stable document IDs; chunk IDs also include
   chunk index and chunker version. Unchanged content is skipped and changed content is
   fully embedded/upserted before stale chunks are removed.
+- Research requests may allow/block domains, cap sources per domain, and require a
+  freshness window. Canonical-equivalent URLs are crawled once; accept/reject decisions
+  remain visible in job progress.
+- Exact Markdown and crawl metadata remain in SQLite for audit. Derived Qdrant chunks
+  classify and neutralize common prompt-injection spans and expose publication/fetch,
+  quality, freshness, security, and robots-policy metadata.
+- RAG treats every retrieved entry as delimited untrusted evidence. A conservative
+  UTF-8-byte token upper bound packs only complete entries after reserving system,
+  question, and answer space; returned sources are exactly those supplied to Ollama.
+  Public custom system prompts are disabled unless explicitly enabled for trusted local callers.
 
 ### Open WebUI
 - Chat interface for qwen2.5:7b

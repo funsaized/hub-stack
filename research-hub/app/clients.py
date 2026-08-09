@@ -287,6 +287,7 @@ class SearXNGClient:
                     "url": item.get("url"),
                     "title": item.get("title", ""),
                     "snippet": item.get("content", ""),
+                    "published_at": item.get("publishedDate") or item.get("published_at"),
                 })
             return [r for r in results if r["url"]]
         except Exception as e:
@@ -317,13 +318,14 @@ class Crawl4AIClient:
         except Exception:
             return False
 
-    async def crawl(self, url: str) -> dict | None:
+    async def crawl(self, url: str, *, respect_robots_txt: bool = True) -> dict | None:
         """Crawl a single URL. Returns {url, title, markdown, success} or None on failure."""
         try:
             r = await self._client.post(
                 f"{self.base_url}/crawl",
                 json={
                     "urls": [url],
+                    "crawler_config": {"check_robots_txt": respect_robots_txt},
                     "word_count_threshold": 10,
                     "extraction_strategy": "NoExtractionStrategy",
                     "chunking_strategy": {
@@ -346,7 +348,7 @@ class Crawl4AIClient:
                 "markdown": res.get("markdown", ""),
                 "http_metadata": {
                     key: value for key, value in res.get("metadata", {}).items()
-                    if key in {"status_code", "content_type", "etag", "last_modified"}
+                    if key in {"status_code", "content_type", "etag", "last_modified", "date", "published_time"}
                 },
                 "success": True,
             }

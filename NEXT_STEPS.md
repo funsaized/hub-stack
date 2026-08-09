@@ -74,14 +74,6 @@ The current 0.1.0 MVP is working end-to-end. Here's the roadmap, prioritized by 
 2. Instrument research-hub with the Langfuse SDK
 3. Web UI shows every prompt/completion with timing + cost
 
-### 9. Domain allow/block lists for the crawler
-**Why**: don't crawl reddit/spam sites, do crawl trusted domains.
-**Effort**: 1 hour
-**Steps**:
-1. Add `allowed_domains` and `blocked_domains` to research-hub config
-2. Filter the search results before crawling
-3. Per-job override
-
 ## Tier 3 — nice to have
 
 ### 10. Discord/Telegram bot for agentic delivery

@@ -114,3 +114,19 @@ All profile configurations rendered successfully. A stopped, already-pulled
 default stack reached healthy API status in 39.4 seconds and used approximately
 1,014 MiB in a post-start idle sample. See `docs/COMPOSE_PROFILES.md` for profile
 commands, per-profile measurements, and measurement caveats.
+
+## Verified RAG and source-policy hardening
+
+HUB-018, HUB-020, and HUB-021 are implemented and deployed locally. RAG context
+packing uses a conservative UTF-8-byte token upper bound, reserves model instructions,
+question, and answer capacity, never slices an evidence entry, and returns only the
+sources actually sent to generation. Retrieved text is explicitly delimited as untrusted
+evidence; common injection patterns are labeled and neutralized in derived chunks while
+the exact source remains inspectable in the SQLite document store. Custom system prompts
+are denied by default and require an explicit trusted-local configuration opt-in.
+
+Research jobs accept `allowed_domains`, `blocked_domains`, `per_domain_limit`, and
+`freshness_days`. Search URLs are canonicalized and deduplicated before crawling,
+Crawl4AI robots checking is enabled by default, and job progress records policy decisions.
+Qdrant metadata separately exposes semantic score, source-quality score, publication/fetch
+dates, freshness age, security labels, and robots-policy state.

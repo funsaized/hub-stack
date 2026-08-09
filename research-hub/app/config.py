@@ -28,6 +28,10 @@ class Config:
     embedding_batch_size: int = 16
     embedding_batch_chars: int = 12000
     dependency_max_attempts: int = 3
+    model_context_tokens: int = 8192
+    answer_reserve_tokens: int = 1024
+    allow_custom_system_prompts: bool = False
+    respect_robots_txt: bool = True
 
 
 def load_config() -> Config:
@@ -52,4 +56,11 @@ def load_config() -> Config:
         embedding_batch_size=int(os.environ.get("EMBEDDING_BATCH_SIZE", "16")),
         embedding_batch_chars=int(os.environ.get("EMBEDDING_BATCH_CHARS", "12000")),
         dependency_max_attempts=int(os.environ.get("DEPENDENCY_MAX_ATTEMPTS", "3")),
+        model_context_tokens=int(os.environ.get("MODEL_CONTEXT_TOKENS", "8192")),
+        answer_reserve_tokens=int(os.environ.get("ANSWER_RESERVE_TOKENS", "1024")),
+        allow_custom_system_prompts=os.environ.get(
+            "ALLOW_CUSTOM_SYSTEM_PROMPTS", "false"
+        ).lower() in {"1", "true", "yes"},
+        respect_robots_txt=os.environ.get("RESPECT_ROBOTS_TXT", "true").lower()
+        in {"1", "true", "yes"},
     )

@@ -203,6 +203,9 @@ services:
       - CRAWL4AI_TOKEN=hub-crawl4ai-shared-token
       - LOG_LEVEL=info
       - DOCUMENT_STORE_PATH=/app/data/documents.sqlite3
+      - MODEL_CONTEXT_TOKENS=${MODEL_CONTEXT_TOKENS:-8192}
+      - ANSWER_RESERVE_TOKENS=${ANSWER_RESERVE_TOKENS:-1024}
+      - ALLOW_CUSTOM_SYSTEM_PROMPTS=${ALLOW_CUSTOM_SYSTEM_PROMPTS:-false}
     depends_on:
       ollama:
         condition: service_healthy
@@ -250,6 +253,7 @@ services:
       - EMBEDDING_BATCH_SIZE=${EMBEDDING_BATCH_SIZE:-16}
       - EMBEDDING_BATCH_CHARS=${EMBEDDING_BATCH_CHARS:-12000}
       - DEPENDENCY_MAX_ATTEMPTS=${DEPENDENCY_MAX_ATTEMPTS:-3}
+      - RESPECT_ROBOTS_TXT=${RESPECT_ROBOTS_TXT:-true}
     volumes:
       - research_hub_data:/app/data
     depends_on:

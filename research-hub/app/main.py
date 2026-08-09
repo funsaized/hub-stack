@@ -29,7 +29,12 @@ async def lifespan(app: FastAPI):
     logger.info("Starting research hub...")
     orchestrator = ResearchOrchestrator(cfg)
     await orchestrator.init()
-    query_engine = QueryEngine(orchestrator.ollama, orchestrator.qdrant)
+    query_engine = QueryEngine(
+        orchestrator.ollama, orchestrator.qdrant,
+        model_context_tokens=cfg.model_context_tokens,
+        answer_reserve_tokens=cfg.answer_reserve_tokens,
+        allow_custom_system_prompts=cfg.allow_custom_system_prompts,
+    )
     # Ensure embedding model is available
     try:
         await ensure_embedding_model(orchestrator.ollama, cfg.embedding_model)
@@ -199,7 +204,10 @@ async def query(req: QueryRequest):
 async def rag(req: RAGRequest):
     if not query_engine:
         raise HTTPException(503, "Query engine not ready")
-    return await query_engine.rag(req)
+    try:
+        return await query_engine.rag(req)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from exc
 
 
 @app.get("/")

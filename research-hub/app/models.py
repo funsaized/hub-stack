@@ -28,6 +28,10 @@ class ResearchRequest(ContractModel):
     max_sources: int = Field(default=20, ge=1, le=100, description="Max search results to consider")
     language: str = Field(default="en", description="Search language code")
     tags: list[str] = Field(default_factory=list, description="Optional tags for the job")
+    allowed_domains: list[str] = Field(default_factory=list)
+    blocked_domains: list[str] = Field(default_factory=list)
+    per_domain_limit: int = Field(default=2, ge=1, le=20)
+    freshness_days: Optional[int] = Field(default=None, ge=1, le=36500)
 
 
 class JobInfo(ContractModel):
@@ -68,7 +72,7 @@ class RAGRequest(ContractModel):
     top_k: int = Field(default=5, ge=1, le=50)
     topic_filter: Optional[str] = None
     tags_filter: Optional[list[str]] = None
-    max_context_tokens: int = Field(default=3000, ge=500, le=8000)
+    max_context_tokens: int = Field(default=3000, ge=128, le=128000)
     system_prompt: Optional[str] = None
 
 

@@ -363,6 +363,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-018 — Use token-aware context packing
 
+**Status:** ✅ Done
+
 **Problem:** Context is truncated using an approximate characters-per-token slice that can split chunks and produce a source list that differs from the prompt.
 
 **Work:**
@@ -398,6 +400,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-020 — Harden prompts against untrusted crawled content
 
+**Status:** ✅ Done
+
 **Problem:** Crawled pages can contain instructions that compete with the RAG system prompt.
 
 **Work:**
@@ -414,6 +418,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 - Security failures are measurable in a repeatable evaluation set.
 
 ### HUB-021 — Add source quality, freshness, and crawl policy controls
+
+**Status:** ✅ Done
 
 **Problem:** The pipeline takes the first N search results without explicit authority, freshness, duplication, or domain policy.
 
