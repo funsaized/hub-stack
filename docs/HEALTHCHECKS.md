@@ -30,6 +30,22 @@ Both mounted via `./healthcheck:/healthcheck:ro` into the container.
 | dozzle | (none) | no healthcheck section |
 | uptime-kuma | (none) | relies on its own UI |
 
+## Research-hub startup and Qdrant persistence
+
+Before the API becomes live, research-hub checks the configured Qdrant collection. A missing collection is created once. An existing collection must use the configured `EMBEDDING_DIMENSION` (768 by default) and cosine distance. If either setting differs, startup fails with a `migration required` error and leaves the collection and its points untouched.
+
+This validation makes a healthy research-hub container evidence that its collection schema is compatible; it does not recreate or migrate retained vectors. Check a startup failure with:
+
+```bash
+docker compose logs research-hub
+```
+
+Run the collection regression tests from `research-hub/` with:
+
+```bash
+uv run --with-requirements requirements.txt python -m unittest discover -s tests -v
+```
+
 ## Why compose-level healthcheck overrides fail
 
 If a compose file has `healthcheck:`, it overrides the Dockerfile's HEALTHCHECK. So once you set `wget` in compose, the Dockerfile's curl version is ignored. The research-hub Dockerfile has a working curl healthcheck but the compose was overriding it — fixed by removing the compose-level block.

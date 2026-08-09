@@ -190,7 +190,8 @@ services:
       - QDRANT_URL=http://hub-qdrant:6333
       - OLLAMA_URL=http://hub-ollama:11434
       - LLM_MODEL=qwen2.5:7b
-      - EMBEDDING_MODEL=nomic-embed-text
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-768}
       - SEARXNG_URL=http://hub-searxng:8080
       - CRAWL4AI_URL=http://hub-crawl4ai:11235
       - CRAWL4AI_TOKEN=hub-crawl4ai-shared-token

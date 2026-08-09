@@ -15,6 +15,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-001 — Preserve the Qdrant collection across application restarts
 
+**Status:** ✅ Done
+
 **Problem:** `QdrantClient.__init__()` calls `recreate_collection()`, deleting the corpus whenever research-hub starts. This contradicts the documented persistence guarantee.
 
 **Work:**

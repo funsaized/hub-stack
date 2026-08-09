@@ -61,13 +61,13 @@ Same pattern, but you also need to update the Qdrant collection dimension:
 
 # Update research-hub env
 #   EMBEDDING_MODEL=mxbai-embed-large
+#   EMBEDDING_DIMENSION=1024
 
-# Then RECREATE the collection with the new dimension (this wipes data!)
-docker exec hub-qdrant curl -X DELETE http://localhost:6333/collections/research_corpus
-# The next research-hub restart will create the new collection
+# Use a new QDRANT_COLLECTION or explicitly migrate and re-embed retained data.
+# research-hub will refuse to start against an incompatible existing collection.
 ```
 
-**Caveat**: the current `QdrantClient.__init__` is hardcoded to 768. To change dimensions, edit `research-hub/app/clients.py` and update the `VectorParams(size=768, ...)`.
+Do not delete the existing collection as an automatic model-switch step. On startup, research-hub compares the existing collection's vector size and cosine distance with `EMBEDDING_DIMENSION`. A mismatch produces a clear migration error without modifying retained points.
 
 ## Storing more models
 

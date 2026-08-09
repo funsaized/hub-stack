@@ -8,6 +8,10 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
+class CollectionConfigurationError(RuntimeError):
+    """Raised when an existing Qdrant collection needs migration."""
+
+
 class OllamaClient:
     """OpenAI-compatible client for Ollama."""
 
@@ -57,16 +61,74 @@ class OllamaClient:
 class QdrantClient:
     """Wrapper around qdrant-client for our specific use."""
 
-    def __init__(self, url: str, collection: str):
+    def __init__(
+        self,
+        url: str,
+        collection: str,
+        vector_size: int = 768,
+        distance=None,
+        embedding_model: str = "nomic-embed-text",
+        client: Any | None = None,
+    ):
         from qdrant_client import QdrantClient as QC
         from qdrant_client.models import Distance, VectorParams
 
-        self._client = QC(url=url, timeout=30.0)
+        self._client = client if client is not None else QC(url=url, timeout=30.0)
         self.collection = collection
-        self._client.recreate_collection(
-            collection_name=collection,
-            vectors_config=VectorParams(size=768, distance=Distance.COSINE),
-        )
+        expected_distance = distance or Distance.COSINE
+        if self._client.collection_exists(collection):
+            self._validate_collection(
+                vector_size=vector_size,
+                distance=expected_distance,
+                embedding_model=embedding_model,
+            )
+        else:
+            created = self._client.create_collection(
+                collection_name=collection,
+                vectors_config=VectorParams(
+                    size=vector_size,
+                    distance=expected_distance,
+                ),
+            )
+            if not created:
+                self._validate_collection(
+                    vector_size=vector_size,
+                    distance=expected_distance,
+                    embedding_model=embedding_model,
+                )
+
+    def _validate_collection(self, vector_size: int, distance, embedding_model: str) -> None:
+        info = self._client.get_collection(self.collection)
+        vectors = info.config.params.vectors
+        if isinstance(vectors, dict):
+            names = ", ".join(sorted(vectors))
+            raise CollectionConfigurationError(
+                "migration required for Qdrant collection "
+                f"'{self.collection}': configured embedding model "
+                f"'{embedding_model}' expects one unnamed vector, but the "
+                f"existing collection uses named vectors: {names}. Existing data "
+                "was not modified; migrate/re-embed it or configure a different "
+                "collection."
+            )
+        existing_size = getattr(vectors, "size", None)
+        existing_distance = getattr(vectors, "distance", None)
+
+        def distance_name(value) -> str:
+            return str(getattr(value, "value", value)).lower()
+
+        if (
+            existing_size != vector_size
+            or distance_name(existing_distance) != distance_name(distance)
+        ):
+            raise CollectionConfigurationError(
+                "migration required for Qdrant collection "
+                f"'{self.collection}': configured embedding model "
+                f"'{embedding_model}' expects vector size {vector_size} and "
+                f"distance {distance_name(distance)}, but the existing collection "
+                f"uses vector size {existing_size} and distance "
+                f"{distance_name(existing_distance)}. Existing data was not modified; "
+                "migrate/re-embed it or configure a different collection."
+            )
 
     async def health(self) -> bool:
         try:

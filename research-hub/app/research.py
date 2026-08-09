@@ -82,7 +82,12 @@ class ResearchOrchestrator:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.ollama = OllamaClient(cfg.ollama_url, cfg.llm_model, cfg.embedding_model)
-        self.qdrant = QdrantClient(cfg.qdrant_url, cfg.qdrant_collection)
+        self.qdrant = QdrantClient(
+            cfg.qdrant_url,
+            cfg.qdrant_collection,
+            vector_size=cfg.embedding_dimension,
+            embedding_model=cfg.embedding_model,
+        )
         self.searxng = SearXNGClient(cfg.searxng_url)
         self.crawl4ai = Crawl4AIClient(cfg.crawl4ai_url, cfg.crawl4ai_token or None)
         self._redis: redis_async.Redis | None = None

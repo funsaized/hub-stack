@@ -16,6 +16,7 @@ class Config:
     crawl4ai_token: str
     log_level: str
     qdrant_collection: str = "research_corpus"
+    embedding_dimension: int = 768
     chunk_size: int = 800
     chunk_overlap: int = 100
 
@@ -31,4 +32,6 @@ def load_config() -> Config:
         crawl4ai_url=os.environ.get("CRAWL4AI_URL", "http://localhost:11235"),
         crawl4ai_token=os.environ.get("CRAWL4AI_TOKEN", ""),
         log_level=os.environ.get("LOG_LEVEL", "info"),
+        qdrant_collection=os.environ.get("QDRANT_COLLECTION", "research_corpus"),
+        embedding_dimension=int(os.environ.get("EMBEDDING_DIMENSION", "768")),
     )

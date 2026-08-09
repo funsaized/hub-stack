@@ -181,7 +181,7 @@ later ────────────────────────�
 
 - **Named volumes for all stateful services**: data survives `docker compose down && up`
 - **No compose-level healthcheck override for research-hub**: Dockerfile's curl-based healthcheck is used (wget has IPv6 issues on slim images)
-- **Qdrant collection is created but not recreated on startup**: bug-fix; previous version called `recreate_collection()` which wiped data on every restart
+- **Qdrant collection is persistent and validated on startup**: research-hub creates a missing collection once, preserves an existing collection, and refuses to start without modifying data when its vector size or distance is incompatible with the configured embedding model
 - **All UIs on host ports**: localhost works directly from the host; Tailscale handles remote access
 - **gpu=nvidia, count=1**: only Ollama gets GPU; the rest run on CPU
 - **HEALTHCHECK in shell scripts**: bash for containers with bash, python3 for SearXNG (no bash), curl-baked-in for research-hub. See `docs/HEALTHCHECKS.md`.

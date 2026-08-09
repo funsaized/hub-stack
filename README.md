@@ -43,6 +43,10 @@ python3 test_research.py
 
 # Query the knowledge base
 python3 test_query.py
+
+# Automated collection-persistence regression tests
+cd research-hub
+uv run --with-requirements requirements.txt python -m unittest discover -s tests -v
 ```
 
 ## Documentation
