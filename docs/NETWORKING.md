@@ -57,7 +57,7 @@ docker compose config
 ```
 
 Expected published addresses are `127.0.0.1`, except Ollama when explicitly
-configured otherwise. No `ports` entry should exist for Redis, Postgres, Qdrant,
+configured otherwise. No `ports` entry should exist for Redis, Qdrant,
 or Crawl4AI.
 
 The hub defaults to host port 11435 because Docker Desktop's built-in model runner

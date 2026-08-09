@@ -5,8 +5,9 @@ HUB-016 keeps the default deployment limited to the research and RAG data path.
 Crawl4AI, the Research-Hub API, and its dedicated ingestion worker.
 
 Postgres is no longer defined because no application component used it. Its
-existing `hub_postgres_data` named volume is deliberately not deleted, so prior
-local data remains recoverable.
+existing `hub_postgres_data` named volume was deliberately not deleted during the
+deployment change. It never held application-owned data, is not part of the
+backup set, and may be inspected and removed separately by an operator.
 
 ## Optional profiles
 

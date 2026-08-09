@@ -4,8 +4,8 @@
 
 The default runtime is Ollama, Qdrant, Redis, SearXNG, Crawl4AI,
 Research-Hub, and its worker. UI and operations components shown below are
-optional Compose profiles. Postgres in the historical host diagram is no longer
-part of Compose; see `docs/COMPOSE_PROFILES.md` for the executable topology.
+optional Compose profiles. Postgres is not part of the runtime; HUB-026 defines
+the evidence and integration work required before adopting it.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -17,11 +17,11 @@ part of Compose; see `docs/COMPOSE_PROFILES.md` for the executable topology.
 │  │   ┌──────────────────────────────────────────────────────────────┐  │ │
 │  │   │                    Docker Desktop                             │  │ │
 │  │   │                                                             │  │ │
-│  │   │   ┌───────────┐  ┌──────────┐  ┌──────────┐  ┌───────────┐ │  │ │
-│  │   │   │  Ollama    │  │  Qdrant  │  │  Redis   │  │ Postgres  │ │  │ │
-│  │   │   │  + GPU     │  │  vector  │  │  queue   │  │ + pgvector│ │  │ │
-│  │   │   │ 11434      │  │  6333    │  │  6379    │  │  5432     │ │  │ │
-│  │   │   └────────────┘  └──────────┘  └──────────┘  └───────────┘ │  │ │
+│  │   │   ┌───────────┐  ┌──────────┐  ┌──────────┐                │  │ │
+│  │   │   │  Ollama    │  │  Qdrant  │  │  Redis   │                │  │ │
+│  │   │   │  + GPU     │  │  vector  │  │  queue   │                │  │ │
+│  │   │   │ 11434      │  │  6333    │  │  6379    │                │  │ │
+│  │   │   └────────────┘  └──────────┘  └──────────┘                │  │ │
 │  │   │                                                             │  │ │
 │  │   │   ┌───────────┐  ┌──────────┐  ┌──────────┐  ┌───────────┐ │  │ │
 │  │   │   │  SearXNG   │  │ Crawl4AI │  │ Research │  │ Open      │ │  │ │

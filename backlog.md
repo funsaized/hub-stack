@@ -486,9 +486,74 @@ Add recurring jobs only after the durable worker, idempotency, and notification 
 
 ### HUB-026 — Evaluate relational metadata storage
 
-Evaluate Postgres only when job/source relationships, audit history, or complex retention queries exceed what Redis plus the document store can manage cleanly.
+**Status:** Deferred — evaluate, do not pre-provision
 
-**Revisit trigger:** source/version metadata requires transactional cross-entity queries or durable audit history.
+**Decision:** Postgres is not part of the current runtime. Introduce it only when
+a measured product requirement needs shared relational state or transactions that
+Redis, Qdrant, and the local SQLite document store cannot provide cleanly.
+
+**Potential owners:**
+
+- Users, organizations, roles, API keys, and tenant boundaries.
+- Projects, saved reports, schedules, notification destinations, and preferences.
+- Durable audit history for job submissions, state transitions, deletions, and
+  administrative actions.
+- Relational source, document-version, claim, and citation provenance that needs
+  joins, uniqueness constraints, or atomic multi-record updates.
+- Cross-node metadata when multiple API or worker instances need concurrent access
+  to the same structured records.
+- Complex retention, compliance, reporting, or operational queries that are
+  awkward or unsafe across Redis keys and a single-node SQLite file.
+
+Postgres must not automatically replace Redis for queues, leases, heartbeats, or
+ephemeral coordination. It must not replace Qdrant for vector retrieval unless a
+separate benchmark shows pgvector meets retrieval quality, filtering, latency,
+backup, and operational requirements. Exact crawled Markdown can remain in the
+document store unless the adopted use case requires shared transactional access.
+
+**Revisit triggers:**
+
+- A second user or tenant requires durable identity and authorization data.
+- Multiple Research-Hub replicas must write shared structured state concurrently.
+- Source/version/citation relationships require transactional cross-entity queries.
+- Operators need durable, queryable audit history or retention enforcement.
+- SQLite locking, availability, query complexity, or backup behavior becomes a
+  measured constraint rather than a hypothetical concern.
+
+**Integration plan if approved:**
+
+1. Write an architecture decision record naming the specific data Postgres owns,
+   expected scale, consistency requirements, and why SQLite is insufficient.
+2. Define normalized tables, foreign keys, indexes, retention rules, and an
+   explicit boundary with Redis, Qdrant, and retained document content.
+3. Add a pinned Postgres image as an opt-in Compose profile first; require a
+   generated secret, internal-only networking, a healthcheck, and resource limits.
+4. Add a pinned async database driver, connection-pool configuration, schema
+   migrations, readiness behavior, and secret-safe diagnostics to Research-Hub.
+5. Implement repository/service interfaces so application logic is testable
+   without embedding SQL throughout API and worker code.
+6. Build an idempotent migration/backfill path from existing SQLite/Redis metadata,
+   including validation counts and a documented rollback window. Do not dual-write
+   without an explicit reconciliation design.
+7. Add transaction, concurrency, migration, degraded-readiness, backup, and restore
+   tests before making Postgres part of the default profile.
+8. Measure idle memory, startup time, query latency, and backup/restore time; update
+   the topology and recovery documentation with observed results.
+
+**Acceptance criteria if integrated:**
+
+- Postgres has one documented owner and contains production data required by an
+  implemented feature; it is not an empty convenience container.
+- Migrations run deterministically on a new database and upgrade retained data
+  without loss; rollback and restore procedures are tested.
+- Credentials have no checked-in fallback, the port is not published, and logs or
+  health responses do not expose secrets.
+- Dependency failure has deliberate capability-specific readiness behavior and
+  does not restart an otherwise live API process.
+- Redis and Qdrant responsibilities remain explicit, with no accidental duplicate
+  source of truth.
+- The default Compose profile includes Postgres only if the core research/RAG path
+  requires its owned data; otherwise it remains an optional profile.
 
 ### HUB-027 — Evaluate a knowledge graph layer
 

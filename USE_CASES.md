@@ -163,7 +163,6 @@ The stateful data lives in named volumes:
 - `hub_ollama_data` (5 GB+, models)
 - `hub_qdrant_data` (knowledge base, ~10 MB per 100 jobs)
 - `hub_redis_data` (job state, ~1 MB)
-- `hub_postgres_data` (legacy, retained after HUB-016 but no longer used by Compose)
 - `hub_uptime_kuma_data` (Kuma config, ~10 MB)
 
 To back up:

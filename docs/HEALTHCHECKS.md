@@ -5,7 +5,7 @@ Docker healthchecks in this stack are inconsistent because each container image 
 1. **If the image has bash + the `/healthcheck` mount**: use `bash /healthcheck/healthcheck.sh <port>` (uses bash /dev/tcp, fastest)
 2. **If the image has only sh**: use `python3 /healthcheck/healthcheck-py3.py <port>` (SearXNG)
 3. **If the image has curl**: bake it into the Dockerfile and use that (research-hub)
-4. **If the image has its own CLI**: use it (postgres, redis)
+4. **If the image has its own CLI**: use it (for example, `redis-cli`)
 5. **Never use wget on slim images**: IPv6/IPv4 resolution fails on `localhost`
 
 ## Helper scripts

@@ -20,7 +20,7 @@ The current 0.1.0 MVP is working end-to-end. Here's the roadmap, prioritized by 
 **Steps**:
 1. Copy `.env.example` → `.env`
 2. Generate proper passwords: `openssl rand -hex 32`
-3. Update `docker-compose.yml` to reference `${POSTGRES_PASSWORD}` etc.
+3. Replace remaining checked-in fallback secrets with required environment values.
 4. Restart
 
 ### 3. Real startup script
@@ -131,7 +131,8 @@ The current 0.1.0 MVP is working end-to-end. Here's the roadmap, prioritized by 
 **Why**: vectors find similar chunks; KGs find related entities.
 **Effort**: 1-2 weeks
 **Steps**:
-1. Pick a KG library: Neo4j, Memgraph, or just Postgres + recursive CTEs
+1. Define the relationship queries and evaluation set before choosing Neo4j,
+   Memgraph, or Postgres with recursive CTEs; follow HUB-026 before adding Postgres.
 2. Extract entities + relations from each chunk (LLM call)
 3. Store alongside Qdrant
 4. Hybrid retrieval: KG traversal + vector search
