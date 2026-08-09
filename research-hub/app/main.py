@@ -10,7 +10,8 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from .config import load_config
-from .models import ResearchRequest, JobInfo, QueryRequest, QueryResponse, RAGRequest, RAGResponse
+from .models import (ResearchRequest, JobInfo, ResearchReport, QueryRequest,
+                     QueryResponse, RAGRequest, RAGResponse)
 from .research import ResearchOrchestrator, canonicalize_url, ensure_embedding_model
 from .query import QueryEngine
 from .observability import REQUESTS, REQUEST_LATENCY, configure_logging, correlation_id
@@ -153,6 +154,36 @@ async def get_research_status(job_id: str):
     return JobInfo(**job)
 
 
+@app.get("/research/{job_id}/report", response_model=ResearchReport)
+async def get_research_report(job_id: str):
+    if not orchestrator:
+        raise HTTPException(503, "Orchestrator not ready")
+    if not await orchestrator.get_job(job_id):
+        raise HTTPException(404, f"Job {job_id} not found")
+    report = await orchestrator.get_report(job_id)
+    if not report:
+        raise HTTPException(404, f"Report for job {job_id} not found")
+    return ResearchReport(**report)
+
+
+@app.post("/research/{job_id}/report/retry", response_model=ResearchReport)
+async def retry_research_report(job_id: str):
+    if not orchestrator:
+        raise HTTPException(503, "Orchestrator not ready")
+    try:
+        report = await orchestrator.generate_report(job_id)
+        await orchestrator._update_job(job_id, report_status="completed")
+        return ResearchReport(**report)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except Exception as exc:
+        await orchestrator._update_job(job_id, report_status="failed")
+        logger.exception("report_retry_failed", extra={"job_id": job_id, "phase": "synthesis"})
+        raise HTTPException(502, f"Report synthesis failed: {exc}") from exc
+
+
 @app.get("/research", response_model=list[JobInfo])
 async def list_research_jobs(limit: int = 50):
     if not orchestrator:
@@ -222,6 +253,8 @@ async def root():
             "GET /health/full (detailed checks)",
             "POST /research {topic, depth, max_sources, language, tags}",
             "GET /research/{job_id}",
+            "GET /research/{job_id}/report",
+            "POST /research/{job_id}/report/retry",
             "GET /research",
             "DELETE /documents?url={source_url}",
             "GET /documents/{document_id}",

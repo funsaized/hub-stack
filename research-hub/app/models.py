@@ -44,6 +44,19 @@ class JobInfo(ContractModel):
     error: Optional[str] = None
     sources_count: int = 0
     chunks_count: int = 0
+    report_status: Optional[str] = None
+
+
+class ResearchReport(ContractModel):
+    job_id: str
+    status: str
+    topic: str
+    report_markdown: Optional[str] = None
+    sources: list[dict] = Field(default_factory=list)
+    error: Optional[str] = None
+    attempts: int = 0
+    created_at: datetime
+    updated_at: datetime
 
 
 class QueryRequest(ContractModel):

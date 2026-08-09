@@ -87,6 +87,7 @@ The seven-container default Compose stack is deployed locally. HUB-002 network b
 HUB-005 health/readiness, and
 HUB-007 through HUB-011 durable, retained, batched ingestion and tests, plus
 HUB-014 strict contracts, HUB-015 observability, HUB-016 topology profiles, and
-HUB-018/HUB-020/HUB-021 context, prompt, and crawl-policy hardening are implemented; see
+HUB-018/HUB-020/HUB-021 context, prompt, and crawl-policy hardening, plus HUB-022
+persisted evidence-backed research reports, are implemented; see
 [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
 Other P0 and later work remains tracked in [backlog.md](backlog.md).

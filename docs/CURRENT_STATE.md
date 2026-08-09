@@ -130,3 +130,15 @@ Research jobs accept `allowed_domains`, `blocked_domains`, `per_domain_limit`, a
 Crawl4AI robots checking is enabled by default, and job progress records policy decisions.
 Qdrant metadata separately exposes semantic score, source-quality score, publication/fetch
 dates, freshness age, security labels, and robots-policy state.
+
+## Persisted research synthesis
+
+HUB-022 is implemented and deployed locally. Successful ingestion now produces a
+durable Markdown report in the SQLite document store with scope, retained source list,
+key findings, source disagreements, unknowns, and inline evidence IDs. Material findings
+and disagreements are rejected unless they reference retained job documents.
+
+`GET /research/{job_id}/report` and `research report JOB_ID` retrieve the stable artifact.
+Failed synthesis is stored separately from completed ingestion and can be retried with
+`POST /research/{job_id}/report/retry` or `research report JOB_ID --retry`; that path does
+not invoke search, crawling, embedding, or Qdrant writes.

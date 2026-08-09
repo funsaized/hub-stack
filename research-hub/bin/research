@@ -8,6 +8,8 @@ Usage:
     research list
     research query "what did the research find about X?"
     research rag "answer this question using the knowledge base"
+    research report <job_id>
+    research report <job_id> --retry
 """
 
 import argparse
@@ -144,6 +146,19 @@ def cmd_health(args):
         sys.exit(1)
 
 
+def cmd_report(args):
+    method = httpx.post if args.retry else httpx.get
+    suffix = "/retry" if args.retry else ""
+    r = method(f"{args.url}/research/{args.job_id}/report{suffix}", timeout=180.0)
+    r.raise_for_status()
+    report = r.json()
+    if args.json:
+        _print_json(report)
+    else:
+        print(report.get("report_markdown") or
+              f"Report is {report['status']}: {report.get('error') or 'no content'}")
+
+
 def main():
     parser = argparse.ArgumentParser(prog="research", description="Research Hub CLI")
     parser.add_argument("--url", default=DEFAULT_URL, help="Base URL of research-hub API")
@@ -187,6 +202,12 @@ def main():
         help="Readiness scope (default: all)",
     )
     p.set_defaults(func=cmd_health)
+
+    p = sub.add_parser("report", help="Get or independently retry a job report")
+    p.add_argument("job_id", help="Completed research job ID")
+    p.add_argument("--retry", action="store_true", help="Regenerate without re-crawling")
+    p.add_argument("--json", action="store_true", help="Print the report record as JSON")
+    p.set_defaults(func=cmd_report)
 
     args = parser.parse_args()
     try:

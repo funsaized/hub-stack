@@ -440,6 +440,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-022 — Add a persisted research synthesis artifact
 
+**Status:** ✅ Done
+
 **Problem:** A completed research job creates searchable chunks but no job-level report, source comparison, or summary. The current product is a corpus builder rather than deep research.
 
 **Work:**

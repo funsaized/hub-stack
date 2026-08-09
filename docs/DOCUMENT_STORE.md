@@ -9,6 +9,24 @@ Markdown, title, SHA-256 content hash, fetch time, available HTTP metadata,
 extraction version, job ID, topic, and tags. Content versions are retained
 indefinitely by default so extraction changes can be audited and compared.
 
+The same SQLite database stores each job's synthesis artifact. A report records its
+topic, Markdown body, stable source/evidence mapping, status, error, timestamps, and
+attempt count. Material findings and disagreements must cite retained evidence IDs;
+unknowns explicitly describe insufficient evidence.
+
+Retrieve or independently regenerate a completed job's report:
+
+```bash
+research report JOB_ID
+research report JOB_ID --retry
+
+curl http://localhost:8000/research/JOB_ID/report
+curl -X POST http://localhost:8000/research/JOB_ID/report/retry
+```
+
+Report retry invokes only synthesis over retained documents. It does not search,
+crawl, embed, or alter the completed ingestion job.
+
 Inspect the exact source behind a query result using its `metadata.document_id`:
 
 ```bash

@@ -52,6 +52,17 @@ class DocumentStore:
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY(index_name, document_id, chunker_version)
                 );
+                CREATE TABLE IF NOT EXISTS research_reports (
+                    job_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    topic TEXT NOT NULL,
+                    report_markdown TEXT,
+                    sources TEXT NOT NULL DEFAULT '[]',
+                    error TEXT,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
             """)
 
     def save(self, document: dict) -> None:
@@ -85,6 +96,44 @@ class DocumentStore:
             rows = db.execute("SELECT * FROM documents ORDER BY fetched_at, document_id").fetchall()
         for row in rows:
             yield self._decode(row)
+
+    def documents_for_job(self, job_id: str) -> list[dict]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM documents WHERE job_id = ? ORDER BY canonical_url, document_id",
+                (job_id,),
+            ).fetchall()
+        return [self._decode(row) for row in rows]
+
+    def get_report(self, job_id: str) -> dict | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM research_reports WHERE job_id = ?", (job_id,)
+            ).fetchone()
+        if not row:
+            return None
+        value = dict(row)
+        value["sources"] = json.loads(value["sources"])
+        return value
+
+    def save_report(self, report: dict) -> None:
+        with self._connect() as db:
+            db.execute("""
+                INSERT INTO research_reports (
+                    job_id, status, topic, report_markdown, sources, error,
+                    attempts, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(job_id) DO UPDATE SET
+                    status=excluded.status, topic=excluded.topic,
+                    report_markdown=excluded.report_markdown,
+                    sources=excluded.sources, error=excluded.error,
+                    attempts=excluded.attempts, updated_at=excluded.updated_at
+            """, (
+                report["job_id"], report["status"], report["topic"],
+                report.get("report_markdown"), json.dumps(report.get("sources", [])),
+                report.get("error"), report.get("attempts", 0),
+                report["created_at"], report["updated_at"],
+            ))
 
     def delete_url(self, canonical_url: str) -> int:
         with self._connect() as db:

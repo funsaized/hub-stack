@@ -361,6 +361,14 @@ class ResearchOrchestrator:
                 jobs.append(job)
         return jobs
 
+    async def get_report(self, job_id: str) -> dict | None:
+        return await asyncio.to_thread(self.documents.get_report, job_id)
+
+    async def generate_report(self, job_id: str) -> dict:
+        # Local import keeps synthesis isolated from ingestion and avoids a module cycle.
+        from .synthesis import generate_report
+        return await generate_report(self, job_id)
+
     async def run_job(self, job_id: str):
         """Execute a claimed job. Queue ownership and retries belong to IngestionWorker."""
         phase = "load"
@@ -596,6 +604,17 @@ class ResearchOrchestrator:
                     "robots_respected": respect_robots,
                 },
             )
+            # Synthesis is deliberately outside ingestion failure semantics. A failed
+            # report remains independently retryable without crawling or embedding.
+            try:
+                await self.generate_report(job_id)
+                await self._update_job(job_id, report_status="completed")
+            except Exception as exc:
+                logger.exception("report_synthesis_failed", extra={
+                    "job_id": job_id, "phase": "synthesis",
+                    "failure_category": type(exc).__name__,
+                })
+                await self._update_job(job_id, report_status="failed")
 
         except Exception as e:
             source = locals().get("res")

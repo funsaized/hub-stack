@@ -156,6 +156,9 @@ later ────────────────────────�
   - `POST /rag` — full RAG answer with citations
 - A separate `research-worker` owns search → crawl → chunk → embed → store
 - Stores job state in Redis, vectors in Qdrant
+- After successful ingestion, the worker synthesizes a stable Markdown report from
+  retained SQLite evidence. Reports have an independent persisted lifecycle and can
+  be retrieved or retried without entering search, crawl, or embedding again.
 - Canonical URLs and content hashes form stable document IDs; chunk IDs also include
   chunk index and chunker version. Unchanged content is skipped and changed content is
   fully embedded/upserted before stale chunks are removed.
