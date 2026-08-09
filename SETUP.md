@@ -182,6 +182,9 @@ docker compose logs --tail=100 research-worker
 
 Worker behavior can be tuned in `.env` with `WORKER_LEASE_SECONDS`,
 `WORKER_HEARTBEAT_SECONDS`, `JOB_TIMEOUT_SECONDS`, and `JOB_MAX_ATTEMPTS`.
+Embedding batches are bounded by `EMBEDDING_BATCH_SIZE` and
+`EMBEDDING_BATCH_CHARS`; completed Qdrant writes are checkpointed in the retained
+document store. See `docs/DOCUMENT_STORE.md` for inspection and rebuilds.
 The heartbeat must remain shorter than the lease. On shutdown, the worker drains
 its current task or releases it; after an unclean stop, lease expiry and periodic
 reconciliation requeue the job.

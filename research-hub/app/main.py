@@ -137,7 +137,22 @@ async def delete_document(url: str = Query(..., min_length=1)):
     await asyncio.to_thread(
         orchestrator.qdrant.delete_document, canonical_url
     )
-    return {"canonical_url": canonical_url, "chunks_deleted": len(chunks)}
+    documents_deleted = await asyncio.to_thread(
+        orchestrator.documents.delete_url, canonical_url
+    )
+    return {"canonical_url": canonical_url, "chunks_deleted": len(chunks),
+            "documents_deleted": documents_deleted}
+
+
+@app.get("/documents/{document_id}")
+async def inspect_document(document_id: str):
+    """Return exact retained Markdown and extraction metadata for a chunk source."""
+    if not orchestrator:
+        raise HTTPException(503, "Orchestrator not ready")
+    document = await asyncio.to_thread(orchestrator.documents.get, document_id)
+    if not document:
+        raise HTTPException(404, f"Document {document_id} not found")
+    return document
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -168,6 +183,7 @@ async def root():
             "GET /research/{job_id}",
             "GET /research",
             "DELETE /documents?url={source_url}",
+            "GET /documents/{document_id}",
             "POST /query {query, top_k, topic_filter, tags_filter}",
             "POST /rag {query, top_k, topic_filter, max_context_tokens}",
         ],

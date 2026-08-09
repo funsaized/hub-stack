@@ -54,8 +54,20 @@ class OllamaClient:
         return r.json()["embedding"]
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Embed multiple texts. Calls sequentially for simplicity."""
-        return [await self.embed(t) for t in texts]
+        """Embed texts in one Ollama /api/embed request."""
+        if not texts:
+            return []
+        r = await self._client.post(
+            f"{self.base_url}/api/embed",
+            json={"model": self.embedding_model, "input": texts},
+        )
+        r.raise_for_status()
+        embeddings = r.json().get("embeddings", [])
+        if len(embeddings) != len(texts):
+            raise RuntimeError(
+                f"Ollama returned {len(embeddings)} embeddings for {len(texts)} inputs"
+            )
+        return embeddings
 
 
 class QdrantClient:
@@ -332,6 +344,10 @@ class Crawl4AIClient:
                 "url": res.get("url", url),
                 "title": res.get("metadata", {}).get("title", ""),
                 "markdown": res.get("markdown", ""),
+                "http_metadata": {
+                    key: value for key, value in res.get("metadata", {}).items()
+                    if key in {"status_code", "content_type", "etag", "last_modified"}
+                },
                 "success": True,
             }
         except Exception as e:

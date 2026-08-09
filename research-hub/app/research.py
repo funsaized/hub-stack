@@ -7,6 +7,7 @@ import logging
 import re
 import uuid
 import posixpath
+import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from datetime import datetime, timezone
 from typing import Any
@@ -16,10 +17,15 @@ import redis.asyncio as redis_async
 from .config import Config
 from .clients import OllamaClient, QdrantClient, SearXNGClient, Crawl4AIClient
 from .models import JobStatus, ResearchRequest
+from .document_store import DocumentStore
+from tenacity import (
+    AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential,
+)
 
 logger = logging.getLogger(__name__)
 
 CHUNKER_VERSION = "recursive-v1"
+EXTRACTION_VERSION = "crawl4ai-markdown-v1"
 TRACKING_QUERY_PARAMETERS = {"fbclid", "gclid", "mc_cid", "mc_eid"}
 
 
@@ -139,6 +145,7 @@ class ResearchOrchestrator:
         )
         self.searxng = SearXNGClient(cfg.searxng_url)
         self.crawl4ai = Crawl4AIClient(cfg.crawl4ai_url, cfg.crawl4ai_token or None)
+        self.documents = DocumentStore(cfg.document_store_path)
         self._redis: redis_async.Redis | None = None
 
     async def init(self):
@@ -297,20 +304,36 @@ class ResearchOrchestrator:
             if not crawl_results:
                 raise RuntimeError("No pages crawled successfully")
 
-            # Phase 3: Chunk + Embed
+            # Phase 3: retain canonical documents, then chunk/embed in bounded batches.
             await self._update_job(job_id, status=JobStatus.EMBEDDING.value,
                                    progress={"phase": "embedding", "embedded": 0, "total": 0})
 
-            all_chunks: list[dict[str, Any]] = []
             duplicate_sources = 0
             skipped_chunks = 0
-            changed_documents: dict[str, str] = {}
+            chunks_ingested = 0
+            total_batch_seconds = 0.0
+            batches_completed = 0
             for res in crawl_results:
                 md = res.get("markdown", "")
                 if not md:
                     continue
                 chunks = chunk_text(md, self.cfg.chunk_size, self.cfg.chunk_overlap)
                 canonical_url, content_hash, document_id = document_identity(res["url"], md)
+                fetched_at = utcnow()
+                await asyncio.to_thread(self.documents.save, {
+                    "document_id": document_id,
+                    "canonical_url": canonical_url,
+                    "source_url": res["url"],
+                    "title": res.get("title", ""),
+                    "markdown": md,
+                    "content_hash": content_hash,
+                    "fetched_at": fetched_at,
+                    "http_metadata": res.get("http_metadata", {}),
+                    "extraction_version": EXTRACTION_VERSION,
+                    "job_id": job_id,
+                    "research_metadata": {"topic": topic, "tags": tags},
+                    "created_at": fetched_at,
+                })
                 existing = await asyncio.to_thread(
                     self.qdrant.document_chunks, canonical_url
                 )
@@ -318,81 +341,103 @@ class ResearchOrchestrator:
                     duplicate_sources += 1
                     skipped_chunks += len(chunks)
                     continue
-                changed_documents[canonical_url] = document_id
-                for chunk_index, chunk in enumerate(chunks):
-                    all_chunks.append({
-                        "text": chunk,
-                        "source_url": canonical_url,
-                        "source_title": res.get("title", ""),
-                        "content_hash": content_hash,
-                        "document_id": document_id,
-                        "chunk_index": chunk_index,
-                    })
-
-            await self._update_job(job_id, progress={
-                "phase": "embedding",
-                "embedded": 0,
-                "total": len(all_chunks),
-            })
-
-            # Embed everything before mutating Qdrant. If any embedding fails the
-            # exception is retried by the worker and every prior version remains intact.
-            points: list[dict] = []
-            for i, chunk in enumerate(all_chunks):
-                vector = await self.ollama.embed(chunk["text"])
-                point_id = chunk_identity(chunk["document_id"], chunk["chunk_index"])
-                points.append({
-                    "id": point_id,
-                    "vector": vector,
-                    "payload": {
-                        "text": chunk["text"],
-                        "source_url": chunk["source_url"],
-                        "source_title": chunk["source_title"],
-                        "canonical_url": chunk["source_url"],
-                        "content_hash": chunk["content_hash"],
-                        "document_id": chunk["document_id"],
-                        "chunk_index": chunk["chunk_index"],
-                        "chunker_version": CHUNKER_VERSION,
-                        "topic": topic,
-                        "tags": tags,
-                        "job_id": job_id,
-                        "ingested_at": utcnow(),
-                    },
-                })
-                if (i + 1) % 10 == 0:
-                    await self._update_job(job_id, progress={
-                        "phase": "embedding",
-                        "embedded": i + 1,
-                        "total": len(all_chunks),
-                    })
-
-            # Phase 4: Store in Qdrant
-            if points:
-                # Run sync qdrant upsert in a thread
-                await asyncio.to_thread(self.qdrant.upsert, points)
-                for canonical_url, document_id in changed_documents.items():
+                # Qdrant is authoritative if either store was restored independently.
+                current_ids = {
+                    item["id"] for item in existing
+                    if item["payload"].get("document_id") == document_id
+                }
+                completed = 0
+                while completed < len(chunks) and chunk_identity(document_id, completed) in current_ids:
+                    completed += 1
+                for start, batch in embedding_batches(
+                    chunks, completed, self.cfg.embedding_batch_size,
+                    self.cfg.embedding_batch_chars,
+                ):
+                    started = time.monotonic()
+                    vectors = await self._retry_async(self.ollama.embed_batch, batch)
+                    points = []
+                    for offset, (chunk, vector) in enumerate(zip(batch, vectors)):
+                        chunk_index = start + offset
+                        points.append({
+                            "id": chunk_identity(document_id, chunk_index),
+                            "vector": vector,
+                            "payload": {
+                                "text": chunk, "source_url": canonical_url,
+                                "source_title": res.get("title", ""),
+                                "canonical_url": canonical_url, "content_hash": content_hash,
+                                "document_id": document_id, "chunk_index": chunk_index,
+                                "chunker_version": CHUNKER_VERSION, "topic": topic,
+                                "tags": tags, "job_id": job_id, "ingested_at": utcnow(),
+                            },
+                        })
+                    await self._retry_async(asyncio.to_thread, self.qdrant.upsert, points)
+                    completed = start + len(batch)
                     await asyncio.to_thread(
-                        self.qdrant.delete_document,
-                        canonical_url,
-                        except_document_id=document_id,
+                        self.documents.set_checkpoint, self.qdrant.collection,
+                        document_id, CHUNKER_VERSION, completed, len(chunks), utcnow(),
+                    )
+                    elapsed = time.monotonic() - started
+                    batches_completed += 1
+                    total_batch_seconds += elapsed
+                    chunks_ingested += len(batch)
+                    await self._update_job(job_id, progress={
+                        "phase": "embedding", "embedded": chunks_ingested,
+                        "batch_size": len(batch), "batch_seconds": round(elapsed, 3),
+                        "batches_completed": batches_completed,
+                    })
+                if completed == len(chunks):
+                    await self._retry_async(
+                        asyncio.to_thread, self.qdrant.delete_document,
+                        canonical_url, except_document_id=document_id,
                     )
 
             await self._update_job(
                 job_id,
                 status=JobStatus.COMPLETED.value,
-                chunks_count=len(points),
+                chunks_count=chunks_ingested,
                 progress={
                     "phase": "completed",
                     "sources_count": len(crawl_results),
-                    "chunks_ingested": len(points),
+                    "chunks_ingested": chunks_ingested,
                     "duplicate_sources": duplicate_sources,
                     "chunks_skipped": skipped_chunks,
+                    "batches_completed": batches_completed,
+                    "average_batch_seconds": round(
+                        total_batch_seconds / batches_completed, 3
+                    ) if batches_completed else 0,
                 },
             )
 
         except Exception as e:
             logger.exception(f"Job {job_id} failed")
             raise
+
+    async def _retry_async(self, operation, *args):
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(self.cfg.dependency_max_attempts),
+            wait=wait_exponential(multiplier=0.25, min=0.25, max=4),
+            retry=retry_if_exception_type(Exception), reraise=True,
+        ):
+            with attempt:
+                return await operation(*args)
+
+
+def embedding_batches(
+    chunks: list[str], start: int, max_size: int, max_chars: int,
+):
+    """Yield bounded `(start_index, texts)` batches without retaining vectors."""
+    index = start
+    while index < len(chunks):
+        batch: list[str] = []
+        chars = 0
+        while index + len(batch) < len(chunks) and len(batch) < max_size:
+            value = chunks[index + len(batch)]
+            if batch and chars + len(value) > max_chars:
+                break
+            batch.append(value)
+            chars += len(value)
+        yield index, batch
+        index += len(batch)
 
 
 async def ensure_embedding_model(ollama: OllamaClient, model: str):

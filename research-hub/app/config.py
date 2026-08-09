@@ -24,6 +24,10 @@ class Config:
     job_timeout_seconds: int = 1800
     job_max_attempts: int = 3
     queue_poll_seconds: int = 2
+    document_store_path: str = "/app/data/documents.sqlite3"
+    embedding_batch_size: int = 16
+    embedding_batch_chars: int = 12000
+    dependency_max_attempts: int = 3
 
 
 def load_config() -> Config:
@@ -44,4 +48,8 @@ def load_config() -> Config:
         job_timeout_seconds=int(os.environ.get("JOB_TIMEOUT_SECONDS", "1800")),
         job_max_attempts=int(os.environ.get("JOB_MAX_ATTEMPTS", "3")),
         queue_poll_seconds=int(os.environ.get("QUEUE_POLL_SECONDS", "2")),
+        document_store_path=os.environ.get("DOCUMENT_STORE_PATH", "/app/data/documents.sqlite3"),
+        embedding_batch_size=int(os.environ.get("EMBEDDING_BATCH_SIZE", "16")),
+        embedding_batch_chars=int(os.environ.get("EMBEDDING_BATCH_CHARS", "12000")),
+        dependency_max_attempts=int(os.environ.get("DEPENDENCY_MAX_ATTEMPTS", "3")),
     )

@@ -197,6 +197,7 @@ services:
       - CRAWL4AI_URL=http://hub-crawl4ai:11235
       - CRAWL4AI_TOKEN=hub-crawl4ai-shared-token
       - LOG_LEVEL=info
+      - DOCUMENT_STORE_PATH=/app/data/documents.sqlite3
     depends_on:
       ollama:
         condition: service_healthy
@@ -240,6 +241,12 @@ services:
       - JOB_TIMEOUT_SECONDS=${JOB_TIMEOUT_SECONDS:-1800}
       - JOB_MAX_ATTEMPTS=${JOB_MAX_ATTEMPTS:-3}
       - LOG_LEVEL=info
+      - DOCUMENT_STORE_PATH=/app/data/documents.sqlite3
+      - EMBEDDING_BATCH_SIZE=${EMBEDDING_BATCH_SIZE:-16}
+      - EMBEDDING_BATCH_CHARS=${EMBEDDING_BATCH_CHARS:-12000}
+      - DEPENDENCY_MAX_ATTEMPTS=${DEPENDENCY_MAX_ATTEMPTS:-3}
+    volumes:
+      - research_hub_data:/app/data
     depends_on:
       ollama:
         condition: service_healthy
