@@ -134,6 +134,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-007 — Replace in-process background tasks with a durable worker
 
+**Status:** ✅ Done
+
 **Problem:** Redis stores job metadata but does not queue work. `asyncio.create_task()` loses running jobs on process restart and prevents safe multi-worker API deployment.
 
 **Work:**
@@ -153,6 +155,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 - Queue behavior has automated integration coverage.
 
 ### HUB-008 — Make ingestion idempotent and deduplicate content
+
+**Status:** ✅ Done
 
 **Problem:** Random UUID point IDs create duplicate vectors whenever a source or topic is reprocessed.
 

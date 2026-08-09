@@ -12,11 +12,12 @@ A reusable research service that searches the web, crawls results, extracts clea
 |---|---|---|
 | Ollama | 11434 | Local LLM (qwen2.5:7b) + embeddings (nomic-embed-text) |
 | Qdrant | 6333 | Vector DB for RAG (768-dim cosine, research_corpus) |
-| Redis | 6379 | Job metadata and state (durable work queue not yet implemented) |
+| Redis | 6379 | Durable ingestion queue, leases, retries, and job state |
 | Postgres | 5432 | Relational store with pgvector |
 | SearXNG | 8889 | Private meta-search (no Google tracking) |
 | Crawl4AI | 11235 | Web crawler with LLM-friendly extraction |
 | Research-Hub | 8000 | FastAPI orchestrator: `/research`, `/query`, `/rag` |
+| Research Worker | — | Dedicated durable search/crawl/embed/store worker |
 | Open WebUI | 8080 | Chat interface for the LLM |
 | Dozzle | 8888 | Live Docker log viewer |
 | Uptime Kuma | 3001 | Service health monitoring |
@@ -72,6 +73,7 @@ Validated on:
 
 ## Status
 
-The full ten-service stack is deployed locally. HUB-005 health/readiness fixes
-are rebuilt and verified; see [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
+The full eleven-service stack is deployed locally. HUB-005 health/readiness and
+HUB-007/HUB-008 durable, idempotent ingestion are rebuilt and verified; see
+[docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
 Other P0 and later work remains tracked in [backlog.md](backlog.md).

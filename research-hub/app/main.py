@@ -1,5 +1,6 @@
 """FastAPI app for the research hub."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -7,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Query, Response
 
 from .config import load_config
 from .models import ResearchRequest, JobInfo, QueryRequest, QueryResponse, RAGRequest, RAGResponse
-from .research import ResearchOrchestrator, ensure_embedding_model
+from .research import ResearchOrchestrator, canonicalize_url, ensure_embedding_model
 from .query import QueryEngine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -122,6 +123,23 @@ async def list_research_jobs(limit: int = 50):
     return [JobInfo(**j) for j in jobs]
 
 
+@app.delete("/documents")
+async def delete_document(url: str = Query(..., min_length=1)):
+    """Remove every indexed chunk belonging to one canonical source URL."""
+    if not orchestrator:
+        raise HTTPException(503, "Orchestrator not ready")
+    canonical_url = canonicalize_url(url)
+    chunks = await asyncio.to_thread(
+        orchestrator.qdrant.document_chunks, canonical_url
+    )
+    if not chunks:
+        raise HTTPException(404, f"Document not found: {canonical_url}")
+    await asyncio.to_thread(
+        orchestrator.qdrant.delete_document, canonical_url
+    )
+    return {"canonical_url": canonical_url, "chunks_deleted": len(chunks)}
+
+
 @app.post("/query", response_model=QueryResponse)
 async def query(req: QueryRequest):
     if not query_engine:
@@ -149,6 +167,7 @@ async def root():
             "POST /research {topic, depth, max_sources, language, tags}",
             "GET /research/{job_id}",
             "GET /research",
+            "DELETE /documents?url={source_url}",
             "POST /query {query, top_k, topic_filter, tags_filter}",
             "POST /rag {query, top_k, topic_filter, max_context_tokens}",
         ],

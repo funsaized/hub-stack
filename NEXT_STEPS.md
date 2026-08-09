@@ -159,6 +159,5 @@ Use the knowledge base to fine-tune a small model on your domain. Run Ollama wit
 - **No rate limiting**: a malicious job could exhaust resources
 - **No job cancellation**: once a job starts, you have to wait
 - **No queue priority**: all jobs are FIFO
-- **No incremental indexing**: every job re-ranks; no diff/dedup
-- **No test suite**: test_research.py and test_query.py are smoke tests only
-- **No CI/CD**: build is local, no automated checks
+- **Limited incremental indexing**: URL/content deduplication is implemented, but there is no crawl-level conditional HTTP refresh
+- **No CI/CD**: automated local unit/integration tests exist, but CI is not configured

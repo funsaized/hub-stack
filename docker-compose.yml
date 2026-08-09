@@ -61,7 +61,8 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    # Queue/job keys must never be evicted under memory pressure.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -208,6 +209,48 @@ services:
       crawl4ai:
         condition: service_healthy
     # Healthcheck defined in Dockerfile (uses curl)
+
+  # Dedicated durable ingestion worker. API replicas only enqueue work; this
+  # process owns crawling, embedding, retries, and lease reconciliation.
+  research-worker:
+    build:
+      context: ./research-hub
+      dockerfile: Dockerfile
+    container_name: hub-research-worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    stop_grace_period: 30s
+    # The shared image probes the API's /livez endpoint; the worker has no HTTP
+    # server, so disable that inherited probe. Leases/reconciliation provide its
+    # failure detection and the restart policy restores the process.
+    healthcheck:
+      disable: true
+    environment:
+      - REDIS_URL=redis://hub-redis:6379/0
+      - QDRANT_URL=http://hub-qdrant:6333
+      - OLLAMA_URL=http://hub-ollama:11434
+      - LLM_MODEL=qwen2.5:7b
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-768}
+      - SEARXNG_URL=http://hub-searxng:8080
+      - CRAWL4AI_URL=http://hub-crawl4ai:11235
+      - CRAWL4AI_TOKEN=hub-crawl4ai-shared-token
+      - WORKER_LEASE_SECONDS=${WORKER_LEASE_SECONDS:-60}
+      - WORKER_HEARTBEAT_SECONDS=${WORKER_HEARTBEAT_SECONDS:-15}
+      - JOB_TIMEOUT_SECONDS=${JOB_TIMEOUT_SECONDS:-1800}
+      - JOB_MAX_ATTEMPTS=${JOB_MAX_ATTEMPTS:-3}
+      - LOG_LEVEL=info
+    depends_on:
+      ollama:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
+      crawl4ai:
+        condition: service_healthy
 
   # =====================================================================
   # Open WebUI — chat interface

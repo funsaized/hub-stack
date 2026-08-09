@@ -26,6 +26,7 @@ Both mounted via `./healthcheck:/healthcheck:ro` into the container.
 | searxng | python3 socket probe | no bash |
 | crawl4ai | bash `/healthcheck/healthcheck.sh 11235` | has bash |
 | research-hub | Dockerfile `curl -f http://localhost:8000/livez` | process liveness; has curl, IPv6-safe |
+| research-worker | Docker restart policy + logs | no HTTP port; Redis leases expire and orphan reconciliation requeues work |
 | open-webui | sh `echo > /dev/tcp/localhost/8080` | has bash actually, but compose uses sh-style |
 | dozzle | (none) | no healthcheck section |
 | uptime-kuma | (none) | relies on its own UI |
@@ -33,6 +34,16 @@ Both mounted via `./healthcheck:/healthcheck:ro` into the container.
 Research Hub also exposes `/readyz?capability=query|rag|research|all` fo
 capability-specific dependency readiness. `/health/full` is a diagnostic view
 and remains HTTP 200 when dependencies are degraded.
+
+The API research readiness confirms its dependencies, not that a worker is
+currently consuming. Check worker state and recent failures with:
+
+```bash
+docker compose ps research-worker
+docker compose logs --tail=100 research-worker
+docker compose exec redis redis-cli LLEN research:queue:pending
+docker compose exec redis redis-cli LLEN research:queue:processing
+```
 
 ## Research-hub startup and Qdrant persistence
 

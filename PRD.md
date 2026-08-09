@@ -17,7 +17,7 @@ A self-hosted, GPU-accelerated research workstation that runs entirely on a sing
 - **Production multi-tenant SaaS**: this is a single-user tool. No auth, no tenancy, no rate-limiting.
 - **Replacing a corporate RAG platform**: no Notion/Confluence integrations, no enterprise SSO.
 - **Mobile-first**: the admin UI is web-based but designed for desktop. Mobile access is via Tailscale.
-- **Mission-critical workloads**: if Ollama crashes mid-job, the job fails. There's no retry queue yet.
+- **Mission-critical workloads**: ingestion retries are durable, but the stack still lacks backups and high availability.
 
 ## Success criteria
 
@@ -43,7 +43,7 @@ A self-hosted, GPU-accelerated research workstation that runs entirely on a sing
 ### Research submission
 - POST endpoint accepts topic, depth (URLs to crawl), max_sources (search results), tags
 - Returns job ID immediately
-- Job runs in background, status pollable
+- Job is durably queued for a dedicated worker, with bounded retries and pollable status
 - Optional: callback URL for completion
 
 ### Search + crawl
@@ -59,7 +59,8 @@ A self-hosted, GPU-accelerated research workstation that runs entirely on a sing
 
 ### Storage
 - Qdrant for vectors
-- Redis for job state
+- Redis AOF for the durable FIFO queue, job state, claim leases, and retry metadata
+- Re-ingestion uses canonical URLs and deterministic document/chunk IDs so unchanged content is skipped and changed versions replace stale chunks
 - Postgres available but unused
 
 ### Query

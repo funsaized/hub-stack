@@ -19,6 +19,11 @@ class Config:
     embedding_dimension: int = 768
     chunk_size: int = 800
     chunk_overlap: int = 100
+    worker_lease_seconds: int = 60
+    worker_heartbeat_seconds: int = 15
+    job_timeout_seconds: int = 1800
+    job_max_attempts: int = 3
+    queue_poll_seconds: int = 2
 
 
 def load_config() -> Config:
@@ -34,4 +39,9 @@ def load_config() -> Config:
         log_level=os.environ.get("LOG_LEVEL", "info"),
         qdrant_collection=os.environ.get("QDRANT_COLLECTION", "research_corpus"),
         embedding_dimension=int(os.environ.get("EMBEDDING_DIMENSION", "768")),
+        worker_lease_seconds=int(os.environ.get("WORKER_LEASE_SECONDS", "60")),
+        worker_heartbeat_seconds=int(os.environ.get("WORKER_HEARTBEAT_SECONDS", "15")),
+        job_timeout_seconds=int(os.environ.get("JOB_TIMEOUT_SECONDS", "1800")),
+        job_max_attempts=int(os.environ.get("JOB_MAX_ATTEMPTS", "3")),
+        queue_poll_seconds=int(os.environ.get("QUEUE_POLL_SECONDS", "2")),
     )

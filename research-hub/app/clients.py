@@ -148,6 +148,63 @@ class QdrantClient:
         ]
         self._client.upsert(collection_name=self.collection, points=structs, wait=True)
 
+    def document_chunks(self, canonical_url: str) -> list[dict]:
+        """Return stored chunk identity metadata for one canonical source URL."""
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        records, offset = self._client.scroll(
+            collection_name=self.collection,
+            scroll_filter=Filter(must=[
+                FieldCondition(key="canonical_url", match=MatchValue(value=canonical_url)),
+            ]),
+            limit=256,
+            with_payload=True,
+            with_vectors=False,
+        )
+        result = [{"id": str(record.id), "payload": record.payload or {}} for record in records]
+        while offset is not None:
+            records, offset = self._client.scroll(
+                collection_name=self.collection,
+                scroll_filter=Filter(must=[
+                    FieldCondition(key="canonical_url", match=MatchValue(value=canonical_url)),
+                ]),
+                limit=256,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            result.extend(
+                {"id": str(record.id), "payload": record.payload or {}}
+                for record in records
+            )
+        return result
+
+    def delete_document(self, canonical_url: str, *, except_document_id: str | None = None) -> None:
+        """Delete every chunk for a source, optionally retaining one document version."""
+        from qdrant_client.models import (
+            FieldCondition,
+            Filter,
+            FilterSelector,
+            MatchValue,
+        )
+
+        selector = Filter(
+            must=[FieldCondition(
+                key="canonical_url", match=MatchValue(value=canonical_url)
+            )],
+            must_not=(
+                [FieldCondition(
+                    key="document_id", match=MatchValue(value=except_document_id)
+                )]
+                if except_document_id else None
+            ),
+        )
+        self._client.delete(
+            collection_name=self.collection,
+            points_selector=FilterSelector(filter=selector),
+            wait=True,
+        )
+
     def search(self, vector: list[float], top_k: int = 5, filters: dict | None = None) -> list[dict]:
         from qdrant_client.models import Filter, FieldCondition, MatchValue, MatchAny
 

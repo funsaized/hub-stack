@@ -50,9 +50,13 @@
         │
         ▼ (POST /research)
    ┌─────────────────┐
-   │  Research-Hub   │  FastAPI
-   │  orchestrates   │
+   │  Research-Hub   │  FastAPI enqueues only
    └────────┬────────┘
+            │ durable enqueue
+            ▼
+   ┌──────────────────┐
+   │ Redis + worker   │  claim lease, heartbeat, retry, recovery
+   └────────┬─────────┘
             │
             ▼
    ┌─────────────────┐
@@ -118,9 +122,12 @@ later ────────────────────────�
 - Created on first startup, persists across restarts (named volume)
 
 ### Redis
-- Job queue + state for the research orchestrator
+- Durable FIFO queue + state for the research API and dedicated worker
 - Job metadata keyed by `research:job:{uuid}`
 - Job index list at `research:jobs`
+- Pending/processing lists and expiring claim leases prevent duplicate execution
+- AOF persistence and `noeviction` protect queue records; heartbeats, bounded retries,
+  timeouts, and periodic reconciliation recover abandoned work
 
 ### Postgres
 - Not currently used by research-hub
@@ -139,15 +146,18 @@ later ────────────────────────�
 - Authenticated via `CRAWL4AI_API_TOKEN` env var
 
 ### Research-Hub
-- FastAPI orchestrator (single source of truth for the research workflow)
+- FastAPI API process; accepts and durably enqueues research jobs
 - Endpoints:
   - `POST /research` — submit a job, get back a job ID
   - `GET /research/{id}` — poll status
   - `GET /research` — list all jobs
   - `POST /query` — semantic search over the knowledge base
   - `POST /rag` — full RAG answer with citations
-- Manages pipeline: search → crawl → chunk → embed → store
+- A separate `research-worker` owns search → crawl → chunk → embed → store
 - Stores job state in Redis, vectors in Qdrant
+- Canonical URLs and content hashes form stable document IDs; chunk IDs also include
+  chunk index and chunker version. Unchanged content is skipped and changed content is
+  fully embedded/upserted before stale chunks are removed.
 
 ### Open WebUI
 - Chat interface for qwen2.5:7b
@@ -185,6 +195,8 @@ later ────────────────────────�
 - **All UIs on host ports**: localhost works directly from the host; Tailscale handles remote access
 - **gpu=nvidia, count=1**: only Ollama gets GPU; the rest run on CPU
 - **Separate liveness and readiness**: Docker probes research-hub `/livez`; capability readiness and dependency diagnostics use `/readyz` and `/health/full`. See `docs/HEALTHCHECKS.md` and `docs/CURRENT_STATE.md`.
+- **API/worker separation**: restarting or scaling the API cannot interrupt claimed work.
+  Worker leases and reconciliation resume abandoned jobs after a worker failure.
 
 ## Boundaries
 

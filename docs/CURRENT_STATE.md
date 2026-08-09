@@ -16,11 +16,13 @@ Open WebUI, Crawl4AI, and Uptime Kuma state live in Docker named volumes.
 
 ## Running services
 
-The full ten-service Compose topology is deployed locally. At the last check,
-all ten containers were running and every service with a configured Docker
+The full eleven-service Compose topology is deployed locally. At the last check,
+all eleven containers were running and every service with a configured Docker
 healthcheck was healthy. Dozzle has no container healthcheck.
 
 Research-Hub currently uses Ollama, Qdrant, Redis, SearXNG, and Crawl4AI.
+The API only enqueues ingestion; the dedicated Research Worker claims and executes
+jobs with leases, heartbeats, timeouts, bounded retries, and orphan reconciliation.
 Postgres, Open WebUI, Dozzle, and Uptime Kuma are adjacent services; Postgres is
 not currently part of the research/query data path.
 
@@ -64,11 +66,20 @@ performed against the rebuilt image:
 - The shared shell healthcheck uses Unix line endings so it executes correctly
   inside Linux containers when the checkout resides on Windows.
 
-## Important remaining limitations
+## Verified durable and idempotent ingestion
 
-Only HUB-005 from the requested work batch was completed. Other backlog items
-remain open, including LAN port exposure, hardcoded/default credentials,
-crawler SSRF protections, durable queued workers, idempotent ingestion,
-backups, and broader automated test/CI coverage. Research jobs still run with
-in-process `asyncio.create_task`; Redis persists job metadata but is not yet a
-durable work queue.
+HUB-007 and HUB-008 are implemented, tested, rebuilt, and deployed locally.
+API restarts do not own or interrupt running ingestion. Worker claims have expiring
+leases and heartbeats; abandoned work is reconciled and retried, and permanent
+failures reach a terminal state with the attempt error. Redis uses AOF and
+`noeviction` for queue safety.
+
+Canonical URLs plus content hashes produce stable document IDs, and stable chunk
+IDs include the document, chunk index, and chunker version. Re-ingesting unchanged
+content skips existing chunks; changed content is completely embedded before its
+old chunks are removed. `DELETE /documents?url=...` removes every version/chunk for
+a canonical source URL.
+
+Important remaining limitations include LAN-wide port bindings, hardcoded/default
+credentials, crawler SSRF protections, backups, and CI coverage. Redis AOF improves
+durability but is not a backup or a high-availability queue.

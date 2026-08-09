@@ -1,10 +1,13 @@
 """Research job orchestration: search -> crawl -> chunk -> embed -> store."""
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
 import uuid
+import posixpath
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from datetime import datetime, timezone
 from typing import Any
 
@@ -15,6 +18,52 @@ from .clients import OllamaClient, QdrantClient, SearXNGClient, Crawl4AIClient
 from .models import JobStatus, ResearchRequest
 
 logger = logging.getLogger(__name__)
+
+CHUNKER_VERSION = "recursive-v1"
+TRACKING_QUERY_PARAMETERS = {"fbclid", "gclid", "mc_cid", "mc_eid"}
+
+
+def canonicalize_url(url: str) -> str:
+    """Normalize a web URL into a stable source identity."""
+    parsed = urlsplit(url.strip())
+    scheme = parsed.scheme.lower()
+    hostname = (parsed.hostname or "").lower()
+    port = parsed.port
+    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+        hostname = f"{hostname}:{port}"
+    path = posixpath.normpath(parsed.path or "/")
+    if not path.startswith("/"):
+        path = f"/{path}"
+    if path != "/":
+        path = path.rstrip("/")
+    query = urlencode(sorted(
+        (key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_") and key.lower() not in TRACKING_QUERY_PARAMETERS
+    ))
+    return urlunsplit((scheme, hostname, path, query, ""))
+
+
+def document_identity(url: str, content: str) -> tuple[str, str, str]:
+    canonical_url = canonicalize_url(url)
+    content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    document_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{canonical_url}\n{content_hash}"))
+    return canonical_url, content_hash, document_id
+
+
+def chunk_identity(document_id: str, chunk_index: int) -> str:
+    return str(uuid.uuid5(
+        uuid.UUID(document_id), f"{CHUNKER_VERSION}:{chunk_index}"
+    ))
+
+
+def document_is_complete(existing: list[dict], document_id: str, chunk_count: int) -> bool:
+    """True only when Qdrant contains exactly every expected chunk for this version."""
+    expected_ids = {chunk_identity(document_id, index) for index in range(chunk_count)}
+    actual_ids = {
+        item["id"] for item in existing
+        if item["payload"].get("document_id") == document_id
+    }
+    return actual_ids == expected_ids and len(existing) == len(expected_ids)
 
 
 def utcnow() -> str:
@@ -136,6 +185,9 @@ class ResearchOrchestrator:
     def _job_index_key(self) -> str:
         return "research:jobs"
 
+    def _pending_queue_key(self) -> str:
+        return "research:queue:pending"
+
     async def _update_job(self, job_id: str, **fields):
         if not self._redis:
             return
@@ -167,11 +219,14 @@ class ResearchOrchestrator:
             "error": None,
             "sources_count": 0,
             "chunks_count": 0,
+            "attempts": 0,
         }
-        await self._redis.set(self._job_key(job_id), json.dumps(job))
-        await self._redis.lpush(self._job_index_key(), job_id)
-        # Run in background
-        asyncio.create_task(self._run_job(job_id))
+        # The transaction makes a visible job and its queue entry durable together.
+        async with self._redis.pipeline(transaction=True) as pipe:
+            pipe.set(self._job_key(job_id), json.dumps(job))
+            pipe.lpush(self._job_index_key(), job_id)
+            pipe.lpush(self._pending_queue_key(), job_id)
+            await pipe.execute()
         return job_id
 
     async def get_job(self, job_id: str) -> dict | None:
@@ -193,7 +248,8 @@ class ResearchOrchestrator:
                 jobs.append(job)
         return jobs
 
-    async def _run_job(self, job_id: str):
+    async def run_job(self, job_id: str):
+        """Execute a claimed job. Queue ownership and retries belong to IngestionWorker."""
         try:
             job = await self.get_job(job_id)
             if not job:
@@ -209,9 +265,7 @@ class ResearchOrchestrator:
                                    progress={"phase": "searching", "topic": topic})
             search_results = await self.searxng.search(topic, max_results=max_sources, language=language)
             if not search_results:
-                await self._update_job(job_id, status=JobStatus.FAILED.value,
-                                       error="No search results found")
-                return
+                raise RuntimeError("No search results found")
 
             # Take top N URLs by depth
             urls_to_crawl = [r["url"] for r in search_results[:depth]]
@@ -241,25 +295,38 @@ class ResearchOrchestrator:
             await self._update_job(job_id, sources_count=len(crawl_results))
 
             if not crawl_results:
-                await self._update_job(job_id, status=JobStatus.FAILED.value,
-                                       error="No pages crawled successfully")
-                return
+                raise RuntimeError("No pages crawled successfully")
 
             # Phase 3: Chunk + Embed
             await self._update_job(job_id, status=JobStatus.EMBEDDING.value,
                                    progress={"phase": "embedding", "embedded": 0, "total": 0})
 
             all_chunks: list[dict[str, Any]] = []
+            duplicate_sources = 0
+            skipped_chunks = 0
+            changed_documents: dict[str, str] = {}
             for res in crawl_results:
                 md = res.get("markdown", "")
                 if not md:
                     continue
                 chunks = chunk_text(md, self.cfg.chunk_size, self.cfg.chunk_overlap)
-                for chunk in chunks:
+                canonical_url, content_hash, document_id = document_identity(res["url"], md)
+                existing = await asyncio.to_thread(
+                    self.qdrant.document_chunks, canonical_url
+                )
+                if document_is_complete(existing, document_id, len(chunks)):
+                    duplicate_sources += 1
+                    skipped_chunks += len(chunks)
+                    continue
+                changed_documents[canonical_url] = document_id
+                for chunk_index, chunk in enumerate(chunks):
                     all_chunks.append({
                         "text": chunk,
-                        "source_url": res["url"],
+                        "source_url": canonical_url,
                         "source_title": res.get("title", ""),
+                        "content_hash": content_hash,
+                        "document_id": document_id,
+                        "chunk_index": chunk_index,
                     })
 
             await self._update_job(job_id, progress={
@@ -268,15 +335,12 @@ class ResearchOrchestrator:
                 "total": len(all_chunks),
             })
 
-            # Embed in batches (sequential to avoid overloading Ollama)
+            # Embed everything before mutating Qdrant. If any embedding fails the
+            # exception is retried by the worker and every prior version remains intact.
             points: list[dict] = []
             for i, chunk in enumerate(all_chunks):
-                try:
-                    vector = await self.ollama.embed(chunk["text"])
-                except Exception as e:
-                    logger.warning(f"Embedding failed for chunk {i}: {e}")
-                    continue
-                point_id = str(uuid.uuid4())
+                vector = await self.ollama.embed(chunk["text"])
+                point_id = chunk_identity(chunk["document_id"], chunk["chunk_index"])
                 points.append({
                     "id": point_id,
                     "vector": vector,
@@ -284,6 +348,11 @@ class ResearchOrchestrator:
                         "text": chunk["text"],
                         "source_url": chunk["source_url"],
                         "source_title": chunk["source_title"],
+                        "canonical_url": chunk["source_url"],
+                        "content_hash": chunk["content_hash"],
+                        "document_id": chunk["document_id"],
+                        "chunk_index": chunk["chunk_index"],
+                        "chunker_version": CHUNKER_VERSION,
                         "topic": topic,
                         "tags": tags,
                         "job_id": job_id,
@@ -301,6 +370,12 @@ class ResearchOrchestrator:
             if points:
                 # Run sync qdrant upsert in a thread
                 await asyncio.to_thread(self.qdrant.upsert, points)
+                for canonical_url, document_id in changed_documents.items():
+                    await asyncio.to_thread(
+                        self.qdrant.delete_document,
+                        canonical_url,
+                        except_document_id=document_id,
+                    )
 
             await self._update_job(
                 job_id,
@@ -310,12 +385,14 @@ class ResearchOrchestrator:
                     "phase": "completed",
                     "sources_count": len(crawl_results),
                     "chunks_ingested": len(points),
+                    "duplicate_sources": duplicate_sources,
+                    "chunks_skipped": skipped_chunks,
                 },
             )
 
         except Exception as e:
             logger.exception(f"Job {job_id} failed")
-            await self._update_job(job_id, status=JobStatus.FAILED.value, error=str(e))
+            raise
 
 
 async def ensure_embedding_model(ollama: OllamaClient, model: str):

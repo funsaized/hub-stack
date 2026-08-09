@@ -160,7 +160,7 @@ docker compose up -d
 ```
 
 First run takes 5-10 minutes:
-- Downloads 10 Docker images (~8 GB total)
+- Downloads/builds the images for 11 services (~8 GB total)
 - Builds the research-hub image locally
 - Ollama pulls qwen2.5:7b (~5 GB) and nomic-embed-text (~300 MB) on first run
 
@@ -171,6 +171,20 @@ Subsequent starts take ~90 seconds.
 docker compose ps
 # All services should show "healthy" after 90 seconds
 ```
+
+The Research Worker has no host port. It consumes the durable Redis queue and
+shares the Research-Hub image. After application changes, rebuild both processes:
+
+```bash
+docker compose up -d --build research-hub research-worker
+docker compose logs --tail=100 research-worker
+```
+
+Worker behavior can be tuned in `.env` with `WORKER_LEASE_SECONDS`,
+`WORKER_HEARTBEAT_SECONDS`, `JOB_TIMEOUT_SECONDS`, and `JOB_MAX_ATTEMPTS`.
+The heartbeat must remain shorter than the lease. On shutdown, the worker drains
+its current task or releases it; after an unclean stop, lease expiry and periodic
+reconciliation requeue the job.
 
 ## 6. Set up Uptime Kuma monitors
 

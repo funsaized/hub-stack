@@ -4,6 +4,9 @@ Concrete things you can do with the hub right now, with copy-paste examples.
 
 ## 1. Research a topic
 
+Research submissions are durable across API restarts. Re-running a topic is safe:
+unchanged pages are skipped, while changed pages replace their prior chunks.
+
 ```bash
 ./research-hub/bin/research submit "transformer attention mechanisms" --depth 10 --tags ml nlp
 ```
