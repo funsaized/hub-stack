@@ -44,6 +44,10 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["status"], "completed")
         self.assertIn("Finding [S1]", reopened["report_markdown"])
         self.assertEqual(reopened["sources"][0]["document_id"], "doc-1")
+        self.assertEqual(
+            self.orchestrator.ollama.generate.await_args.kwargs["json_schema"]["required"],
+            ["key_findings", "disagreements", "unknowns"],
+        )
 
     async def test_retry_does_not_invoke_ingestion_and_increments_attempts(self):
         await generate_report(self.orchestrator, "job-1")
@@ -51,13 +55,19 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["attempts"], 2)
         self.assertEqual(self.orchestrator.ollama.generate.await_count, 2)
 
-    async def test_uncited_material_claim_fails_and_is_retryable(self):
+    async def test_uncited_material_claim_is_omitted_after_correction(self):
         self.orchestrator.ollama.generate.return_value = (
             '{"key_findings":["Unsupported"],"disagreements":[],"unknowns":[]}'
         )
-        with self.assertRaises(ValueError):
-            await generate_report(self.orchestrator, "job-1")
-        self.assertEqual(self.store.get_report("job-1")["status"], "failed")
+        report = await generate_report(self.orchestrator, "job-1")
+        self.assertEqual(report["status"], "completed")
+        self.assertNotIn("Unsupported", report["report_markdown"])
+        self.assertIn("omitted because", report["report_markdown"])
+        self.assertEqual(self.orchestrator.ollama.generate.await_count, 2)
+        self.assertIn(
+            "previous response was rejected",
+            self.orchestrator.ollama.generate.await_args.args[0],
+        )
 
 
 if __name__ == "__main__":

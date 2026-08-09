@@ -46,6 +46,16 @@ class RequestValidationTests(unittest.TestCase):
                 {"ResearchRequest": ResearchRequest, "QueryRequest": QueryRequest,
                  "RAGRequest": RAGRequest}[name](**payload)
 
+    def test_legacy_persisted_job_fields_are_projected_out(self):
+        job = main.public_job({
+            "job_id": "legacy", "topic": "legacy topic", "status": "completed",
+            "created_at": "2026-08-08T00:00:00+00:00",
+            "updated_at": "2026-08-08T01:00:00+00:00",
+            "depth": 3, "max_sources": 5, "language": "en", "tags": ["old"],
+        })
+        self.assertEqual(job.job_id, "legacy")
+        self.assertNotIn("depth", job.model_dump())
+
 
 class QueryConstructionTests(unittest.IsolatedAsyncioTestCase):
     async def test_filters_and_context_are_constructed_from_results(self):

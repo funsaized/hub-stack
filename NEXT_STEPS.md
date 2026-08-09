@@ -41,13 +41,11 @@ The current 0.1.0 MVP is working end-to-end. Here's the roadmap, prioritized by 
 
 ## Tier 2 — build next month
 
-### 5. RAG-enable Open WebUI
+### 5. RAG-enable Open WebUI — completed
 **Why**: so you can chat with the knowledge base from the chat UI.
 **Effort**: 1-2 hours
-**Steps**:
-1. Open WebUI has a "Functions" feature
-2. Write a function that intercepts user messages, queries /rag, prepends results
-3. Test in Open WebUI
+Implemented as a Compose-configured OpenAI-compatible `research-corpus` model
+with conversation-aware retrieval, streaming, and ordered citations.
 
 ### 6. Cron-based research jobs
 **Why**: "research this every Monday morning".
@@ -103,12 +101,12 @@ The current 0.1.0 MVP is working end-to-end. Here's the roadmap, prioritized by 
 3. Replace SearXNGClient with a search provider abstraction
 4. SearXNG becomes an optional fallback
 
-### 13. Streaming responses
+### 13. Streaming responses — partially completed
 **Why**: RAG answers shouldn't wait for the full generation before showing.
 **Effort**: 2 hours
 **Steps**:
-1. Switch `/rag` to SSE (server-sent events)
-2. Open WebUI needs to support OpenAI-compatible streaming API
+1. The OpenAI-compatible Open WebUI route now streams over SSE
+2. Switch the native `/rag` endpoint to SSE if CLI streaming is still desired
 3. CLI client handles streaming tokens
 
 ### 14. Web search enrichment for RAG

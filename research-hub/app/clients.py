@@ -1,6 +1,8 @@
 """HTTP clients for external services."""
 
+import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -31,7 +33,10 @@ class OllamaClient:
         except Exception:
             return False
 
-    async def generate(self, prompt: str, system: str | None = None, max_tokens: int = 1024) -> str:
+    async def generate(
+        self, prompt: str, system: str | None = None, max_tokens: int = 1024,
+        json_mode: bool = False, json_schema: dict[str, Any] | None = None,
+    ) -> str:
         payload: dict[str, Any] = {
             "model": self.model,
             "prompt": prompt,
@@ -40,9 +45,40 @@ class OllamaClient:
         }
         if system:
             payload["system"] = system
+        if json_schema is not None:
+            payload["format"] = json_schema
+        elif json_mode:
+            payload["format"] = "json"
         r = await self._client.post(f"{self.base_url}/api/generate", json=payload)
         r.raise_for_status()
         return r.json().get("response", "")
+
+    async def chat_stream(
+        self, messages: list[dict[str, str]], *, max_tokens: int = 1024,
+        temperature: float = 0.2, top_p: float = 0.9,
+        stop: str | list[str] | None = None,
+    ) -> AsyncIterator[str]:
+        """Stream assistant content from Ollama's native chat endpoint."""
+        options: dict[str, Any] = {
+            "num_predict": max_tokens, "temperature": temperature, "top_p": top_p,
+        }
+        if stop:
+            options["stop"] = [stop] if isinstance(stop, str) else stop
+        async with self._client.stream(
+            "POST", f"{self.base_url}/api/chat",
+            json={"model": self.model, "messages": messages, "stream": True,
+                  "options": options},
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                data = json.loads(line)
+                content = data.get("message", {}).get("content", "")
+                if content:
+                    yield content
+                if data.get("done"):
+                    break
 
     async def embed(self, text: str) -> list[float]:
         """Embed a single text. Returns vector."""
@@ -295,6 +331,18 @@ class SearXNGClient:
             return []
 
 
+def crawl_markdown_text(value: Any) -> str:
+    """Normalize Crawl4AI markdown across string and structured responses."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for key in ("raw_markdown", "fit_markdown", "markdown_with_citations", "markdown"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate
+    return ""
+
+
 class Crawl4AIClient:
     """Web crawler via Crawl4AI's REST API."""
 
@@ -345,7 +393,7 @@ class Crawl4AIClient:
             return {
                 "url": res.get("url", url),
                 "title": res.get("metadata", {}).get("title", ""),
-                "markdown": res.get("markdown", ""),
+                "markdown": crawl_markdown_text(res.get("markdown", "")),
                 "http_metadata": {
                     key: value for key, value in res.get("metadata", {}).items()
                     if key in {"status_code", "content_type", "etag", "last_modified", "date", "published_time"}
