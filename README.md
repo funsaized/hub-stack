@@ -78,7 +78,7 @@ Validated on:
 
 ## Status
 
-The thirteen-service Compose stack is defined locally. HUB-002 network boundaries,
+The thirteen-service Compose stack is deployed locally. HUB-002 network boundaries,
 HUB-005 health/readiness, and
 HUB-007 through HUB-011 durable, retained, batched ingestion and tests, plus
 HUB-014 strict contracts and HUB-015 observability, are implemented; see

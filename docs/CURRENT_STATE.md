@@ -16,10 +16,9 @@ Open WebUI, Crawl4AI, and Uptime Kuma state live in Docker named volumes.
 
 ## Running services
 
-The original eleven-service Compose topology was deployed locally at the last
-runtime check; every configured Docker healthcheck was healthy and Dozzle had no
-container healthcheck. Prometheus and Grafana are now defined in Compose but need
-runtime verification after the next rebuild/deployment.
+The thirteen-service Compose topology is deployed locally. At the latest runtime
+check, Research-Hub was healthy, the dedicated worker was stable, Prometheus and
+Grafana were running, and both application scrape targets reported `up`.
 
 Research-Hub currently uses Ollama, Qdrant, Redis, SearXNG, and Crawl4AI.
 The API only enqueues ingestion; the dedicated Research Worker claims and executes
@@ -99,3 +98,8 @@ HUB-015 adds request IDs, job correlation, secret-safe JSON logs, API and worker
 Prometheus endpoints, version-controlled alert rules, and a provisioned Grafana
 pipeline dashboard. The optional monitoring path and thresholds are documented in
 `docs/OBSERVABILITY.md`.
+
+HUB-014 and HUB-015 were rebuilt and deployed on 2026-08-09. Live verification
+confirmed strict unknown-field rejection with HTTP 422, the API liveness response,
+both Prometheus scrape targets, all three alert rules, and the provisioned Grafana
+dashboard.
