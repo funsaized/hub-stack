@@ -102,35 +102,33 @@ class ResearchOrchestrator:
         if self._redis:
             await self._redis.close()
 
-    async def health_check(self) -> dict:
-        """Check all backing services."""
-        ollama_ok = False
-        searxng_ok = False
-        crawl4ai_ok = False
-        qdrant_ok = False
-        try:
-            ollama_ok = await self.ollama.health()
-        except Exception:
-            pass
-        try:
-            searxng_ok = await self.searxng.health()
-        except Exception:
-            pass
-        try:
-            crawl4ai_ok = await self.crawl4ai.health()
-        except Exception:
-            pass
-        try:
-            qdrant_ok = await asyncio.to_thread(self.qdrant.health)
-        except Exception:
-            pass
-        return {
+    async def health_check(self) -> dict[str, bool]:
+        """Check every dependency and return only JSON-safe booleans."""
+        async def check(name: str, operation) -> bool:
+            try:
+                return bool(await operation())
+            except Exception:
+                logger.exception("%s health check failed", name)
+                return False
+
+        async def redis_health() -> bool:
+            return bool(self._redis and await self._redis.ping())
+
+        ollama_ok, qdrant_ok, redis_ok, searxng_ok, crawl4ai_ok = await asyncio.gather(
+            check("ollama", self.ollama.health),
+            check("qdrant", lambda: asyncio.to_thread(self.qdrant.health)),
+            check("redis", redis_health),
+            check("searxng", self.searxng.health),
+            check("crawl4ai", self.crawl4ai.health),
+        )
+        services = {
             "ollama": ollama_ok,
             "qdrant": qdrant_ok,
+            "redis": redis_ok,
             "searxng": searxng_ok,
             "crawl4ai": crawl4ai_ok,
-            "all_ok": all([ollama_ok, qdrant_ok, searxng_ok, crawl4ai_ok]),
         }
+        return {**services, "all_ok": all(services.values())}
 
     def _job_key(self, job_id: str) -> str:
         return f"research:job:{job_id}"

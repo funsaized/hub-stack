@@ -184,7 +184,7 @@ later ────────────────────────�
 - **Qdrant collection is persistent and validated on startup**: research-hub creates a missing collection once, preserves an existing collection, and refuses to start without modifying data when its vector size or distance is incompatible with the configured embedding model
 - **All UIs on host ports**: localhost works directly from the host; Tailscale handles remote access
 - **gpu=nvidia, count=1**: only Ollama gets GPU; the rest run on CPU
-- **HEALTHCHECK in shell scripts**: bash for containers with bash, python3 for SearXNG (no bash), curl-baked-in for research-hub. See `docs/HEALTHCHECKS.md`.
+- **Separate liveness and readiness**: Docker probes research-hub `/livez`; capability readiness and dependency diagnostics use `/readyz` and `/health/full`. See `docs/HEALTHCHECKS.md` and `docs/CURRENT_STATE.md`.
 
 ## Boundaries
 

@@ -125,15 +125,23 @@ def cmd_rag(args):
 
 
 def cmd_health(args):
-    r = httpx.get(f"{args.url}/health", timeout=10.0)
-    r.raise_for_status()
+    r = httpx.get(
+        f"{args.url}/readyz",
+        params={"capability": args.capability},
+        timeout=10.0,
+    )
     data = r.json()
     print(f"Status: {data['status']}")
-    for svc, ok in data["services"].items():
-        if svc == "all_ok":
-            continue
-        marker = "✓" if ok else "✗"
+    failed = []
+    for svc, ok in data.get("services", {}).items():
+        marker = "OK" if ok else "FAIL"
         print(f"  {marker} {svc}")
+        if not ok:
+            failed.append(svc)
+    if r.status_code >= 400 or failed:
+        if failed:
+            print(f"Failing services: {', '.join(failed)}", file=sys.stderr)
+        sys.exit(1)
 
 
 def main():
@@ -172,6 +180,12 @@ def main():
     p.set_defaults(func=cmd_rag)
 
     p = sub.add_parser("health", help="Check service health")
+    p.add_argument(
+        "--capability",
+        choices=("all", "query", "rag", "research"),
+        default="all",
+        help="Readiness scope (default: all)",
+    )
     p.set_defaults(func=cmd_health)
 
     args = parser.parse_args()

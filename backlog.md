@@ -88,6 +88,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-005 — Fix detailed health checks and the CLI health command
 
+**Status:** ✅ Done
+
 **Problem:** `health_check()` passes the async Qdrant health method to `asyncio.to_thread()`, producing an unserializable coroutine. The CLI calls `/health` but expects the `/health/full` response shape.
 
 **Work:**

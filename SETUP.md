@@ -187,7 +187,7 @@ docker compose ps
 | Dozzle | HTTP(s) | http://host.docker.internal:8888/ |
 | SearXNG | HTTP(s) | http://host.docker.internal:8889/ |
 | Crawl4AI | HTTP(s) | http://host.docker.internal:11235/health |
-| Research-Hub | HTTP(s) | http://host.docker.internal:8000/health |
+| Research-Hub | HTTP(s) | http://host.docker.internal:8000/livez |
 | Open-WebUI | HTTP(s) | http://host.docker.internal:8080/ |
 
 Use `host.docker.internal` (not `localhost`) — see docs/HEALTHCHECKS.md for why.

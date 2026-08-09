@@ -3,7 +3,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query, Response
 
 from .config import load_config
 from .models import ResearchRequest, JobInfo, QueryRequest, QueryResponse, RAGRequest, RAGResponse
@@ -46,17 +46,51 @@ app = FastAPI(
 
 @app.get("/health")
 async def health():
-    """Liveness probe."""
-    if not orchestrator:
-        return {"status": "starting"}
+    """Backward-compatible alias for the process liveness probe."""
+    return await livez()
+
+
+@app.get("/livez")
+async def livez():
+    """Process-only liveness probe; does not inspect dependencies."""
     return {"status": "ok", "service": "research-hub"}
+
+
+READINESS_REQUIREMENTS = {
+    "all": {"ollama", "qdrant", "redis", "searxng", "crawl4ai"},
+    "query": {"ollama", "qdrant"},
+    "rag": {"ollama", "qdrant"},
+    "research": {"ollama", "qdrant", "redis", "searxng", "crawl4ai"},
+}
+
+
+@app.get("/readyz")
+async def readyz(
+    response: Response,
+    capability: str = Query(default="all", pattern="^(all|query|rag|research)$"),
+):
+    """Readiness for all services or for one requested API capability."""
+    if not orchestrator:
+        response.status_code = 503
+        return {"status": "starting", "capability": capability, "services": {}}
+    checks = await orchestrator.health_check()
+    required = READINESS_REQUIREMENTS[capability]
+    services = {name: checks[name] for name in sorted(required)}
+    ready = all(services.values())
+    if not ready:
+        response.status_code = 503
+    return {
+        "status": "ok" if ready else "degraded",
+        "capability": capability,
+        "services": services,
+    }
 
 
 @app.get("/health/full")
 async def health_full():
     """Detailed health check including backing services."""
     if not orchestrator:
-        return {"status": "starting"}
+        return {"status": "starting", "services": {}}
     checks = await orchestrator.health_check()
     return {"status": "ok" if checks["all_ok"] else "degraded", "services": checks}
 
@@ -109,6 +143,8 @@ async def root():
         "version": "0.1.0",
         "endpoints": [
             "GET /health",
+            "GET /livez",
+            "GET /readyz?capability=all|query|rag|research",
             "GET /health/full (detailed checks)",
             "POST /research {topic, depth, max_sources, language, tags}",
             "GET /research/{job_id}",

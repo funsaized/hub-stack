@@ -130,11 +130,12 @@ class QdrantClient:
                 "migrate/re-embed it or configure a different collection."
             )
 
-    async def health(self) -> bool:
+    def health(self) -> bool:
+        """Check Qdrant using its synchronous client."""
         try:
-            # QdrantClient is sync; run in thread if needed
             return str(self._client.get_collections()).strip() != ""
-        except Exception:
+        except Exception as exc:
+            logger.warning("Qdrant health check failed: %s", exc)
             return False
 
     def upsert(self, points: list[dict]) -> None:

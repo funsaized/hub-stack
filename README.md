@@ -12,7 +12,7 @@ A reusable research service that searches the web, crawls results, extracts clea
 |---|---|---|
 | Ollama | 11434 | Local LLM (qwen2.5:7b) + embeddings (nomic-embed-text) |
 | Qdrant | 6333 | Vector DB for RAG (768-dim cosine, research_corpus) |
-| Redis | 6379 | Job queue + state |
+| Redis | 6379 | Job metadata and state (durable work queue not yet implemented) |
 | Postgres | 5432 | Relational store with pgvector |
 | SearXNG | 8889 | Private meta-search (no Google tracking) |
 | Crawl4AI | 11235 | Web crawler with LLM-friendly extraction |
@@ -35,8 +35,9 @@ First run takes 5-10 minutes (image pulls, model download). After that, the stac
 
 ```bash
 # Health check
-curl -s http://localhost:8000/health
-# {"status":"ok","service":"research-hub"}
+curl -s http://localhost:8000/livez
+curl -s http://localhost:8000/readyz?capability=query
+# See docs/CURRENT_STATE.md for response semantics.
 
 # Submit a research job
 python3 test_research.py
@@ -57,6 +58,7 @@ uv run --with-requirements requirements.txt python -m unittest discover -s tests
 - [USE_CASES.md](USE_CASES.md) — concrete things you can do today
 - [NEXT_STEPS.md](NEXT_STEPS.md) — roadmap, deferred features, known gaps
 - [docs/HEALTHCHECKS.md](docs/HEALTHCHECKS.md) — how the Docker healthcheck system works
+- [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) — dated local deployment and health-contract snapshot
 - [docs/MODELS.md](docs/MODELS.md) — current model choices, swap instructions
 
 ## Hardware
@@ -70,4 +72,6 @@ Validated on:
 
 ## Status
 
-All 10 services healthy. End-to-end pipeline validated: search → crawl → chunk → embed → store → query → RAG.
+The full ten-service stack is deployed locally. HUB-005 health/readiness fixes
+are rebuilt and verified; see [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
+Other P0 and later work remains tracked in [backlog.md](backlog.md).

@@ -17,7 +17,7 @@ COPY app/ ./app/
 # Health endpoint (curl handles dual-stack localhost correctly,
 # wget on slim images has IPv6/IPv4 issues)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
-  CMD curl -f http://localhost:8000/health || exit 1
+  CMD curl -f http://localhost:8000/livez || exit 1
 
 EXPOSE 8000
 

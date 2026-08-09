@@ -25,10 +25,14 @@ Both mounted via `./healthcheck:/healthcheck:ro` into the container.
 | postgres | `pg_isready -U hub -d hub` | built-in |
 | searxng | python3 socket probe | no bash |
 | crawl4ai | bash `/healthcheck/healthcheck.sh 11235` | has bash |
-| research-hub | Dockerfile `curl -f http://localhost:8000/health` | has curl, IPv6-safe |
+| research-hub | Dockerfile `curl -f http://localhost:8000/livez` | process liveness; has curl, IPv6-safe |
 | open-webui | sh `echo > /dev/tcp/localhost/8080` | has bash actually, but compose uses sh-style |
 | dozzle | (none) | no healthcheck section |
 | uptime-kuma | (none) | relies on its own UI |
+
+Research Hub also exposes `/readyz?capability=query|rag|research|all` fo
+capability-specific dependency readiness. `/health/full` is a diagnostic view
+and remains HTTP 200 when dependencies are degraded.
 
 ## Research-hub startup and Qdrant persistence
 
