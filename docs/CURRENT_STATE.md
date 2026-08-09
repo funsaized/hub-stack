@@ -26,10 +26,13 @@ jobs with leases, heartbeats, timeouts, bounded retries, and orphan reconciliati
 Postgres, Open WebUI, Dozzle, and Uptime Kuma are adjacent services; Postgres is
 not currently part of the research/query data path.
 
-Host ports are published on all interfaces by the current Compose file. Access
-from another machine still depends on Windows Firewall and network routing, but
-these bindings must not be treated as localhost-only. This is tracked by the
-unfinished P0 network and credential items in `backlog.md`.
+HUB-002 is deployed: Redis, Postgres, Qdrant, and Crawl4AI have no published host
+ports. Research Hub, Open WebUI, SearXNG, Dozzle, and Uptime Kuma bind only to
+`127.0.0.1`. Ollama also defaults to loopback, with an explicit
+`OLLAMA_BIND_ADDRESS` opt-in for a trusted LAN or Tailscale interface. See
+`docs/NETWORKING.md`. This workstation publishes the hub's Ollama on host port
+11435 because Docker Desktop's separate model runner owns 11434. Credential
+hardening remains unfinished.
 
 ## Research-Hub health contract
 
@@ -80,6 +83,6 @@ content skips existing chunks; changed content is completely embedded before its
 old chunks are removed. `DELETE /documents?url=...` removes every version/chunk for
 a canonical source URL.
 
-Important remaining limitations include LAN-wide port bindings, hardcoded/default
-credentials, crawler SSRF protections, backups, and CI coverage. Redis AOF improves
+Important remaining limitations include hardcoded/default credentials, crawler
+SSRF protections, backups, and CI coverage. Redis AOF improves
 durability but is not a backup or a high-availability queue.

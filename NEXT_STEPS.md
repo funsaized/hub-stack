@@ -4,14 +4,15 @@ The current 0.1.0 MVP is working end-to-end. Here's the roadmap, prioritized by 
 
 ## Tier 1 — do this week
 
-### 1. Tailscale for remote access
-**Why**: so you can hit the stack from your phone or laptop when away from home.
+### 1. Authenticated Tailscale ingress
+**Why**: selectively reach approved surfaces without exposing the whole stack.
 **Effort**: 10 minutes
 **Steps**:
 1. Install Tailscale on the host
 2. Sign in
 3. Install Tailscale on your phone
-4. Reach http://<hostname>:3001 from anywhere
+4. Follow `docs/NETWORKING.md`; expose only Ollama on a trusted interface, or put
+   authenticated ingress in front of an approved UI/API.
 
 ### 2. Rotate exposed secrets
 **Why**: ships with default credentials (`changeme_in_production`).

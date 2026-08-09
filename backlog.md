@@ -35,6 +35,8 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-002 — Stop publishing internal service ports to every network interface
 
+**Status:** ✅ Done
+
 **Problem:** Every Compose port currently binds to `0.0.0.0`, exposing Redis, Postgres, Qdrant, Ollama, Crawl4AI, and management services to the LAN.
 
 **Work:**

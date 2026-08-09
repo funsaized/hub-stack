@@ -197,17 +197,18 @@ reconciliation requeue the job.
 
 | Name | Type | URL |
 |---|---|---|
-| Ollama | HTTP(s) | http://host.docker.internal:11434/api/tags |
-| Qdrant | HTTP(s) | http://host.docker.internal:6333/healthz |
-| Redis | TCP Port | host.docker.internal:6379 |
-| Postgres | TCP Port | host.docker.internal:5432 |
-| Dozzle | HTTP(s) | http://host.docker.internal:8888/ |
-| SearXNG | HTTP(s) | http://host.docker.internal:8889/ |
-| Crawl4AI | HTTP(s) | http://host.docker.internal:11235/health |
-| Research-Hub | HTTP(s) | http://host.docker.internal:8000/livez |
-| Open-WebUI | HTTP(s) | http://host.docker.internal:8080/ |
+| Ollama | HTTP(s) | http://ollama:11434/api/tags |
+| Qdrant | HTTP(s) | http://qdrant:6333/healthz |
+| Redis | TCP Port | redis:6379 |
+| Postgres | TCP Port | postgres:5432 |
+| Dozzle | HTTP(s) | http://dozzle:8080/ |
+| SearXNG | HTTP(s) | http://searxng:8080/ |
+| Crawl4AI | HTTP(s) | http://crawl4ai:11235/health |
+| Research-Hub | HTTP(s) | http://research-hub:8000/livez |
+| Open-WebUI | HTTP(s) | http://open-webui:8080/ |
 
-Use `host.docker.internal` (not `localhost`) — see docs/HEALTHCHECKS.md for why.
+Uptime Kuma shares the Compose network, so use service DNS names rather than
+host-published ports. Internal dependencies intentionally have no host listener.
 
 ## 7. Verify the pipeline
 
@@ -242,7 +243,7 @@ The model exists on disk but is not in Ollama's running index. Restart Ollama:
 ```bash
 docker compose restart ollama
 # Then pull via API (not via docker exec)
-curl -X POST http://localhost:11434/api/pull -d '{"name":"qwen2.5:7b"}'
+curl -X POST http://localhost:11435/api/pull -d '{"name":"qwen2.5:7b"}'
 ```
 
 ### "Crawl4AI failed" in research jobs
@@ -280,7 +281,9 @@ sudo tailscale up
 # Then your machine is reachable at <hostname>.tail-<hash>.ts.net
 ```
 
-Now http://localhost:3001 becomes https://<hostname>.tail-<hash>.ts.net:3001 from your phone.
+The stack remains loopback-only after installing Tailscale. See
+`docs/NETWORKING.md` for optional remote Ollama access. Use an authenticated
+reverse proxy for remote UI or Research API access.
 
 ## Optional: Discord/Telegram alerts
 

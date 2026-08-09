@@ -8,19 +8,19 @@ A reusable research service that searches the web, crawls results, extracts clea
 
 ## What's in the box
 
-| Service | Port | Purpose |
+| Service | Host access | Purpose |
 |---|---|---|
-| Ollama | 11434 | Local LLM (qwen2.5:7b) + embeddings (nomic-embed-text) |
-| Qdrant | 6333 | Vector DB for RAG (768-dim cosine, research_corpus) |
-| Redis | 6379 | Durable ingestion queue, leases, retries, and job state |
-| Postgres | 5432 | Relational store with pgvector |
-| SearXNG | 8889 | Private meta-search (no Google tracking) |
-| Crawl4AI | 11235 | Web crawler with LLM-friendly extraction |
-| Research-Hub | 8000 | FastAPI orchestrator: `/research`, `/query`, `/rag` |
-| Research Worker | — | Dedicated durable search/crawl/embed/store worker |
-| Open WebUI | 8080 | Chat interface for the LLM |
-| Dozzle | 8888 | Live Docker log viewer |
-| Uptime Kuma | 3001 | Service health monitoring |
+| Ollama | `127.0.0.1:11435` (configurable) | Local LLM + embeddings |
+| Qdrant | Internal only | Vector DB for RAG |
+| Redis | Internal only | Durable ingestion queue and job state |
+| Postgres | Internal only | Relational store with pgvector |
+| SearXNG | `127.0.0.1:8889` | Private meta-search |
+| Crawl4AI | Internal only | Web crawler with LLM-friendly extraction |
+| Research-Hub | `127.0.0.1:8000` | FastAPI orchestrator |
+| Research Worker | Internal only | Durable search/crawl/embed/store worker |
+| Open WebUI | `127.0.0.1:8080` | Chat interface |
+| Dozzle | `127.0.0.1:8888` | Live Docker log viewer |
+| Uptime Kuma | `127.0.0.1:3001` | Service health monitoring |
 
 ## Quick start
 
@@ -62,6 +62,7 @@ uv run --with-requirements requirements.txt python -m unittest discover -s tests
 - [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md) — dated local deployment and health-contract snapshot
 - [docs/MODELS.md](docs/MODELS.md) — current model choices, swap instructions
 - [docs/DOCUMENT_STORE.md](docs/DOCUMENT_STORE.md) — retained sources, deletion, and index rebuilds
+- [docs/NETWORKING.md](docs/NETWORKING.md) — default bindings and optional remote Ollama access
 
 ## Hardware
 
@@ -74,7 +75,8 @@ Validated on:
 
 ## Status
 
-The full eleven-service stack is deployed locally. HUB-005 health/readiness and
+The full eleven-service stack is deployed locally. HUB-002 network boundaries,
+HUB-005 health/readiness, and
 HUB-007 through HUB-011 durable, retained, batched ingestion and tests are verified; see
 [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md).
 Other P0 and later work remains tracked in [backlog.md](backlog.md).

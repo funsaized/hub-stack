@@ -192,7 +192,9 @@ later ────────────────────────�
 - **Named volumes for all stateful services**: data survives `docker compose down && up`
 - **No compose-level healthcheck override for research-hub**: Dockerfile's curl-based healthcheck is used (wget has IPv6 issues on slim images)
 - **Qdrant collection is persistent and validated on startup**: research-hub creates a missing collection once, preserves an existing collection, and refuses to start without modifying data when its vector size or distance is incompatible with the configured embedding model
-- **All UIs on host ports**: localhost works directly from the host; Tailscale handles remote access
+- **Loopback-only ingress by default**: local UIs and the API bind to `127.0.0.1`;
+  Redis, Postgres, Qdrant, and Crawl4AI have no published host ports. Ollama is
+  loopback-only unless `OLLAMA_BIND_ADDRESS` selects a trusted interface.
 - **gpu=nvidia, count=1**: only Ollama gets GPU; the rest run on CPU
 - **Separate liveness and readiness**: Docker probes research-hub `/livez`; capability readiness and dependency diagnostics use `/readyz` and `/health/full`. See `docs/HEALTHCHECKS.md` and `docs/CURRENT_STATE.md`.
 - **API/worker separation**: restarting or scaling the API cannot interrupt claimed work.
@@ -200,7 +202,8 @@ later ────────────────────────�
 
 ## Boundaries
 
-- No authentication on the API (binds to 0.0.0.0). Add a reverse proxy with auth before exposing publicly.
+- No authentication on the API, so it remains loopback-only. Add an authenticated
+  reverse proxy before intentionally making it remote.
 - No backup strategy. Postgres + Redis + Qdrant volumes have the only state.
 - No rate limiting. The crawler will hammer sites if you set depth=100.
 - No multi-tenant. All jobs go to the same Qdrant collection.

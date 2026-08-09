@@ -35,6 +35,10 @@ Research Hub also exposes `/readyz?capability=query|rag|research|all` fo
 capability-specific dependency readiness. `/health/full` is a diagnostic view
 and remains HTTP 200 when dependencies are degraded.
 
+These probes run inside their containers and do not require host-published ports.
+Uptime Kuma should likewise use Compose service names (`qdrant:6333`,
+`redis:6379`, and so on); see `SETUP.md`.
+
 The API research readiness confirms its dependencies, not that a worker is
 currently consuming. Check worker state and recent failures with:
 
