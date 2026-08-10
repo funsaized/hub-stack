@@ -471,3 +471,143 @@ Next action: stop at the Phase 4 review gate. With explicit deployment approval,
 only the four PRD-selected retained jobs and record the required live evidence. Do not
 begin Phase 5 without separate explicit approval after Phase 4 acceptance and measured
 dense-retrieval misses.
+
+## 2026-08-10 - Phase 4 approved live report retries
+
+Status: the four approved retained reports were retried exactly once through the deployed
+report-retry endpoint. Three reports improved, but the authoritative report still contains
+no supported cited finding. Phase 4 therefore remains unaccepted and Phase 5 was not
+started.
+
+Approval and pre-retry checks:
+
+- The owner explicitly replied `yes i approve the phase 4` after being asked to approve
+  the four deployed Phase 4 report retries. This was treated as deployment approval for
+  those retries, not advance acceptance of their results and not Phase 5 approval.
+- The entire PRD and this progress log were read. `git status --short --branch` reported
+  `## main...origin/main`; local HEAD and configured upstream both resolved to
+  `c146e8c1e6f07d05f1a51d0e7be4224eb33a93b4`.
+- The deterministic command
+  `docker compose run --rm --no-deps -v "${PWD}\research-hub:/app" research-hub
+  python -m tests.benchmark_report_retrieval` exited 0 with critical Recall@4 `1.0`,
+  citation validity `1.0`, and `passed: true`. The paired command
+  `docker compose run --rm --no-deps -v "${PWD}\research-hub:/app" research-hub
+  python -m unittest tests.test_report_retrieval_benchmark -v` passed both tests in
+  1.718 seconds.
+- `GET http://127.0.0.1:8000/research?limit=100` confirmed the original six healthcare
+  jobs still total 9,698 chunks and the authoritative follow-up has 870 chunks. Before
+  reports were captured with `GET /research/{job_id}/report`. The confidence job was
+  selected for the combined confidence/fairness category because it was the sole original
+  report with supported findings and therefore met the PRD's usable-source qualifier.
+
+Approved retry commands:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/research/4b8acd0f-088f-4b97-92fc-f52b69b8a3ee/report/retry" -TimeoutSec 180
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/research/d8fe8902-ecf9-4785-b19b-d2cd3de25086/report/retry" -TimeoutSec 180
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/research/6944b80b-9fd4-4422-b700-5ab3003b2c4c/report/retry" -TimeoutSec 180
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/research/ba92d5f9-fc26-44fe-83f6-30e033aa7f93/report/retry" -TimeoutSec 180
+```
+
+Per-job live evidence:
+
+- Authoritative clinical-AI standards, job
+  `4b8acd0f-088f-4b97-92fc-f52b69b8a3ee`: 40 candidates, six packed chunks, six
+  available sources, and three represented sources. Selected evidence was DECIDE-AI
+  `[S5]` chunk 46, the Communications Medicine systematic review `[S6]` chunks 59 and
+  110, and CONSORT-AI `[S4]` chunks 95, 38, and 97. Before: zero findings and four
+  omitted uncited claims. After: zero findings and three final omitted uncited claims;
+  the log counted four uncited rejections across the rejected first attempt and final
+  omissions. No material citation was emitted. Topic embedding took 2.571 seconds,
+  inferred retrieval/persistence overhead excluding generation was 2.623 seconds, two
+  generation calls totaled 14.923 seconds, and synthesis totaled 17.546 seconds
+  (host-observed HTTP latency 16.631 seconds).
+- Binary-classifier statistics, job
+  `d8fe8902-ecf9-4785-b19b-d2cd3de25086`: 40 candidates, six packed chunks, six
+  available sources, and three represented sources. Selected evidence was TRIAGE `[S4]`
+  chunks 73, 387, and 71; the prospective ADHD triage study `[S3]` chunks 155 and 144;
+  and the diagnostic-metrics review `[S2]` chunk 31. Before: zero findings and four
+  omitted uncited claims. After: four findings covering multidimensional evaluation,
+  screening sensitivity/specificity tradeoffs, safety/workload thresholding, and
+  threshold dependence. One first-attempt invalid-source citation was rejected and
+  corrected; no final claim was omitted. Topic embedding took 3.070 seconds, inferred
+  non-generation overhead 3.126 seconds, two generation calls 11.582 seconds, synthesis
+  14.708 seconds, and host-observed HTTP latency 13.997 seconds.
+- Fact extraction/assertion classification, job
+  `6944b80b-9fd4-4422-b700-5ab3003b2c4c`: 40 candidates, four packed chunks, four
+  available sources, and two represented sources. Selected evidence was the assertion
+  detection paper `[S1]` chunks 13, 43, and 51 and the multiclass tutorial `[S4]` chunk
+  351. Before: zero findings and two omitted uncited claims. After: two findings, both
+  supported by `[S1]`, covering assertion categories and the available pretrained model
+  categories; no claim was rejected. Topic embedding took 3.238 seconds, inferred
+  non-generation overhead 3.299 seconds, generation 8.273 seconds, synthesis 11.572
+  seconds, and host-observed HTTP latency 11.050 seconds.
+- Confidence/selective prediction, job
+  `ba92d5f9-fc26-44fe-83f6-30e033aa7f93`: 40 candidates, six packed chunks, six
+  available sources, and three represented sources. Selected evidence was Selective LLM
+  Prediction `[S5]` chunks 25, 5, and 3; the clinical self-confidence study `[S6]`
+  chunks 18 and 49; and the clinical extraction methods paper `[S4]` chunk 52. Before:
+  two findings and one omitted uncited claim. After: four findings covering poor clinical
+  self-confidence calibration, abstention/risk control, multidimensional clinical
+  evaluation, and coverage-accuracy inversion; no claim was rejected. Topic embedding
+  took 2.849 seconds, inferred non-generation overhead 2.900 seconds, generation 8.014
+  seconds, synthesis 10.913 seconds, and host-observed HTTP latency 10.448 seconds.
+
+Citation and mutation audit:
+
+- A read-only diagnostic used the deployed `ResearchOrchestrator`,
+  `ScopedRetrievalService.retrieve()`, and `pack_evidence()` against each retained job to
+  reproduce the exact source IDs, document IDs, chunk indexes, scores, and sanitized text
+  supplied by the retry path. It performed topic-query embeddings only; it did not embed
+  retained documents, generate reports, crawl, or upsert.
+- All 11 final material citation references across the binary, fact-extraction, and
+  confidence reports resolve to the cited source ID and exact selected retained document
+  and chunk. Manual claim-to-chunk review found each final claim supported by that supplied
+  text. Final material citation validity was therefore 11/11 (`100%`). The authoritative
+  report had no material citation to validate because it had no supported finding.
+- `docker compose logs --since '2026-08-10T23:25:00Z' research-worker` filtered for
+  `job_started`, `phase_completed`, `crawl_completed`, `upsert`, and `embed` returned
+  `NO_INGESTION_ACTIVITY_MATCHES`. Job source/chunk counts remained 6/870, 6/1700,
+  4/1047, and 6/1582. No new job, crawl, retained-document re-embedding, Qdrant upsert,
+  or corpus mutation occurred.
+
+Acceptance and risks:
+
+- The live authoritative-source acceptance criterion failed: relevant chunks from three
+  retained authoritative sources reached generation, but the model emitted no supported
+  cited finding. Phase 4 must not be accepted despite the deterministic gate and the other
+  three improved reports.
+- Ollama live logs showed `n_ctx_slot = 4096` while the application packs against
+  `MODEL_CONTEXT_TOKENS=8192`. The selected prompts were below the observed live slot, so
+  no truncation was reported, but this configuration mismatch remains a deployment risk.
+- Dense retrieval found the specialized guideline terms and relevant late chunks in this
+  live check; this run did not demonstrate the exact/specialized-term misses required to
+  justify Phase 5. Phase 5 also lacks separate explicit owner approval.
+- Public report, `/query`, `/rag`, and OpenAI-compatible contracts were unchanged. No LLM
+  judge, BM25, reranking, MMR, query decomposition, GraphRAG, map-reduce, dependency, or
+  production-code change was introduced.
+
+Final verification:
+
+- `docker compose run --rm --no-deps
+  -e TEST_REDIS_URL=redis://hub-redis:6379/15
+  -v "${PWD}\research-hub:/app" research-hub
+  python -m unittest discover -s tests -v`: 79 tests passed in 2.595 seconds with no
+  failures or skips; all four Compose Redis worker integration tests ran and passed.
+- `docker compose run --rm --no-deps research-hub python -m pip check`:
+  `No broken requirements found.`
+- `hermes verify --json`: exit code 0 with `"ok": true`; the Compose build passed and
+  readiness returned HTTP 200.
+- `git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff
+  --check`: exit code 0 with no whitespace error. Git emitted only the expected warning
+  that the progress file's working-copy LF endings will be converted to CRLF when touched.
+
+Files changed:
+
+- `PRDs/research-rag-synthesis-modernization-progress.md`: recorded deployment approval,
+  the four one-time retry outcomes, selected retained evidence, claim/citation audit,
+  timings, acceptance failure, and risks.
+
+Next action: stop at the Phase 4 review gate. Diagnose or change authoritative generation
+only with a new, explicit instruction; do not retry the retained jobs again implicitly and
+do not begin Phase 5.
