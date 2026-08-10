@@ -22,6 +22,17 @@ UPSERT_LATENCY = Histogram("hub_upsert_duration_seconds", "Qdrant upsert latency
 RETRIEVAL_SCORE = Histogram("hub_retrieval_score", "Retrieved cosine scores", buckets=(0, .25, .5, .7, .8, .9, 1))
 GENERATION_LATENCY = Histogram("hub_generation_duration_seconds", "LLM generation latency")
 GENERATION_TOKENS = Counter("hub_generation_tokens_total", "Generated tokens reported or estimated")
+REPORT_RETRIEVAL_ITEMS = Histogram(
+    "hub_report_retrieval_items", "Report retrieval and packing counts", ["kind"],
+    buckets=(0, 1, 2, 5, 10, 20, 40, 100, 250, 1000),
+)
+REPORT_SYNTHESIS = Counter("hub_report_synthesis_total", "Report synthesis outcomes", ["outcome"])
+REPORT_CLAIMS_REJECTED = Counter(
+    "hub_report_claims_rejected_total", "Rejected report claims", ["reason"]
+)
+REPORT_GENERATION_LATENCY = Histogram(
+    "hub_report_generation_duration_seconds", "Report generation latency"
+)
 ACTIVE_JOBS = Gauge("hub_active_jobs", "Jobs currently executing")
 
 
@@ -35,7 +46,10 @@ class JsonFormatter(logging.Formatter):
             "correlation_id": getattr(record, "correlation_id", correlation_id.get()),
         }
         for key in ("job_id", "phase", "source_url", "source_domain", "duration_seconds",
-                    "retry_count", "failure_category"):
+                    "retry_count", "failure_category", "outcome",
+                    "retrieval_candidates", "selected_chunks", "sources_available",
+                    "sources_represented", "rejected_uncited_claims",
+                    "rejected_invalid_citations", "no_supported_findings"):
             value = getattr(record, key, None)
             if value is not None:
                 data[key] = value

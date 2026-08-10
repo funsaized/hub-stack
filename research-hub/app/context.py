@@ -31,9 +31,13 @@ def token_count(text: str) -> int:
     return len(text.encode("utf-8"))
 
 
-def render_entry(index: int, title: str, url: str, text: str) -> str:
+def render_entry(
+    index: int | str, title: str, url: str, text: str,
+    document_id: str | None = None,
+) -> str:
+    document = f"\nDocument ID: {document_id}" if document_id else ""
     return (f'<UNTRUSTED_EVIDENCE id="{index}">\nSource: {title} '
-            f'({url})\n{text}\n</UNTRUSTED_EVIDENCE>')
+            f'({url}){document}\n{text}\n</UNTRUSTED_EVIDENCE>')
 
 
 def render_prompt(context: str, question: str) -> str:

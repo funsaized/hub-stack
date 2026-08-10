@@ -211,3 +211,84 @@ Remaining risks:
 
 Next proposed work (not started): Phase 3 — retrieval-based report synthesis, only after
 Phase 2 review approval.
+
+## 2026-08-10 - Phase 3: retrieval-based report synthesis
+
+Status: Phase 3 gate is green and ready for review; Phase 4 and optional retrieval
+enhancements were not started.
+
+Pre-edit checks:
+
+- `git status --short --branch` reported `## main`, and HEAD was the requested clean
+  Phase 2 baseline commit `34f173a` (`feat(research): add scoped retrieval service`).
+- Focused retrieval baseline: 9 tests passed in 0.086 seconds.
+- Complete baseline: 71 tests ran in 0.863 seconds; 70 passed with no skips and
+  `test_relevant_evidence_after_long_prefix_is_used` was the single expected failure.
+  All four Redis worker integration tests ran against healthy Compose Redis.
+- The first expanded synthesis specification run executed 8 tests in 0.356 seconds.
+  Four failed for the intended pre-implementation reasons: document prefixes still hid
+  the late sentinel, empty retrieval still called generation, unrepresented `[S2]` was
+  accepted, and shared complete-entry delimiters were absent.
+
+Files changed:
+
+- `research-hub/app/synthesis.py`: builds the stable SQLite source registry before
+  retrieval, packs only scoped sanitized candidates, maps packed entries to stable source
+  IDs, validates findings and disagreements against represented sources, returns explicit
+  insufficient-evidence content without generation, and preserves two attempts, omission,
+  retry, previous-report, attempt-count, and failure-persistence behavior.
+- `research-hub/app/retrieval.py` and `research-hub/app/context.py`: let report packing
+  render stable `[S#]` identities plus exact retained document IDs while leaving existing
+  query packing behavior unchanged.
+- `research-hub/app/observability.py`: adds bounded report retrieval counts, outcome and
+  claim-rejection counters, report generation latency, and structured count/outcome fields;
+  no topic, URL, job ID, or free text is used as a Prometheus label.
+- `research-hub/tests/test_synthesis.py`: covers late evidence, exact source mapping,
+  unrepresented and invalid citations, empty retrieval, packing-to-zero, sanitization,
+  complete entries, correction/omission, retry isolation, attempt counts, previous-report
+  protection, and failed-report persistence.
+- `PRDs/research-rag-synthesis-modernization-progress.md`: records this gate.
+
+Test and verification outputs (application container mounted at `/app`):
+
+- Final focused synthesis gate: 10 tests passed in 0.563 seconds.
+- Synthesis, retrieval, context security, `/query`, `/rag`, and OpenAI-compatible
+  regression slice: 44 tests passed in 0.740 seconds.
+- Final complete suite against Compose Redis database 15: 77 tests passed in 1.217 seconds,
+  with no failures or skips. Existing observation, ingestion-idempotency, report lifecycle,
+  Qdrant collection, public contract, and all four Redis worker tests passed.
+- Container `python -m pip check`: `No broken requirements found.`
+- Repository CRLF-aware `git diff --check`: exit code 0 with no whitespace errors.
+
+Phase 3 acceptance:
+
+- The retrieved late sentinel reaches generation; synthesis no longer reads retained
+  Markdown prefixes or uses a prefix fallback.
+- The source registry remains the deterministic SQLite observation order and preserves
+  exact `[S#]` to retained document ID and canonical URL mappings. The generation context
+  contains only completely packed selected entries, and each report entry includes that
+  exact source identity.
+- Findings and disagreements may cite only source IDs represented in packed generation
+  context. Uncited, invalid, and merely registered-but-unrepresented citations trigger the
+  existing correction attempt and are omitted if correction still fails.
+- Zero retrieval candidates and candidates that all exceed the context budget produce an
+  explicit insufficient-evidence report without calling generation.
+- Retrieval-time prompt-injection sanitization and shared complete-entry packing remain
+  active. Report retry performs one topic embedding but no search, crawl, source-chunk
+  embedding, Qdrant upsert, or ingestion invocation.
+- Bounded metrics/logs distinguish retrieval and packing counts, available and represented
+  sources, supported/insufficient/claims-rejected/failed outcomes, rejection reasons, no
+  supported findings, and report generation duration.
+- Report GET/retry, `/query`, `/rag`, OpenAI-compatible, ingestion, observation, persistence,
+  and Redis worker contracts remain unchanged.
+- No research job or live retry was launched. No BM25, reranking, MMR, query decomposition,
+  GraphRAG, map-reduce, dependency, fixture manifest, or Phase 4 work was added.
+
+Remaining risks:
+
+- Dense retrieval quality and production latency still need the Phase 4 deterministic
+  evaluation and separately approved live retry; neither belongs to this gate.
+- Retrieval/generation diagnostics are metrics and structured logs only, so they are not
+  persisted or exposed through the unchanged public report schema.
+
+Next proposed work (not started): Phase 4 evaluation, only after Phase 3 review approval.
