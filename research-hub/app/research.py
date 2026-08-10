@@ -498,6 +498,7 @@ class ResearchOrchestrator:
                 CHUNKS.observe(len(chunks))
                 canonical_url, content_hash, document_id = document_identity(res["url"], md)
                 fetched_at = utcnow()
+                research_metadata = {"topic": topic, "tags": tags}
                 await asyncio.to_thread(self.documents.save, {
                     "document_id": document_id,
                     "canonical_url": canonical_url,
@@ -509,9 +510,13 @@ class ResearchOrchestrator:
                     "http_metadata": res.get("http_metadata", {}),
                     "extraction_version": EXTRACTION_VERSION,
                     "job_id": job_id,
-                    "research_metadata": {"topic": topic, "tags": tags},
+                    "research_metadata": research_metadata,
                     "created_at": fetched_at,
                 })
+                await asyncio.to_thread(
+                    self.documents.observe_job_source,
+                    job_id, document_id, fetched_at, research_metadata,
+                )
                 existing = await asyncio.to_thread(
                     self.qdrant.document_chunks, canonical_url
                 )

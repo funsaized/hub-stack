@@ -43,6 +43,23 @@ class DocumentStore:
                 );
                 CREATE INDEX IF NOT EXISTS documents_url_idx
                     ON documents(canonical_url, fetched_at DESC);
+                CREATE TABLE IF NOT EXISTS job_sources (
+                    job_id TEXT NOT NULL,
+                    document_id TEXT NOT NULL REFERENCES documents(document_id) ON DELETE CASCADE,
+                    observed_at TEXT NOT NULL,
+                    research_metadata TEXT NOT NULL DEFAULT '{}',
+                    PRIMARY KEY(job_id, document_id)
+                );
+                CREATE INDEX IF NOT EXISTS job_sources_document_idx
+                    ON job_sources(document_id, job_id);
+                INSERT OR IGNORE INTO job_sources (
+                    job_id, document_id, observed_at, research_metadata
+                )
+                SELECT job_id, document_id,
+                       COALESCE(NULLIF(fetched_at, ''), created_at),
+                       research_metadata
+                FROM documents
+                WHERE job_id <> '';
                 CREATE TABLE IF NOT EXISTS index_checkpoints (
                     index_name TEXT NOT NULL,
                     document_id TEXT NOT NULL REFERENCES documents(document_id) ON DELETE CASCADE,
@@ -75,7 +92,7 @@ class DocumentStore:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(document_id) DO UPDATE SET
                     title=excluded.title, fetched_at=excluded.fetched_at,
-                    http_metadata=excluded.http_metadata, job_id=excluded.job_id
+                    http_metadata=excluded.http_metadata
             """, (
                 document["document_id"], document["canonical_url"], document["source_url"],
                 document.get("title", ""), document["markdown"], document["content_hash"],
@@ -83,6 +100,20 @@ class DocumentStore:
                 document["extraction_version"], document["job_id"],
                 json.dumps(document.get("research_metadata", {})), document["created_at"],
             ))
+
+    def observe_job_source(
+        self, job_id: str, document_id: str, observed_at: str,
+        research_metadata: dict,
+    ) -> None:
+        with self._connect() as db:
+            db.execute("""
+                INSERT INTO job_sources (
+                    job_id, document_id, observed_at, research_metadata
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT(job_id, document_id) DO UPDATE SET
+                    observed_at=excluded.observed_at,
+                    research_metadata=excluded.research_metadata
+            """, (job_id, document_id, observed_at, json.dumps(research_metadata)))
 
     def get(self, document_id: str) -> dict | None:
         with self._connect() as db:
@@ -100,7 +131,10 @@ class DocumentStore:
     def documents_for_job(self, job_id: str) -> list[dict]:
         with self._connect() as db:
             rows = db.execute(
-                "SELECT * FROM documents WHERE job_id = ? ORDER BY canonical_url, document_id",
+                """SELECT documents.* FROM job_sources
+                   JOIN documents USING(document_id)
+                   WHERE job_sources.job_id = ?
+                   ORDER BY documents.canonical_url, documents.document_id""",
                 (job_id,),
             ).fetchall()
         return [self._decode(row) for row in rows]

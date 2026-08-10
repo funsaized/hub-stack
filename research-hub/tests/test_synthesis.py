@@ -23,6 +23,9 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
             "research_metadata": {"topic": "topic"},
             "created_at": "2026-08-09T00:00:00+00:00",
         })
+        self.store.observe_job_source(
+            "job-1", "doc-1", "2026-08-09T00:00:00+00:00", {"topic": "topic"}
+        )
         self.orchestrator = SimpleNamespace(
             documents=self.store,
             cfg=SimpleNamespace(answer_reserve_tokens=1000, model_context_tokens=8192),
@@ -62,6 +65,10 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
             "research_metadata": {"topic": "late evidence topic"},
             "created_at": "2026-08-09T01:00:00+00:00",
         })
+        self.store.observe_job_source(
+            "job-late", "doc-late", "2026-08-09T01:00:00+00:00",
+            {"topic": "late evidence topic"},
+        )
         self.orchestrator.get_job.return_value = {
             "job_id": "job-late", "topic": "late evidence topic",
             "status": "completed",

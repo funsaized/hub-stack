@@ -1,6 +1,7 @@
 """Unit and integration-style coverage for HUB-009 and HUB-010."""
 
 import asyncio
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -82,7 +83,17 @@ class DocumentStoreTests(unittest.TestCase):
         }
 
         self.store.save(first_observation)
+        self.store.observe_job_source(
+            "job-1", "doc-1", first_observation["fetched_at"],
+            first_observation["research_metadata"],
+        )
         self.store.save(second_observation)
+        self.store.observe_job_source(
+            "job-2", "doc-1", second_observation["fetched_at"],
+            second_observation["research_metadata"],
+        )
+
+        self.assertEqual(self.store.get("doc-1")["job_id"], "job-1")
 
         self.assertEqual(
             [doc["document_id"] for doc in self.store.documents_for_job("job-1")],
@@ -92,6 +103,9 @@ class DocumentStoreTests(unittest.TestCase):
             [doc["document_id"] for doc in self.store.documents_for_job("job-2")],
             ["doc-1"],
         )
+        with sqlite3.connect(self.store.path) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM documents").fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM job_sources").fetchone()[0], 2)
 
     def test_existing_database_backfills_historical_job_observation(self):
         self.store.save(self.document())
@@ -108,10 +122,22 @@ class DocumentStoreTests(unittest.TestCase):
                 ).fetchall()
             }
             self.assertIn("job_sources", tables)
-            observation = db.execute("""
-                SELECT document_id FROM job_sources WHERE job_id = ?
+            indexes = {
+                row[1] for row in db.execute("PRAGMA index_list(job_sources)").fetchall()
+            }
+            self.assertIn("job_sources_document_idx", indexes)
+            observations = db.execute("""
+                SELECT document_id, observed_at, research_metadata
+                FROM job_sources WHERE job_id = ?
             """, ("job-1",)).fetchone()
-        self.assertEqual(observation, ("doc-1",))
+            observation_count = db.execute(
+                "SELECT COUNT(*) FROM job_sources WHERE job_id = ?", ("job-1",)
+            ).fetchone()[0]
+        self.assertEqual(observations[:2], (
+            "doc-1", "2026-08-09T00:00:00+00:00",
+        ))
+        self.assertEqual(json.loads(observations[2]), self.document()["research_metadata"])
+        self.assertEqual(observation_count, 1)
         self.assertEqual(
             [doc["document_id"] for doc in migrated.documents_for_job("job-1")],
             ["doc-1"],

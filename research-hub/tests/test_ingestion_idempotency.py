@@ -126,6 +126,45 @@ class FailedEmbeddingSafetyTests(unittest.IsolatedAsyncioTestCase):
         subject.qdrant.delete_document.assert_not_called()
 
 
+class SourceObservationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unchanged_document_is_observed_before_embedding_is_skipped(self):
+        subject = object.__new__(ResearchOrchestrator)
+        subject.cfg = SimpleNamespace(
+            chunk_size=800, chunk_overlap=0, embedding_batch_size=16,
+            embedding_batch_chars=12000, dependency_max_attempts=1,
+        )
+        subject.get_job = AsyncMock(return_value={
+            "topic": "topic", "depth": 1, "max_sources": 1,
+            "language": "en", "tags": ["tag"],
+        })
+        subject._update_job = AsyncMock()
+        subject.generate_report = AsyncMock(return_value={})
+        subject.searxng = Mock(search=AsyncMock(return_value=[{
+            "url": "https://example.com/page",
+        }]))
+        markdown = "unchanged source"
+        subject.crawl4ai = Mock(crawl=AsyncMock(return_value={
+            "url": "https://example.com/page", "title": "Page", "markdown": markdown,
+        }))
+        subject.ollama = Mock(embed_batch=AsyncMock())
+        subject.documents = Mock()
+        _, _, document_id = document_identity("https://example.com/page", markdown)
+        subject.qdrant = Mock()
+        subject.qdrant.document_chunks.return_value = [{
+            "id": chunk_identity(document_id, 0),
+            "payload": {"document_id": document_id},
+        }]
+
+        await subject.run_job("job-id")
+
+        subject.documents.observe_job_source.assert_called_once()
+        self.assertEqual(
+            subject.documents.observe_job_source.call_args.args[:2],
+            ("job-id", document_id),
+        )
+        subject.ollama.embed_batch.assert_not_awaited()
+
+
 class DocumentDeletionEndpointTests(unittest.TestCase):
     def setUp(self):
         self.previous = main.orchestrator
