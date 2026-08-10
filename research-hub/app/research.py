@@ -18,8 +18,10 @@ import redis.asyncio as redis_async
 
 from .config import Config
 from .clients import OllamaClient, QdrantClient, SearXNGClient, Crawl4AIClient
+from .context import classify_and_sanitize
 from .models import JobStatus, ResearchRequest
 from .document_store import DocumentStore
+from .retrieval import ScopedRetrievalService
 from .observability import (
     CHUNKS, CRAWLS, EMBED_LATENCY, JOB_PHASE_LATENCY, SEARCH_RESULTS,
     UPSERT_LATENCY, phase_timer,
@@ -33,12 +35,6 @@ logger = logging.getLogger(__name__)
 CHUNKER_VERSION = "recursive-v1"
 EXTRACTION_VERSION = "crawl4ai-markdown-v1"
 TRACKING_QUERY_PARAMETERS = {"fbclid", "gclid", "mc_cid", "mc_eid"}
-INJECTION_PATTERNS = (
-    re.compile(r"(?i)\b(ignore|disregard|forget)\b.{0,40}\b(previous|prior|system)\b.{0,30}\b(instruction|prompt)s?\b"),
-    re.compile(r"(?i)\b(system|developer)\s*(message|prompt)\s*:"),
-    re.compile(r"(?i)\b(reveal|print|return|exfiltrate)\b.{0,40}\b(secret|token|password|api[ _-]?key|environment)\b"),
-    re.compile(r"(?i)\b(call|use|invoke)\b.{0,20}\b(tool|function|shell|terminal)\b"),
-)
 
 
 def canonicalize_url(url: str) -> str:
@@ -86,17 +82,6 @@ def document_is_complete(existing: list[dict], document_id: str, chunk_count: in
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def classify_and_sanitize(text: str) -> tuple[str, list[str]]:
-    """Neutralize instruction-like spans in derived chunks; retained source stays exact."""
-    labels: list[str] = []
-    sanitized = text
-    for index, pattern in enumerate(INJECTION_PATTERNS, 1):
-        if pattern.search(sanitized):
-            labels.append(f"prompt_injection_pattern_{index}")
-            sanitized = pattern.sub("[potential prompt-injection text removed]", sanitized)
-    return sanitized, labels
 
 
 def normalize_domain(value: str) -> str:
@@ -248,6 +233,14 @@ class ResearchOrchestrator:
         self.searxng = SearXNGClient(cfg.searxng_url)
         self.crawl4ai = Crawl4AIClient(cfg.crawl4ai_url, cfg.crawl4ai_token or None)
         self.documents = DocumentStore(cfg.document_store_path)
+        self.retrieval = ScopedRetrievalService(
+            self.ollama,
+            self.qdrant,
+            self.documents,
+            candidate_limit=cfg.report_retrieval_candidates,
+            max_chunks_per_source=cfg.report_max_chunks_per_source,
+            min_score=cfg.report_retrieval_min_score,
+        )
         self._redis: redis_async.Redis | None = None
 
     async def init(self):

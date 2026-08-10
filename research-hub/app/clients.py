@@ -284,6 +284,52 @@ class QdrantClient:
             for h in hits
         ]
 
+    def search_evidence(
+        self,
+        vector: list[float],
+        limit: int,
+        *,
+        canonical_urls: list[str] | None = None,
+        document_ids: list[str] | None = None,
+    ) -> list[dict]:
+        """Return full internal candidates restricted to retained source identity."""
+        from qdrant_client.models import FieldCondition, Filter, MatchAny
+
+        conditions = []
+        if canonical_urls:
+            conditions.append(FieldCondition(
+                key="canonical_url", match=MatchAny(any=canonical_urls)
+            ))
+        if document_ids:
+            conditions.append(FieldCondition(
+                key="document_id", match=MatchAny(any=document_ids)
+            ))
+        if not conditions:
+            raise ValueError("evidence search requires retained source scope")
+        hits = self._client.search(
+            collection_name=self.collection,
+            query_vector=vector,
+            limit=limit,
+            query_filter=Filter(must=conditions),
+        )
+        excluded = {
+            "text", "source_url", "source_title", "canonical_url",
+            "document_id", "chunk_index",
+        }
+        return [{
+            "text": hit.payload.get("text", ""),
+            "canonical_url": hit.payload.get(
+                "canonical_url", hit.payload.get("source_url", "")
+            ),
+            "source_title": hit.payload.get("source_title", ""),
+            "document_id": hit.payload.get("document_id", ""),
+            "chunk_index": hit.payload.get("chunk_index", -1),
+            "score": hit.score,
+            "metadata": {
+                key: value for key, value in hit.payload.items() if key not in excluded
+            },
+        } for hit in hits]
+
 
 class SearXNGClient:
     """Private meta-search via SearXNG."""

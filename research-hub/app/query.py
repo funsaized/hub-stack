@@ -5,6 +5,10 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from .clients import OllamaClient, QdrantClient
+from .context import (
+    pack_complete_entries, render_entry as render_context_entry,
+    render_prompt, token_count,
+)
 from .models import (
     ChatMessage, QueryRequest, QueryResponse, QueryChunk, RAGRequest, RAGResponse,
 )
@@ -194,18 +198,10 @@ DEFAULT_RAG_SYSTEM_PROMPT = (
 )
 
 
-def token_count(text: str) -> int:
-    """Conservative tokenizer-independent upper bound: one token per UTF-8 byte."""
-    return len(text.encode("utf-8"))
-
-
 def render_entry(index: int, chunk: QueryChunk) -> str:
-    return (f'<UNTRUSTED_EVIDENCE id="{index}">\nSource: {chunk.source_title} '
-            f'({chunk.source_url})\n{chunk.text}\n</UNTRUSTED_EVIDENCE>')
-
-
-def render_prompt(context: str, question: str) -> str:
-    return f"Untrusted evidence:\n{context}\n\nUser question: {question}\n\nAnswer:"
+    return render_context_entry(
+        index, chunk.source_title, chunk.source_url, chunk.text
+    )
 
 
 def pack_context(chunks: list[QueryChunk], system: str, question: str,
@@ -214,15 +210,4 @@ def pack_context(chunks: list[QueryChunk], system: str, question: str,
     budget = context_limit - answer_reserve - token_count(system) - token_count(
         render_prompt("", question)
     )
-    selected: list[QueryChunk] = []
-    entries: list[str] = []
-    used = 0
-    for chunk in chunks:
-        entry = render_entry(len(selected) + 1, chunk)
-        cost = token_count(entry) + (2 if entries else 0)
-        if used + cost > budget:
-            continue
-        selected.append(chunk)
-        entries.append(entry)
-        used += cost
-    return selected, "\n\n".join(entries)
+    return pack_complete_entries(chunks, render_entry, budget)

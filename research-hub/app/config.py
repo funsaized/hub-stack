@@ -1,5 +1,6 @@
 """Configuration loaded from environment variables."""
 
+import math
 import os
 from dataclasses import dataclass
 
@@ -32,9 +33,22 @@ class Config:
     answer_reserve_tokens: int = 1024
     allow_custom_system_prompts: bool = False
     respect_robots_txt: bool = True
+    report_retrieval_candidates: int = 40
+    report_max_chunks_per_source: int = 3
+    report_retrieval_min_score: float | None = None
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.report_retrieval_candidates <= 1000:
+            raise ValueError("REPORT_RETRIEVAL_CANDIDATES must be between 1 and 1000")
+        if not 1 <= self.report_max_chunks_per_source <= 100:
+            raise ValueError("REPORT_MAX_CHUNKS_PER_SOURCE must be between 1 and 100")
+        if (self.report_retrieval_min_score is not None and
+                not math.isfinite(self.report_retrieval_min_score)):
+            raise ValueError("REPORT_RETRIEVAL_MIN_SCORE must be finite")
 
 
 def load_config() -> Config:
+    min_score = os.environ.get("REPORT_RETRIEVAL_MIN_SCORE", "").strip()
     return Config(
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
         qdrant_url=os.environ.get("QDRANT_URL", "http://localhost:6333"),
@@ -63,4 +77,11 @@ def load_config() -> Config:
         ).lower() in {"1", "true", "yes"},
         respect_robots_txt=os.environ.get("RESPECT_ROBOTS_TXT", "true").lower()
         in {"1", "true", "yes"},
+        report_retrieval_candidates=int(
+            os.environ.get("REPORT_RETRIEVAL_CANDIDATES", "40")
+        ),
+        report_max_chunks_per_source=int(
+            os.environ.get("REPORT_MAX_CHUNKS_PER_SOURCE", "3")
+        ),
+        report_retrieval_min_score=float(min_score) if min_score else None,
     )

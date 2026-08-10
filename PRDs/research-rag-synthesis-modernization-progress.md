@@ -117,3 +117,97 @@ Remaining risks:
 
 Next proposed work (not started): Phase 2 — scoped retrieval domain service, after Phase
 1 review approval.
+
+## 2026-08-10 — Phase 2: scoped retrieval domain service
+
+Status: ready for Phase 2 review; report synthesis remains unchanged and Phase 3 was not
+started.
+
+Pre-edit checks:
+
+- `git status --short --branch` reported `## main`; there were no existing working-tree
+  changes to disturb.
+- Five Phase 1 observation and unchanged-ingestion tests passed in 0.119 seconds.
+- The baseline complete suite ran 62 tests in 0.776 seconds: 61 passed, all four Redis
+  worker integration tests ran, and the late-evidence synthesis specification was the
+  single expected failure.
+- The first focused Phase 2 run failed before production edits because
+  `app.retrieval` did not exist.
+
+Files changed:
+
+- `research-hub/app/clients.py`: added an internal `search_evidence()` path that requires
+  retained canonical URL and/or document ID scope, uses Qdrant `MatchAny`, and returns
+  document ID, canonical URL, chunk index, score, title, text, and security metadata.
+- `research-hub/app/retrieval.py`: added transport-neutral scoped retrieval types and
+  service behavior with one topic embedding, defensive retained-identity checks,
+  deterministic score/tie ordering, exact duplicate removal, per-source caps, an
+  optional score threshold, sanitization, and diagnostics.
+- `research-hub/app/context.py`: centralized the existing sanitization and complete-entry
+  packing primitives so query and internal retrieval retain identical conservative token
+  accounting and untrusted-evidence delimiters.
+- `research-hub/app/query.py`: delegates only its existing context primitives to the
+  shared implementation; `/query`, `/rag`, and corpus chat behavior remain unchanged.
+- `research-hub/app/research.py`: constructs the scoped retrieval service from the
+  existing SQLite document store and Phase 2 settings; synthesis does not call it yet.
+- `research-hub/app/config.py`, `docker-compose.yml`, and `.env.example`: added and
+  bounded only `REPORT_RETRIEVAL_CANDIDATES`, `REPORT_MAX_CHUNKS_PER_SOURCE`, and the
+  disabled-by-default `REPORT_RETRIEVAL_MIN_SCORE`. Context packing deliberately reuses
+  the existing model context and answer reserve settings.
+- `research-hub/tests/test_retrieval.py`: added deterministic Qdrant and domain-service
+  coverage for retained scope, late selection, one embedding, duplicates, ties,
+  per-source limits, thresholding, sanitization, diagnostics, complete-entry packing,
+  and configuration validation.
+- `PRDs/research-rag-synthesis-modernization-progress.md`: recorded this Phase 2 gate.
+
+Test outputs (application container mounted at `/app`, Compose Redis database 15):
+
+- Focused retrieval gate: 9 tests passed in 0.080 seconds.
+- Retrieval plus existing context, `/query`, `/rag`, and OpenAI-compatible regression
+  slice: 18 tests passed in 0.136 seconds before the two configuration assertions were
+  added; both added assertions pass in the final focused gate.
+- Complete suite: 71 tests ran in 0.860 seconds; 70 passed with no skips and exactly one
+  expected failure, `test_relevant_evidence_after_long_prefix_is_used`. All four Redis
+  worker integration tests ran and passed against the healthy Compose Redis service.
+- The expected remaining failure still reports: `retrieved late-evidence sentinel was
+  absent from the generation prompt`. The retrieval service selects that sentinel in its
+  own test, but synthesis still uses document prefixes until Phase 3.
+- `docker compose config --quiet` completed with exit code 0.
+- Container `python -m pip check` reported `No broken requirements found.`
+- The repository CRLF-aware `git diff --check` completed with exit code 0 and no
+  whitespace errors.
+
+Phase 2 acceptance:
+
+- Retrieval scope comes from `DocumentStore.documents_for_job()`, which reads the Phase 1
+  `job_sources` join. Qdrant `job_id` and topic payloads are neither filtered on nor
+  trusted.
+- Qdrant scope uses retained canonical URLs and document IDs with `MatchAny`; returned
+  candidates are also checked against the exact retained ID/URL pair.
+- A retrieval with retained sources embeds the topic exactly once and performs no source
+  embedding, crawl, upsert, or model generation.
+- Late-document evidence can be selected, scores and ties are stable, exact duplicate
+  text is removed, per-source limits are enforced, and the optional score threshold is
+  disabled by default.
+- Selected evidence is sanitized again at retrieval time, including older or rebuilt
+  payloads, and packing keeps complete delimited entries under conservative token bounds.
+- Diagnostics report considered and selected candidates, available and represented
+  sources, and selected score bounds.
+- Existing public request/response models, `/query`, `/rag`, OpenAI-compatible chat,
+  ingestion idempotency, observations, report lifecycle, and worker behavior remain
+  unchanged.
+- No research job, crawl, retained-data re-embedding, public API change, synthesis change,
+  commit, push, BM25, reranking, MMR, query decomposition, GraphRAG, or map-reduce work
+  occurred.
+
+Remaining risks:
+
+- Report generation does not consume the retrieval service until Phase 3; the intentional
+  late-evidence synthesis failure remains the review boundary.
+- Dense retrieval quality has not yet been measured against a representative manifest;
+  the minimum score therefore remains disabled as required.
+- No live Ollama/Qdrant report retry or latency measurement was run because this phase
+  prohibited launching research jobs and changing synthesis.
+
+Next proposed work (not started): Phase 3 — retrieval-based report synthesis, only after
+Phase 2 review approval.
