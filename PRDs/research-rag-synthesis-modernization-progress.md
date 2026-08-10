@@ -406,3 +406,68 @@ Remaining risks:
 
 Next action: review the automated Phase 4 commit and explicitly approve deployment/live
 report retries if the manual gate should proceed. Phase 5 remains unstarted.
+
+## 2026-08-10 - Phase 4 manual gate continuation
+
+Status: blocked at the Phase 4 review gate because explicit deployment approval was not
+provided. Phase 4 is not yet reviewed and accepted; Phase 5 was not started.
+
+Pre-edit checks:
+
+- The entire PRD and this progress log were read before editing.
+- `git status --short --branch` reported `## main...origin/main` with no changes, and
+  `git rev-parse --short HEAD` reported the requested commit `190dd71`.
+- No existing changes were reset, overwritten, or removed.
+
+Automated Phase 4 gate reproduction:
+
+- `docker compose run --rm --no-deps -v "${PWD}\research-hub:/app" research-hub
+  python -m tests.benchmark_report_retrieval`: exit code 0. Aggregate critical Recall@4
+  was `1.0`, citation validity was `1.0`, and the JSON `passed` gate was `true`.
+- `docker compose run --rm --no-deps -v "${PWD}\research-hub:/app" research-hub
+  python -m unittest tests.test_report_retrieval_benchmark -v`: 2 tests passed in
+  1.533 seconds. Both the critical-recall and citation-validity failure-exit checks passed.
+
+Manual gate disposition:
+
+- No explicit deployment approval was available, so none of the four PRD-selected
+  retained jobs was retried.
+- No research job, crawl, retained-document re-embedding, Qdrant upsert, corpus mutation,
+  or deployed report-state mutation occurred.
+- Live selected source/chunk counts, supported/rejected claims, citation validity, and
+  latency remain unrecorded and deferred until explicit deployment approval is provided.
+
+Final verification:
+
+- `docker compose build research-hub research-worker`: exit code 0; both images built.
+- `docker compose run --rm --no-deps
+  -e TEST_REDIS_URL=redis://hub-redis:6379/15
+  -v "${PWD}\research-hub:/app" research-hub
+  python -m unittest discover -s tests -v`: 79 tests passed in 2.591 seconds with no
+  failures or skips; all four Compose Redis worker integration tests ran and passed.
+- `docker compose run --rm --no-deps research-hub python -m pip check`:
+  `No broken requirements found.`
+- `hermes verify --json`: exit code 0 with `"ok": true`; its Compose build passed and
+  readiness returned HTTP 200.
+- `git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff
+  --check`: exit code 0 with no whitespace errors.
+
+Files changed:
+
+- `PRDs/research-rag-synthesis-modernization-progress.md`: records the reproduced
+  automated gate, required release checks, and the unapproved manual-gate blocker.
+
+Acceptance and risks:
+
+- The deterministic Phase 4 gate remains green, and public report, `/query`, `/rag`, and
+  OpenAI-compatible contracts are unchanged because no production code changed.
+- Phase 4 cannot satisfy its live authoritative-source acceptance criterion until the
+  approved retries are completed and reviewed.
+- The synthetic evaluation still does not demonstrate dense retrieval misses on exact or
+  specialized terms. Phase 5 also lacks explicit user approval, so all three Phase 5
+  prerequisites remain unsatisfied.
+
+Next action: stop at the Phase 4 review gate. With explicit deployment approval, retry
+only the four PRD-selected retained jobs and record the required live evidence. Do not
+begin Phase 5 without separate explicit approval after Phase 4 acceptance and measured
+dense-retrieval misses.
