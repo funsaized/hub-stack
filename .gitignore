@@ -87,3 +87,4 @@ htmlcov/
 # Local state
 .env.local
 .secret
+.hermes/
