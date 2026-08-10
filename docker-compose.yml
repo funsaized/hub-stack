@@ -16,9 +16,10 @@ services:
       - ollama_data:/root/.ollama
       - ./healthcheck:/healthcheck:ro
     environment:
-      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - OLLAMA_HOST=0.0.0.0:11434
-      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-1}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
     deploy:
       resources:
         reservations:
@@ -165,7 +166,7 @@ services:
     environment:
       - CRAWL4AI_LLM_PROVIDER=ollama
       - OLLAMA_BASE_URL=http://hub-ollama:11434
-      - OLLAMA_MODEL=qwen2.5:7b
+      - OLLAMA_MODEL=${LLM_MODEL:-qwen3.5:9b}
       - CRAWL4AI_API_TOKEN=hub-crawl4ai-shared-token
       - APP_HOST=0.0.0.0
     depends_on:
@@ -196,7 +197,7 @@ services:
       - QDRANT_URL=http://hub-qdrant:6333
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-research_corpus__nomic_embed_text_768}
       - OLLAMA_URL=http://hub-ollama:11434
-      - LLM_MODEL=qwen2.5:7b
+      - LLM_MODEL=${LLM_MODEL:-qwen3.5:9b}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-768}
       - SEARXNG_URL=http://hub-searxng:8080
@@ -240,7 +241,7 @@ services:
       - QDRANT_URL=http://hub-qdrant:6333
       - QDRANT_COLLECTION=${QDRANT_COLLECTION:-research_corpus__nomic_embed_text_768}
       - OLLAMA_URL=http://hub-ollama:11434
-      - LLM_MODEL=qwen2.5:7b
+      - LLM_MODEL=${LLM_MODEL:-qwen3.5:9b}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-768}
       - SEARXNG_URL=http://hub-searxng:8080

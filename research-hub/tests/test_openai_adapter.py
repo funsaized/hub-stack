@@ -1,10 +1,12 @@
 import json
+import os
 import sys
 import unittest
 from types import ModuleType, SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.clients import QdrantClient
+from app.clients import OllamaClient, QdrantClient
+from app.config import load_config
 from app.openai_compat import sse_chunk
 from app.models import ChatCompletionRequest, ChatMessage, QueryChunk
 from app.query import PreparedChat, QueryEngine
@@ -154,6 +156,56 @@ class ProtocolTests(unittest.TestCase):
         payload = json.loads(chunk.removeprefix("data: ").strip())
         self.assertEqual(payload["object"], "chat.completion.chunk")
         self.assertEqual(payload["choices"][0]["delta"]["content"], "hello")
+
+
+class ConfigurationTests(unittest.TestCase):
+    def test_generation_model_default_matches_deployment_default(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(load_config().llm_model, "qwen3.5:9b")
+
+
+class OllamaThinkingModeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_generate_disables_thinking_so_answer_is_returned(self):
+        response = MagicMock()
+        response.json.return_value = {"response": "ANSWER=42"}
+        client = object.__new__(OllamaClient)
+        client.base_url = "http://ollama:11434"
+        client.model = "qwen3.5:9b"
+        client._client = MagicMock(post=AsyncMock(return_value=response))
+
+        answer = await client.generate("Return exactly ANSWER=42")
+
+        self.assertEqual(answer, "ANSWER=42")
+        payload = client._client.post.await_args.kwargs["json"]
+        self.assertIs(payload["think"], False)
+
+    async def test_chat_stream_disables_thinking_so_content_is_streamed(self):
+        response = MagicMock()
+        response.raise_for_status = MagicMock()
+
+        async def lines():
+            yield json.dumps({"message": {"content": "ANSWER=42"}, "done": False})
+            yield json.dumps({"message": {"content": ""}, "done": True})
+
+        response.aiter_lines = lines
+        context = MagicMock()
+        context.__aenter__ = AsyncMock(return_value=response)
+        context.__aexit__ = AsyncMock(return_value=False)
+        client = object.__new__(OllamaClient)
+        client.base_url = "http://ollama:11434"
+        client.model = "qwen3.5:9b"
+        client._client = MagicMock()
+        client._client.stream.return_value = context
+
+        answer = "".join([
+            token async for token in client.chat_stream([
+                {"role": "user", "content": "Return exactly ANSWER=42"}
+            ])
+        ])
+
+        self.assertEqual(answer, "ANSWER=42")
+        payload = client._client.stream.call_args.kwargs["json"]
+        self.assertIs(payload["think"], False)
 
 
 class QdrantInitializationTests(unittest.TestCase):

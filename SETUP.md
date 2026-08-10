@@ -162,7 +162,8 @@ docker compose up -d
 First run takes 5-10 minutes:
 - Downloads/builds the images for seven required services (size varies with image versions)
 - Builds the research-hub image locally
-- Ollama pulls qwen2.5:7b (~5 GB) and nomic-embed-text (~300 MB) on first run
+- Research Hub pulls `nomic-embed-text` (~300 MB) on first run
+- Pull `qwen3.5:9b` separately before selecting the default generation path
 
 On the reference workstation, an already-pulled stopped stack reached API health
 in 39.4 seconds. First-time image and model downloads take longer.
@@ -256,12 +257,12 @@ export PATH="/mnt/c/Program Files/Docker/Docker/resources/bin:/mnt/c/Program Fil
 docker version
 ```
 
-### "qwen2.5:7b not found" from inside a container
+### "qwen3.5:9b not found" from inside a container
 The model exists on disk but is not in Ollama's running index. Restart Ollama:
 ```bash
 docker compose restart ollama
 # Then pull via API (not via docker exec)
-curl -X POST http://localhost:11435/api/pull -d '{"name":"qwen2.5:7b"}'
+curl -X POST http://localhost:11435/api/pull -d '{"name":"qwen3.5:9b"}'
 ```
 
 ### "Crawl4AI failed" in research jobs

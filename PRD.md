@@ -79,7 +79,7 @@ A self-hosted, GPU-accelerated research workstation that runs entirely on a sing
 - **Data persistence**: survive `docker compose down && up`
 - **Startup time**: < 90s for fully-healthy cold start
 - **Memory**: research-hub Python process < 500 MB at idle
-- **GPU**: qwen2.5:7b + nomic-embed fit in 12 GB VRAM with 6 GB headroom
+- **GPU**: qwen3.5:9b and nomic-embed run sequentially within 12 GB VRAM
 
 ## Constraints
 

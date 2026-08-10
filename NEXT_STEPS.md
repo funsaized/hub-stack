@@ -133,7 +133,7 @@ with conversation-aware retrieval, streaming, and ordered citations.
 Each machine has its own GPU but shares the knowledge base. Routing decisions based on which GPU is free.
 
 ### 17. Voice input
-Whisper-cpp for STT, qwen2.5 for response, pyttsx3 or piper for TTS. Phone-call-style research.
+Whisper-cpp for STT, qwen3.5 for response, pyttsx3 or piper for TTS. Phone-call-style research.
 
 ### 18. Browser extension
 Highlight any text on a webpage → research it → see the corpus entry right there.

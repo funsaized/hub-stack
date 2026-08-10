@@ -1,6 +1,6 @@
 # Current deployed state
 
-Last verified: 2026-08-09 on the local Windows 11 workstation.
+Last verified: 2026-08-10 on the local Windows 11 workstation.
 
 ## Deployment model
 
@@ -13,6 +13,27 @@ rebuilt and its container is recreated.
 Ollama is the only service with NVIDIA GPU access and uses the workstation's
 RTX 3080 Ti. Qdrant corpus data, Redis job metadata, Ollama models,
 Research-Hub documents, Crawl4AI, and optional UI state live in Docker named volumes.
+
+## Model stack and WSL envelope
+
+WSL is capped at 20 GB RAM, 12 logical processors, and 2 GB swap. Ollama uses a
+30-minute keep-alive, one parallel request, and one loaded model. Research Hub,
+Research Worker, and Crawl4AI share the same configurable `LLM_MODEL`.
+
+The installed generation inventory is `qwen3.5:9b`, `qwen3.6:27b`, and the retained
+`qwen2.5:7b` baseline. `nomic-embed-text`, its 768-dimension configuration, and the
+`research_corpus__nomic_embed_text_768` Qdrant collection remain unchanged.
+
+The measured default is `qwen3.5:9b`. At 8K it stayed fully on the GPU and generated
+about 102 tokens/s. Qwen3.6 remains available for explicit offline/high-quality jobs,
+but its 45% CPU / 55% GPU placement produced only 3.35-4.12 tokens/s and failed the
+interactive deployment gate. Higher-context tuning was therefore skipped and the
+operating context remains 8K. See `docs/MODELS.md` and the local benchmark artifact
+under `.hermes/benchmarks/` for measurements and switching commands.
+
+Qwen3.5 and Qwen3.6 default to thinking mode in Ollama. The Research Hub client
+explicitly disables thinking for its answer-generation paths so response text is not
+lost in Ollama's separate `thinking` field.
 
 ## Running services
 

@@ -39,7 +39,7 @@ def load_config() -> Config:
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
         qdrant_url=os.environ.get("QDRANT_URL", "http://localhost:6333"),
         ollama_url=os.environ.get("OLLAMA_URL", "http://localhost:11434"),
-        llm_model=os.environ.get("LLM_MODEL", "qwen2.5:7b"),
+        llm_model=os.environ.get("LLM_MODEL", "qwen3.5:9b"),
         embedding_model=os.environ.get("EMBEDDING_MODEL", "nomic-embed-text"),
         searxng_url=os.environ.get("SEARXNG_URL", "http://localhost:8080"),
         crawl4ai_url=os.environ.get("CRAWL4AI_URL", "http://localhost:11235"),

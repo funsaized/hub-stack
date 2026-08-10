@@ -68,12 +68,8 @@ Your agent can call this function before answering questions about current event
 
 ## 4. Chat with the knowledge base via Open WebUI
 
-Open WebUI at http://localhost:8080 is a chat interface for qwen2.5:7b. As of this version, it doesn't query the knowledge base directly. To make it work:
-
-1. Use Open WebUI for general chat
-2. Switch to a terminal with the research CLI for knowledge-base queries
-
-OR, planned future: configure Open WebUI's "Functions" feature to query /rag for every message.
+Open WebUI at http://localhost:8080 exposes `qwen3.5:9b` for direct chat and the
+`research-corpus` OpenAI-compatible route for knowledge-base answers with citations.
 
 ## 5. Maintain a personal wiki
 
@@ -153,7 +149,7 @@ Specific things this stack can replace:
 
 - **Notion AI** → research + RAG
 - **Perplexity** → research-hub + query
-- **ChatGPT Plus** → Open WebUI + qwen2.5:7b
+- **ChatGPT Plus** → Open WebUI + `qwen3.5:9b`
 - **Google Alerts** → scheduled research jobs (with cron)
 - **Phind / DevDocs** → SearXNG + RAG over tech docs
 

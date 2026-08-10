@@ -108,7 +108,7 @@ later ────────────────────────�
             │
             ▼ (if /rag)
    ┌─────────────────┐
-   │     Ollama      │  qwen2.5:7b
+   │     Ollama      │  qwen3.5:9b
    │  generate       │  with cited context
    └─────────────────┘
 ```
@@ -116,7 +116,7 @@ later ────────────────────────�
 ## Component responsibilities
 
 ### Ollama
-- Hosts `qwen2.5:7b` (Q4_K_M quantised, 4.7 GB) for generation
+- Hosts `qwen3.5:9b` (Q4_K_M quantised, 6.6 GB) as the default generation model
 - Hosts `nomic-embed-text` for embeddings
 - OpenAI-compatible API on port 11434
 - Shares GPU with the rest of the system
@@ -174,7 +174,7 @@ later ────────────────────────�
   Public custom system prompts are disabled unless explicitly enabled for trusted local callers.
 
 ### Open WebUI
-- Chat interface for qwen2.5:7b
+- Chat interface for `qwen3.5:9b` and the `research-corpus` RAG route
 - Has memory, conversation history, code highlighting
 - Optional Compose profile: `webui`
 - Direct Ollama models provide plain chat

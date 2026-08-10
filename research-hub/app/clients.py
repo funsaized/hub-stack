@@ -41,6 +41,7 @@ class OllamaClient:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            "think": False,
             "options": {"num_predict": max_tokens},
         }
         if system:
@@ -67,7 +68,7 @@ class OllamaClient:
         async with self._client.stream(
             "POST", f"{self.base_url}/api/chat",
             json={"model": self.model, "messages": messages, "stream": True,
-                  "options": options},
+                  "think": False, "options": options},
         ) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
