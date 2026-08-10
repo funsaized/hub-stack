@@ -1,6 +1,7 @@
 """Unit and integration-style coverage for HUB-009 and HUB-010."""
 
 import asyncio
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,6 +71,55 @@ class DocumentStoreTests(unittest.TestCase):
         self.assertEqual(self.store.delete_url("https://example.com/a"), 1)
         self.assertIsNone(self.store.get("doc-1"))
         self.assertEqual(self.store.checkpoint("index-v1", "doc-1", "chunks-v1"), 0)
+
+    def test_unchanged_document_remains_visible_to_every_observing_job(self):
+        first_observation = self.document()
+        second_observation = {
+            **first_observation,
+            "job_id": "job-2",
+            "fetched_at": "2026-08-10T00:00:00+00:00",
+            "research_metadata": {"topic": "second topic", "tags": ["b"]},
+        }
+
+        self.store.save(first_observation)
+        self.store.save(second_observation)
+
+        self.assertEqual(
+            [doc["document_id"] for doc in self.store.documents_for_job("job-1")],
+            ["doc-1"],
+        )
+        self.assertEqual(
+            [doc["document_id"] for doc in self.store.documents_for_job("job-2")],
+            ["doc-1"],
+        )
+
+    def test_existing_database_backfills_historical_job_observation(self):
+        self.store.save(self.document())
+        with sqlite3.connect(self.store.path) as db:
+            db.execute("DROP TABLE IF EXISTS job_sources")
+
+        migrated = DocumentStore(str(self.store.path))
+        reopened = DocumentStore(str(self.store.path))
+
+        with sqlite3.connect(self.store.path) as db:
+            tables = {
+                row[0] for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ).fetchall()
+            }
+            self.assertIn("job_sources", tables)
+            observation = db.execute("""
+                SELECT document_id FROM job_sources WHERE job_id = ?
+            """, ("job-1",)).fetchone()
+        self.assertEqual(observation, ("doc-1",))
+        self.assertEqual(
+            [doc["document_id"] for doc in migrated.documents_for_job("job-1")],
+            ["doc-1"],
+        )
+        self.assertEqual(
+            [doc["document_id"] for doc in reopened.documents_for_job("job-1")],
+            ["doc-1"],
+        )
 
 
 class EmbeddingBatchTests(unittest.IsolatedAsyncioTestCase):

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from app.document_store import DocumentStore
 from app.synthesis import generate_report
@@ -47,6 +47,46 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.orchestrator.ollama.generate.await_args.kwargs["json_schema"]["required"],
             ["key_findings", "disagreements", "unknowns"],
+        )
+
+    async def test_relevant_evidence_after_long_prefix_is_used(self):
+        sentinel = "LATE_EVIDENCE_SENTINEL: the intervention reduced errors by 37 percent."
+        canonical_url = "https://example.com/late-evidence"
+        self.store.save({
+            "document_id": "doc-late", "canonical_url": canonical_url,
+            "source_url": canonical_url, "title": "Late Evidence",
+            "markdown": f"{'Irrelevant introduction. ' * 1200}\n\n{sentinel}",
+            "content_hash": "late-hash",
+            "fetched_at": "2026-08-09T01:00:00+00:00", "http_metadata": {},
+            "extraction_version": "v1", "job_id": "job-late",
+            "research_metadata": {"topic": "late evidence topic"},
+            "created_at": "2026-08-09T01:00:00+00:00",
+        })
+        self.orchestrator.get_job.return_value = {
+            "job_id": "job-late", "topic": "late evidence topic",
+            "status": "completed",
+        }
+        self.orchestrator.ollama.embed = AsyncMock(return_value=[0.1, 0.2])
+        candidate = {
+            "text": sentinel, "source_url": canonical_url,
+            "canonical_url": canonical_url, "source_title": "Late Evidence",
+            "document_id": "doc-late", "chunk_index": 42, "score": 0.99,
+            "metadata": {
+                "canonical_url": canonical_url, "document_id": "doc-late",
+                "chunk_index": 42,
+            },
+        }
+        self.orchestrator.qdrant = Mock(
+            search=Mock(return_value=[candidate]),
+            search_evidence=Mock(return_value=[candidate]),
+        )
+
+        await generate_report(self.orchestrator, "job-late")
+
+        generation_prompt = self.orchestrator.ollama.generate.await_args.args[0]
+        self.assertTrue(
+            sentinel in generation_prompt,
+            "retrieved late-evidence sentinel was absent from the generation prompt",
         )
 
     async def test_retry_does_not_invoke_ingestion_and_increments_attempts(self):
