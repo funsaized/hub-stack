@@ -292,3 +292,117 @@ Remaining risks:
   persisted or exposed through the unchanged public report schema.
 
 Next proposed work (not started): Phase 4 evaluation, only after Phase 3 review approval.
+
+## 2026-08-10 - Phase 4: deterministic evaluation harness and regression verification
+
+Status: the automated Phase 4 gate is green and ready for review. The live deployed
+report-retry gate remains deferred pending explicit deployment approval; Phase 5 and all
+optional retrieval enhancements were not started.
+
+Pre-edit checks:
+
+- `git status --short --branch` reported `## main...origin/main` with no existing
+  changes, and `git rev-parse --short HEAD` reported the requested Phase 3 baseline
+  commit `5bcaea1`.
+- The entire PRD, this progress log, and the Phase 4, retrieval, sanitization, packing,
+  synthesis, citation-validation, Qdrant-scope, configuration, test, and CLI paths were
+  read before editing.
+- Compose Redis was healthy. The unchanged baseline command
+  `docker compose run --rm --no-deps -e TEST_REDIS_URL=redis://hub-redis:6379/15
+  -v "${PWD}\research-hub:/app" research-hub python -m unittest discover -s tests -v`
+  ran 77 tests in 1.238 seconds with no failures or skips; all four Redis worker tests
+  executed and passed.
+- No pre-existing worktree changes were reset, overwritten, or removed.
+
+TDD evidence:
+
+- The first focused run, `docker compose run --rm --no-deps
+  -v "${PWD}\research-hub:/app" research-hub python -m unittest
+  tests.test_report_retrieval_benchmark -v`, ran two tests and failed because
+  `tests.benchmark_report_retrieval` did not yet exist, so the expected JSON command
+  output was absent.
+- After the minimum command was added, the same focused run passed both tests in 1.596
+  seconds. The tests run the command twice and require byte-identical JSON, then mutate
+  the manifest separately to prove both a critical-sentinel miss and an invalid expected
+  citation exit with status 1 and identify the failed gate in JSON.
+
+Files changed:
+
+- `research-hub/tests/fixtures/report_retrieval_cases.json`: adds a synthetic, non-PHI
+  manifest with late-document evidence, multiple chunks from one source, overlapping
+  evidence, an irrelevant source, exact duplicates, prompt-injection-like text, tied
+  scores, and a retained document observed by two fixture jobs.
+- `research-hub/tests/benchmark_report_retrieval.py`: adds the stdlib-only deterministic
+  JSON command. It drives the production `ScopedRetrievalService`, sanitization,
+  complete-entry packer, stable source mapping, and synthesis citation validators rather
+  than reproducing those behaviors.
+- `research-hub/tests/test_report_retrieval_benchmark.py`: verifies exact metrics,
+  repeatable output, a successful exit, and nonzero recall- and citation-gate exits.
+- `PRDs/research-rag-synthesis-modernization-progress.md`: records this Phase 4 gate.
+
+Deterministic evaluation output:
+
+- Command: `docker compose run --rm --no-deps -v "${PWD}\research-hub:/app"
+  research-hub python -m tests.benchmark_report_retrieval`.
+- Exit code: 0.
+- Aggregate metrics: Recall@4 `1.0`, critical Recall@4 `1.0`, Precision@4 `0.5`,
+  reciprocal rank `1.0`, source coverage `1.0`, duplicate rate `0.0`, citation validity
+  `1.0`, and unsupported-claim rejection count `4`.
+- Both cases independently report Recall@4 `1.0`, reciprocal rank `1.0`, source coverage
+  `1.0`, duplicate rate `0.0`, citation validity `1.0`, and two unsupported claims
+  rejected. JSON gates report `critical_recall_at_k: true`, `citation_validity: true`,
+  and `passed: true`.
+
+Full automated verification:
+
+- `docker compose build research-hub research-worker`: exit code 0; both images built.
+- `docker compose run --rm --no-deps
+  -e TEST_REDIS_URL=redis://hub-redis:6379/15
+  -v "${PWD}\research-hub:/app" research-hub
+  python -m unittest discover -s tests -v`: 79 tests passed in 2.652 seconds with no
+  failures or skips. Synthesis, retrieval, `/query`, `/rag`, OpenAI-compatible,
+  ingestion-idempotency, observation, report lifecycle, Qdrant, and all four Redis
+  worker tests passed.
+- `docker compose run --rm --no-deps research-hub python -m pip check`:
+  `No broken requirements found.`
+- `hermes verify --json`: exit code 0 with `"ok": true`; its Compose build passed and
+  readiness returned HTTP 200. An initial invocation produced no output before its
+  120-second wrapper timeout; the orphaned verifier process was terminated, and the
+  immediate clean rerun completed in 1.5 seconds.
+- `git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff
+  --check`: exit code 0 with no whitespace errors.
+
+Phase 4 automated acceptance:
+
+- Critical fixture Recall@4 is `1.0`; citation validity is `100%`.
+- JSON serialization is stable and contains every required retrieval/citation metric.
+  Critical recall and citation validity independently enforce nonzero failure exits.
+- The harness uses production retrieval, sanitization, packing, and citation validation;
+  it performs no network request, generation, crawl, embedding of retained documents,
+  Qdrant upsert, report retry, or research job launch.
+- No production or public API code changed, so public reports, `/query`, `/rag`, and
+  OpenAI-compatible contracts remain unchanged and are covered by the complete suite.
+- No LLM judge, BM25, reranking, MMR, query decomposition, GraphRAG, map-reduce,
+  dependency, generated evaluation output, database, secret, or Phase 5 work was added.
+
+Deferred live checks requiring explicit deployment approval:
+
+- Task 4.3 remains manual and unexecuted. Retrying the authoritative clinical-AI
+  standards job, binary-classifier statistics job, fact-extraction job, and usable
+  confidence/fairness job would mutate deployed report state and requires explicit
+  deployment approval. No live retry, recrawl, corpus upsert, or retained-document
+  re-embedding was attempted in this implementation session.
+- Consequently, live selected-source/chunk counts, supported/rejected claim counts,
+  citation resolution, and latency before/after values remain unrecorded. This is the
+  only outstanding non-automated Phase 4 gate.
+
+Remaining risks:
+
+- The checked-in cases are deliberately small and synthetic. They prove the observed
+  failure class and deterministic invariants, but do not establish broader production
+  dense-retrieval quality thresholds or healthcare relevance.
+- Production retrieval latency and stochastic local-model behavior remain unmeasured
+  until the separately approved deployed retries run.
+
+Next action: review the automated Phase 4 commit and explicitly approve deployment/live
+report retries if the manual gate should proceed. Phase 5 remains unstarted.
