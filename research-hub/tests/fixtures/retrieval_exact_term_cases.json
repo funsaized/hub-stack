@@ -1,0 +1,112 @@
+{
+  "schema_version": "1.0.0",
+  "provenance": "Exact-term sentinels mined 2026-08-11 from the retained corpus of job 4b8acd0f-088f-4b97-92fc-f52b69b8a3ee (6 sources, 870 chunks). Every term occurs in at most 3 chunks, so a lexical channel finds it by construction; a dense miss here is direct HUB-017 evidence.",
+  "job_id": "4b8acd0f-088f-4b97-92fc-f52b69b8a3ee",
+  "top_k": 4,
+  "cases": [
+    {
+      "id": "consort-ai-item-19",
+      "category": "checklist_item",
+      "query": "What does CONSORT-AI item 19 require about analysing performance errors?",
+      "exact_terms": ["item 19"],
+      "expected_document_id": "b80b2ef1-eb1b-5d4e-a399-3c471034a506",
+      "expected_chunk_index": 88
+    },
+    {
+      "id": "decide-ai-item-14b",
+      "category": "checklist_item",
+      "query": "How can DECIDE-AI item 14b be fulfilled when no learning curves evaluation was performed?",
+      "exact_terms": ["item 14b"],
+      "expected_document_id": "52f965f2-3be9-5484-8929-46a253f5752f",
+      "expected_chunk_index": 73
+    },
+    {
+      "id": "consort-item-13b",
+      "category": "checklist_item",
+      "query": "What does CONSORT item 13b show about losses and exclusions after enrolment?",
+      "exact_terms": ["item 13b"],
+      "expected_document_id": "b80b2ef1-eb1b-5d4e-a399-3c471034a506",
+      "expected_chunk_index": 69
+    },
+    {
+      "id": "osf-protocol-doi",
+      "category": "doi",
+      "query": "Where was the study protocol registered under 10.17605/OSF.IO/YZE6J?",
+      "exact_terms": ["10.17605/OSF.IO/YZE6J"],
+      "expected_document_id": "49bf662c-cb09-596b-9a2e-d7a970287e9a",
+      "expected_chunk_index": 41
+    },
+    {
+      "id": "tripod-bmj-doi",
+      "category": "doi",
+      "query": "Which reporting statement was published at 10.1136/bmj.g7594?",
+      "exact_terms": ["10.1136/bmj.g7594"],
+      "expected_document_id": "49bf662c-cb09-596b-9a2e-d7a970287e9a",
+      "expected_chunk_index": 106
+    },
+    {
+      "id": "consort-ai-77-percent-vote",
+      "category": "consensus_statistic",
+      "query": "Which CONSORT-AI item received a 77% vote to include on its initial wording?",
+      "exact_terms": ["77% vote"],
+      "expected_document_id": "b80b2ef1-eb1b-5d4e-a399-3c471034a506",
+      "expected_chunk_index": 60
+    },
+    {
+      "id": "consort-ai-80-percent-threshold",
+      "category": "consensus_statistic",
+      "query": "Why was an 80% threshold pre-specified for CONSORT-AI item inclusion?",
+      "exact_terms": ["80% threshold"],
+      "expected_document_id": "b80b2ef1-eb1b-5d4e-a399-3c471034a506",
+      "expected_chunk_index": 57
+    },
+    {
+      "id": "decide-ai-80-percent-consensus-cutoff",
+      "category": "consensus_statistic",
+      "query": "What role did a cutoff of 80% of the Consensus Group members play in DECIDE-AI voting?",
+      "exact_terms": ["80% of the Consensus"],
+      "expected_document_id": "52f965f2-3be9-5484-8929-46a253f5752f",
+      "expected_chunk_index": 96
+    },
+    {
+      "id": "delphimanager-software",
+      "category": "software_identifier",
+      "query": "Was DelphiManager software used to conduct the CONSORT-AI Delphi surveys?",
+      "exact_terms": ["DelphiManager"],
+      "expected_document_id": "b80b2ef1-eb1b-5d4e-a399-3c471034a506",
+      "expected_chunk_index": 53
+    },
+    {
+      "id": "vevox-voting-application",
+      "category": "software_identifier",
+      "query": "How was the Vevox online application used in the DECIDE-AI consensus process?",
+      "exact_terms": ["Vevox"],
+      "expected_document_id": "52f965f2-3be9-5484-8929-46a253f5752f",
+      "expected_chunk_index": 96
+    },
+    {
+      "id": "nvivo-qualitative-analysis",
+      "category": "software_identifier",
+      "query": "Which team members used NVivo for the DECIDE-AI qualitative analysis?",
+      "exact_terms": ["NVivo"],
+      "expected_document_id": "52f965f2-3be9-5484-8929-46a253f5752f",
+      "expected_chunk_index": 93
+    },
+    {
+      "id": "pycirclize-visualization",
+      "category": "software_identifier",
+      "query": "What was pyCirclize used for in the reporting guideline meta-analysis?",
+      "exact_terms": ["pyCirclize"],
+      "expected_document_id": "49bf662c-cb09-596b-9a2e-d7a970287e9a",
+      "expected_chunk_index": 40
+    },
+    {
+      "id": "turning-point-voting-pads",
+      "category": "software_identifier",
+      "query": "Were Turning Point voting pads used at the CONSORT-AI consensus meeting?",
+      "exact_terms": ["Turning Point"],
+      "expected_document_id": "b80b2ef1-eb1b-5d4e-a399-3c471034a506",
+      "expected_chunk_index": 57
+    }
+  ]
+}

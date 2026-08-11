@@ -280,6 +280,27 @@ Redis queues (empty), and all three sealed evaluation hashes were unchanged, and
 logs show no crawl, ingestion, embedding or upsert.
 
 Phase 4 of the RAG synthesis modernization is closed with all five gate conditions green,
-and HUB-019 is Done. Phase 5 was not entered because its entry condition — dense
-retrieval missing exact or specialized terms — is unmet at critical Recall@4 `1.0`; the
-modernization closes at Phase 4.
+and HUB-019 is Done.
+
+## Hybrid retrieval entry condition measured and met (HUB-017)
+
+Phase 5 was initially recorded as not entered because critical Recall@4 was `1.0`, but
+that number comes from a benchmark that replays pre-scored fixture candidates and never
+runs an embedding or vector search — it cannot show a dense miss. The new live probe
+`tests/benchmark_retrieval_exact_terms.py` drives the real embed-and-search production
+path against 13 exact-term needle cases (checklist items, DOIs, consensus statistics,
+software identifiers, each in at most 5 of 870 retained chunks) mined from the
+authoritative corpus, validated by seven deterministic manifest tests and read-only
+against all live state.
+
+Measured 2026-08-11: dense-only hit@4 is `0.6923`. Three sentinels reached the
+40-candidate pool but lost dense ranking (rank fusion recovers them); the DOI
+`10.1136/bmj.g7594` sentinel never entered the pool (only lexical candidate generation
+recovers it). The nine hits ranked 1–3, so dense remains the primary channel and the
+gap is specifically exact identifiers.
+
+HUB-017 is therefore Open with measured justification. Acceptance: hybrid hit@4 `1.0`
+on the exact-term manifest with no regression in the dense-only report benchmark or the
+sealed claim-support contract. Implementation is gated on the PRD design spike (SQLite
+FTS5 vs Qdrant sparse vectors vs in-process BM25). Production retrieval is unchanged;
+the full suite is green at 125 tests.

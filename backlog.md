@@ -348,11 +348,16 @@ remains unimplemented and is not required at the current single-user exposure.
 
 ### HUB-017 — Replace dense-only retrieval with hybrid retrieval
 
-**Status:** 🚫 Blocked by design — deliberately not started. Attempts 8-10 confirmed
-dense retrieval already surfaces the relevant authoritative passages; every claim
-failure was in generation or span construction, not recall. Starting hybrid retrieval
-before Phase 4 closes would be scope drift. Revisit only if a measured recall gap
-appears in the retrieval benchmark.
+**Status:** 🔴 Open — entry condition now measured and met. The prior "no recall gap"
+evidence came from a benchmark that replays pre-scored candidates and cannot show a
+dense miss. The live exact-term probe (`tests/benchmark_retrieval_exact_terms.py`,
+2026-08-11) measures the real embed-and-search path against 13 needle cases mined from
+the retained authoritative corpus: dense-only hit@4 is `0.6923`. Three sentinels
+entered the 40-candidate pool but lost dense ranking (fusion recovers them); one DOI
+sentinel never entered the pool at all (only a lexical channel recovers it). Hybrid
+acceptance target: hit@4 `1.0` on that manifest without regressing the dense-only
+report benchmark. The PRD's design spike (FTS5 vs Qdrant sparse vs in-process BM25)
+gates implementation.
 
 **Problem:** `QueryEngine` is described as hybrid but currently performs dense-vector search only.
 

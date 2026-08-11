@@ -2020,3 +2020,63 @@ verification output. Phase 5 is not entered: its entry condition requires Phase 
 retrieval metrics to show dense retrieval missing exact or specialized terms, and
 critical Recall@4 is `1.0` with no such miss observed, so the modernization closes at
 Phase 4 rather than leaving Phase 5 as open work. HUB-019 moves to Done.
+
+## 2026-08-11 - Live exact-term retrieval probe; Phase 5 entry condition met
+
+Status: the Phase 4 gate closure stands, but the evidence behind "Phase 5 entry
+condition unmet" is revised. A new live probe shows dense-only retrieval missing
+exact-term needles at the production operating point, so HUB-017 reopens with measured
+justification. No hybrid implementation has started; retrieval in production is
+unchanged.
+
+### Why the prior evidence was insufficient
+
+`tests/benchmark_report_retrieval.py` replays fixture candidates with pre-assigned
+scores through `FixtureOllama` (constant vector) and `FixtureQdrant` (canned hits). Its
+critical Recall@4 of `1.0` certifies scoped selection, dedup, per-source caps and
+citation validity - it never runs an embedding or a vector search, so it is
+structurally incapable of showing a dense retrieval miss. The Phase 5 entry condition
+("dense retrieval misses exact or specialized terms") was therefore being judged by an
+instrument that could not move.
+
+### The probe
+
+`tests/benchmark_retrieval_exact_terms.py` (new) drives the real production path -
+`ScopedRetrievalService` with one `nomic-embed-text` embedding per query and one scoped
+Qdrant search at `candidate_limit=40`, `max_chunks_per_source=3`, top-4 selection -
+against `tests/fixtures/retrieval_exact_term_cases.json` (new): 13 cases mined from the
+870 retained chunks of the authoritative clinical-AI job, spanning checklist items,
+DOIs, consensus statistics and software identifiers. Every sentinel term occurs in at
+most 5 of 870 chunks, every query quotes its exact term, and the manifest is validated
+by seven deterministic tests (`tests/test_retrieval_exact_terms_manifest.py`, new). The
+probe is read-only: it embeds, searches and scrolls Qdrant, and reads SQLite through an
+immutable connection. Exit 1 signals fixture drift only; dense misses are the
+measurement, not a failure.
+
+### Measurements
+
+- dense hit@4 `9/13 = 0.692308`; candidate-pool rate `12/13 = 0.923077`; fixture drift
+  none; 870 chunks scanned.
+- By category: checklist_item 2/3, consensus_statistic 2/3, doi 1/2,
+  software_identifier 4/5.
+- Three misses entered the 40-candidate pool but lost dense ranking before top-4:
+  `consort-item-13b`, `consort-ai-80-percent-threshold`, `delphimanager-software`.
+  Rank fusion with a lexical channel recovers this class.
+- One miss never entered the pool: `tripod-bmj-doi` (`10.1136/bmj.g7594`, present in
+  two chunks). Dense scoring placed both below rank 40; no fusion of the current
+  candidates can recover it - only lexical candidate generation can.
+- The nine hits ranked 1-3, so dense retrieval remains a strong primary channel; the
+  gap is specifically exact identifiers, which is the textbook hybrid case.
+
+The full suite is green at 125 tests, zero skipped, including the seven new manifest
+tests.
+
+### Disposition
+
+The Phase 5 / HUB-017 entry condition is met on measured evidence. HUB-017 moves from
+"Blocked by design" to Open, with the acceptance target: hybrid hit@4 `1.0` on the
+exact-term manifest without regressing the dense-only report retrieval benchmark or
+the sealed claim-support contract. Per the PRD, implementation is gated on the design
+spike comparing SQLite FTS5, Qdrant sparse vectors and an in-process BM25 index. No
+retrieval code changed in this iteration and no report, corpus, queue or sealed
+artifact was touched.
