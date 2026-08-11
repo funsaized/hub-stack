@@ -393,12 +393,11 @@ appears in the retrieval benchmark.
 
 ### HUB-019 — Validate citations and ground generated claims
 
-**Status:** 🟡 Implemented, live acceptance outstanding — structured evidence references,
-exact-span binding, and the frozen offline NLI verifier are deployed and covered by
-tests. The generation contract is now span-first deletion-compression, and the offline
-drafting benchmark measures 4-8 verified claims per run on the frozen attempt-10
-evidence. What remains is one authorized live report retry producing at least one
-verified cited finding in a persisted report.
+**Status:** ✅ Done — structured evidence references, exact-span binding, span-first
+deletion-compression drafting, and the frozen offline NLI verifier are deployed and
+covered by tests. The authorized live acceptance retry (attempt 11, 2026-08-11) produced
+a completed report with six verified cited findings at entailment `0.986`-`0.995`, no
+citation outside supplied evidence, and no collateral mutation, closing the Phase 4 gate.
 
 **Problem:** The prompt requests citations, but the system does not verify that citations exist or support the associated claims.
 

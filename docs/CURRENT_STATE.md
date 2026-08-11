@@ -255,12 +255,31 @@ The automated gate is green: 118 tests with zero skips including Redis integrati
 DB 15, critical Recall@4 `1.0`, citation validity `1.0`, duplicate rate `0.0`, clean
 `pip check` and clean Compose validation.
 
-No live report retry was issued. Attempt 10 remains at attempts 10, status `failed`, with
-its Markdown and source registry byte-preserved. Redis, SQLite, Qdrant and the corpus were
-not mutated. Phase 4 acceptance still requires one separately authorized live retry that
-produces at least one verified cited material finding in a persisted report. Phase 5
-remains unstarted.
-
 Known limitation now disclosed in every report: cross-source disagreement is not assessed,
 because each displayed claim must be entailed by one exact span from one source
 (HUB-032).
+
+## Phase 4 live acceptance passed (attempt 11)
+
+The single authorized live retry on 2026-08-11 returned HTTP 200 in about 20.5 seconds
+under correlation `9330511b-df54-4846-b09c-3d0e8a123736`. The authoritative clinical-AI
+report advanced from attempt 10 (`failed`) to attempt 11 (`completed`) with six verified
+cited material findings, each entailed by one exact evidence span at entailment
+`0.986`-`0.995` against the frozen verifier's sealed `evidence_union` pair and `0.97`
+threshold. One draft was correctly rejected as `neutral` (`0.0989`) for substituting
+"CONSORT-AI extension" where the span said "CONSORT 2010"; its single correction redraft
+declined, and two other spans yielded model declines — all disclosed in the report's
+unknowns section.
+
+Before the retry, all three service images were rebuilt from the clean tree at `53e7595`
+and the deployed `spans.py`, `synthesis.py` and `claim_support.py` were verified
+SHA-256-identical to HEAD in the hub, worker and verifier containers. The retry mutated
+only the target report row: the six-source registry stayed byte-identical, SQLite (67
+documents, 67 observations, 13 reports), Qdrant (24,465 points, 23,369 indexed vectors),
+Redis queues (empty), and all three sealed evaluation hashes were unchanged, and worker
+logs show no crawl, ingestion, embedding or upsert.
+
+Phase 4 of the RAG synthesis modernization is closed with all five gate conditions green,
+and HUB-019 is Done. Phase 5 was not entered because its entry condition — dense
+retrieval missing exact or specialized terms — is unmet at critical Recall@4 `1.0`; the
+modernization closes at Phase 4.

@@ -1934,3 +1934,89 @@ Automated gate:
 Gate disposition: Phase 4 implementation is complete and measured offline. Phase 4
 acceptance still requires one separately authorized live retry producing at least one
 verified cited material finding in a persisted report. Phase 5 remains unstarted.
+
+## 2026-08-11 - Attempt-11 acceptance retry passed; Phase 4 gate closed
+
+Status: the single authorized retry succeeded. Attempt 11 is a completed report with six
+verified cited material findings. All five Phase 4 gate conditions are green, so the
+Phase 4 gate closes. Phase 5's entry condition is unmet and the modernization closes at
+Phase 4.
+
+Pre-retry gate:
+
+- The offline drafting benchmark reported `failures: []` with the recorded metrics
+  reproduced exactly: 31 candidate sentences, 8 propositional spans, junk rejection
+  `0.741935`, exact substring rate `1.0`, critical span recall `1.0`, zero over-budget
+  spans. The full suite passed 118 tests with zero skips against Redis DB 15, `pip check`
+  was clean, and `docker compose config` was clean.
+- All three service images were rebuilt from the clean tree at `53e7595` because the
+  previous `hub-research-worker` and `hub-claim-verifier` tags predated that commit.
+  After recreation, `spans.py`, `synthesis.py` and `claim_support.py` inside the hub,
+  worker and verifier containers were SHA-256-identical to HEAD.
+- The claim verifier reported ready at `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli`,
+  revision `6f5cf0a2b59cabb106aca4c287eed12e357e90eb`, with `THRESHOLD = 0.97` confirmed
+  in the running container. `/readyz` reported `ok` with capability `all` and all six
+  services true.
+- Attempt 10 stood at attempts 10, status `failed`, with Markdown
+  `107bdacbdc1b6501564b9f2f6f9ffe38c5e9f3fb86b27784d011fb7aea7a7ffb` and source registry
+  `d6748d76ba27f783c709d54d73e617273e43a04399d7b42901a37f588d00aefe`. All three sealed
+  hashes matched. Redis pending and processing queues were empty. SQLite held 67
+  documents, 67 observations, 13 reports and six observations on the target job. Qdrant
+  was green at 24,465 points, 23,369 indexed vectors and six segments.
+
+Single retry:
+
+- Exactly one POST began at `2026-08-11T18:19:53.8825810Z` and returned HTTP 200 after
+  20.4510 host-observed seconds (server-logged request duration 21.7657 seconds).
+  Correlation ID `9330511b-df54-4846-b09c-3d0e8a123736` recorded one topic embedding, one
+  read-only Qdrant search, eight bounded first-draft generations, one production verifier
+  request and one bounded correction generation.
+- Retrieval considered 40 candidates and packed seven chunks across four of six sources.
+  Span selection offered 17 propositional spans and the top eight were drafted (`P1`-`P8`,
+  from the DECIDE-AI and CONSORT-AI Nature Medicine sources). Every draft ran in a
+  256-token slot with 350-395 prompt tokens and 18-73 completion tokens, stopped normally
+  and reported `truncated=0`. The output-limit failure class did not recur.
+- One span draft was declined by the model, so seven claims reached the frozen verifier,
+  each judged by exactly the sealed `evidence_union` pair. Six were accepted at
+  entailment `0.986156`-`0.994649` (P1 `0.992622`, P2 `0.987120`, P4 `0.994649`,
+  P5 `0.986156`, P6 `0.992204`, P8 `0.987601`). P7 was rejected `neutral` at `0.098890`:
+  its draft replaced the span's "CONSORT 2010" with "CONSORT-AI extension", the added-
+  attribution class the gate exists to catch. The rejection is correct.
+- The single correction round redrafted only P7 (420 prompt tokens, 25 completion tokens,
+  normal stop) and the model declined it, so no second verifier request was needed. Final
+  synthesis outcome: `supported`, six verified claims, rejections
+  `declined_span=2, neutral=1`.
+
+Displayed artifact:
+
+- The report advanced from attempt 10 to attempt 11, status `completed`, updated at
+  `2026-08-11T18:20:14.430114Z`, error cleared, Markdown SHA-256
+  `068d60b2231011bb3b93c23b641199ccb0983f122b5d0dc8bd750fff03c0a17f`.
+- It displays six key findings citing `[S4]` and `[S5]`, both resolving to retained
+  registry documents, so no citation resolves outside supplied evidence. No source
+  disagreements are displayed. The unknowns section discloses the three non-yielding
+  candidate sentences (`declined_span=2, neutral=1`) and the HUB-032 cross-source
+  disagreement limitation.
+- The six-entry source registry remained byte-identical at
+  `d6748d76ba27f783c709d54d73e617273e43a04399d7b42901a37f588d00aefe`.
+
+Mutation audit:
+
+- SQLite remained at 67 documents, 67 observations, 13 reports and six target
+  observations. Qdrant remained green at 24,465 points, 23,369 indexed vectors and six
+  segments. Redis queues remained empty. Worker logs since deployment show only startup
+  collection probes: no crawl, ingestion, embedding or upsert occurred. All three sealed
+  hashes remained
+  `1675d9ede5425dad37e6b8168886b91234b56896171882b704fb3bd6f9e490dc`,
+  `6c94272b771843325684bee9b6afb22e66c2c4fa42f849f88568fc3ee081f2f2`,
+  `5c65544cf381335174e5ee4f00aca28941a3c5134568a4ecc0388a2353a129b5`.
+- The only persisted mutation is the target report row itself.
+
+Gate disposition: Phase 4 closes. All five gate conditions are green: deterministic
+evaluation gates (critical Recall@4 `1.0`, citation validity `1.0`, duplicate rate
+`0.0`), the full 118-test suite with zero skips, a live authoritative-source report with
+supported cited findings, no citation outside supplied evidence, and this recorded
+verification output. Phase 5 is not entered: its entry condition requires Phase 4
+retrieval metrics to show dense retrieval missing exact or specialized terms, and
+critical Recall@4 is `1.0` with no such miss observed, so the modernization closes at
+Phase 4 rather than leaving Phase 5 as open work. HUB-019 moves to Done.
