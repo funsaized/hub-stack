@@ -1124,3 +1124,107 @@ Acceptance, confidence, and remaining risks:
 
 Next action: review this deterministic fix and the deferred Hermes result at the Phase 4 gate.
 Do not retry any report and do not begin Phase 5 without separate explicit owner approval.
+
+## 2026-08-11 - Phase 4 approved structured-citation authoritative retry
+
+Owner authorization and scope:
+
+- The owner explicitly stated `i explicitly approve retry`. This was treated as approval for
+  exactly one additional persisted report retry for authoritative job
+  `4b8acd0f-088f-4b97-92fc-f52b69b8a3ee`, after review of commit
+  `51f3153e3b30803269454aeb89a8f975f4770940`. It approved no other job, retry, corpus
+  mutation, or Phase 5 work.
+- Before the request, `main` was clean and local HEAD equaled configured upstream
+  `origin/main` at `51f3153e3b30803269454aeb89a8f975f4770940`.
+- Local, API-container, and worker-container `research-hub/app/synthesis.py` bytes all had
+  SHA-256 `524fdb6c908a6a24be780be3ceb8b5508c043de68cc933fe180ef32637eeb254`.
+- The pre-retry deterministic benchmark passed with critical Recall@4 `1.0` and citation
+  validity `1.0`; the focused benchmark/synthesis command passed 14 tests in 2.050 seconds.
+- Pre-retry state was report attempt `3`, six job sources, 870 chunks, 67 SQLite documents,
+  67 SQLite job/source associations, six authoritative associations, 24,465 Qdrant points,
+  23,369 indexed vectors, and six Qdrant segments.
+
+Single approved retry and observed generation:
+
+- At boundary `2026-08-11T07:44:02.2021538Z`, exactly one
+  `POST http://127.0.0.1:8000/research/4b8acd0f-088f-4b97-92fc-f52b69b8a3ee/report/retry`
+  was issued with PowerShell `Invoke-WebRequest`. It returned HTTP 200 in 14.5265097
+  seconds. No second POST was issued.
+- Report attempt `4` completed at `2026-08-11T07:44:15.903600Z` with six displayed key
+  findings, no disagreements, and no unknowns. Runtime synthesis telemetry reported 40
+  candidates, six selected chunks, six available sources, three represented sources, zero
+  uncited rejections, zero invalid-source rejections, and `no_supported_findings=false`.
+- The retry made one `/api/generate` call; the bounded correction was not needed. Ollama used
+  a 4,096-token slot, reported `truncated = 0`, consumed 1,999 prompt tokens, and reported
+  2,364 total tokens, implying 365 generated tokens. The generation request took
+  13.639231553 seconds; application synthesis took 15.4435 seconds.
+- A post-retry read-only call through the existing retrieval and packing helpers reproduced
+  context SHA-256 `572312d581fa6c4a37693a11c241f7040ccf46baf5b434f25c1733a320c980dd`,
+  prompt upper-bound size 6,762 bytes, and exactly represented IDs `[S4]`, `[S5]`, and
+  `[S6]`. It performed one query embedding/search only: no generation or persistence.
+- The six selected identities exactly matched the prior authoritative capture above:
+  `[S5]` document `52f965f2-3be9-5484-8929-46a253f5752f` chunk 46 score `0.847417`;
+  `[S6]` document `49bf662c-cb09-596b-9a2e-d7a970287e9a` chunk 59 score `0.8197498`;
+  `[S4]` document `b80b2ef1-eb1b-5d4e-a399-3c471034a506` chunks 95, 38, and 97 with
+  scores `0.80571586`, `0.80567974`, and `0.80489826`; and `[S6]` document
+  `49bf662c-cb09-596b-9a2e-d7a970287e9a` chunk 110 score `0.7941949`. Their exact URLs,
+  sanitized text, chunk indexes, and provenance are already recorded in the preceding
+  approved corrected-retry section and were byte-stable in this reproduction.
+
+Evidence and acceptance audit:
+
+- All nine displayed material citation references used represented IDs and resolved to the
+  exact selected retained documents/chunks. Five findings are directly supported across all
+  three represented sources: DECIDE-AI early-stage/live evaluation `[S5]`; TRIPOD-AI and
+  PROBAST-AI `[S6][S4]`; STARD-AI `[S6][S4]`; PRISMA-AI `[S6]`; and CONSORT-AI planning,
+  limitations, and generalizability `[S4]`.
+- The sixth finding is not fully supported by its selected evidence. It states that
+  SPIRIT-AI works with TRIPOD-ML before full clinical trials and cites `[S6][S4]`. Selected
+  `[S6]` chunk 110 mentions SPIRIT-AI and CONSORT-AI, while selected `[S4]` chunk 95 mentions
+  TRIPOD-ML and STARD-AI; neither states the asserted SPIRIT-AI/TRIPOD-ML relationship. The
+  citations resolve, but the sentence composes an unsupported relationship.
+- RCA confidence is high that the structured-ID correction fixed the demonstrated
+  citation-format boundary: the corrected live model returned citation-bearing findings in
+  one call and strict validation rejected none. Confidence is also high that the sixth claim
+  is a semantic overstatement based on exact selected evidence. No raw-response diagnostic
+  probe was needed or run.
+- The explicit live citation threshold was demonstrated—supported cited findings came from
+  at least two supplied retained sources and every displayed material citation resolved to
+  selected retained evidence—but Phase 4 remains unaccepted because one displayed material
+  claim is unsupported. Accepting it would conflict with the stricter omission invariant.
+  This is a review-gate result, not authorization for another correction or retry.
+
+Exact mutating and release-gate commands:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://127.0.0.1:8000/research/4b8acd0f-088f-4b97-92fc-f52b69b8a3ee/report/retry" -TimeoutSec 180
+docker compose run --rm --no-deps -v "${PWD}\research-hub:/app" research-hub python -m tests.benchmark_report_retrieval
+docker compose run --rm --no-deps -v "${PWD}\research-hub:/app" research-hub python -m unittest tests.test_report_retrieval_benchmark tests.test_synthesis -v
+docker compose run --rm --no-deps -e TEST_REDIS_URL=redis://hub-redis:6379/15 -v "${PWD}\research-hub:/app" research-hub python -m unittest discover -s tests -v
+docker compose run --rm --no-deps research-hub python -m pip check
+hermes verify --json --port 8000 --timeout 120 --ready-timeout 60
+git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff --check
+```
+
+Mutation audit and final verification:
+
+- The only intended persisted mutation was report attempt `3` to `4`. The job remained at
+  six sources and 870 chunks; SQLite remained at 67 documents, 67 job/source associations,
+  and six authoritative associations; Qdrant remained at 24,465 points, 23,369 indexed
+  vectors, and six segments. Worker logs after the boundary contained no crawl, ingestion,
+  retained-document embedding, or Qdrant-upsert activity.
+- The final deterministic benchmark passed with critical Recall@4 `1.0` and citation
+  validity `1.0`. The focused benchmark/synthesis command passed 14 tests in 2.070 seconds.
+- The complete containerized suite against Compose Redis ran 81 tests in 2.800 seconds with
+  no failures or skips, including all four Redis worker integration tests.
+- `docker compose run --rm --no-deps research-hub python -m pip check` reported
+  `No broken requirements found.`
+- The exact required `hermes verify --json --port 8000 --timeout 120 --ready-timeout 60`
+  again exceeded the 184-second outer bound and emitted no JSON. Its exact three-process
+  orphan tree was identified and terminated. This repeatable verifier-wrapper timeout
+  remains the sole deferred tooling check; it does not alter the report or corpus result.
+- No further report retry is approved. Phase 5 has not started and remains unapproved.
+
+Next action: review the structured-citation success and unsupported composite claim at the
+Phase 4 gate. Do not retry another report or begin Phase 5 without new explicit owner
+approval.
