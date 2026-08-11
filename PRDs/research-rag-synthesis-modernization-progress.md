@@ -805,3 +805,168 @@ Files changed:
 Next action: stop at the Phase 4 review gate. Retry only authoritative job
 `4b8acd0f-088f-4b97-92fc-f52b69b8a3ee`, exactly once, after the owner explicitly enters
 `YES`; do not begin Phase 5.
+
+## 2026-08-11 - Phase 4 approved corrected authoritative retry
+
+Status: the owner explicitly approved one retry of authoritative job
+`4b8acd0f-088f-4b97-92fc-f52b69b8a3ee`. The corrected deployed code was used and the
+endpoint was called exactly once. The retry again produced no supported cited finding,
+so Phase 4 remains unaccepted and Phase 5 was not started.
+
+Approval and pre-retry state:
+
+- The owner replied: `YES deploy/use the corrected code and retry authoritative job
+  4b8acd0f-088f-4b97-92fc-f52b69b8a3ee exactly once.` This approved no other report
+  retry and did not approve Phase 5.
+- The entire PRD and progress log had been read. `git status --short --branch` reported
+  `## main...origin/main` with no changes. Local `HEAD` and its configured upstream both
+  resolved to `85f3efd21acdaea392229e98f9563ed64c18d40d`; correction commit
+  `551f672638ace9ea3076e17d53db10d6a52fa174` was its immediate ancestor.
+- SHA-256 manifests for all 15 top-level application Python files in both running
+  containers matched the clean checkout. Local, API, and worker `synthesis.py` all had
+  SHA-256 `0b3ab7189b8b49eda5ebff7c9538ae5b7d9dc41286cae4d2e446f5d53869b4ea`.
+- The pre-retry report was completed at attempt 2 with no supported findings, no source
+  disagreements, and three omitted uncited material claims. Its six-source registry was
+  unchanged. The job reported six sources and 870 chunks.
+- Before the retry, SQLite contained 67 documents, 67 `job_sources` rows, and six source
+  associations for this job. Qdrant was green with 24,465 points, 23,369 indexed vectors,
+  and six segments.
+- Immediately before the retry, the deterministic benchmark again exited 0 with critical
+  Recall@4 `1.0`, citation validity `1.0`, and `passed: true`. The combined benchmark and
+  synthesis command passed 13 tests in 1.982 seconds, including
+  `test_correction_names_only_represented_citation_ids`.
+
+Single approved retry:
+
+- At `2026-08-11T07:13:38.0077511Z`, exactly one
+  `POST /research/4b8acd0f-088f-4b97-92fc-f52b69b8a3ee/report/retry` was issued. It
+  returned HTTP 200; the host stopwatch measured 16.7342 seconds. No timeout or second
+  POST occurred.
+- The persisted report advanced from attempt 2 to attempt 3 and completed at
+  `2026-08-11T07:13:54.050475Z`. It still contains no supported material finding and no
+  material source disagreement. Its one substantive unknown says the supplied evidence
+  does not make the operational validation differences between TRIPOD-ML and the broader
+  STARD-AI/TRIPOD-AI guidance explicit. Four final uncited material claims were omitted.
+- The runtime synthesis event reported outcome `claims_rejected`, 40 retrieval candidates,
+  six selected chunks, six available sources, three represented sources, five total
+  uncited rejections, zero invalid-source rejections, and `no_supported_findings: true`.
+  The five total comprise the first call's validation rejection plus four final claims
+  omitted after the correction call.
+
+Exact represented evidence:
+
+- The represented citation IDs were exactly `[S4]`, `[S5]`, and `[S6]`. A read-only
+  diagnostic reran the deployed `ScopedRetrievalService.retrieve()` and `pack_evidence()`
+  path to reproduce the selected context. It made one additional topic query embedding
+  only; it did not generate a report, embed retained documents, crawl, or upsert.
+- `[S5]`, document `52f965f2-3be9-5484-8929-46a253f5752f`, canonical URL
+  `https://www.nature.com/articles/s41591-022-01772-9`, chunk 46, score `0.847417`:
+
+  > in live clinical settings (that is, the supported decisions have an actual effect on patient care). Whereas TRIPOD-AI, STARD-AI, SPIRIT-AI and CONSORT-AI are specific to particular study designs, DECIDE-AI is focused on the evaluation stage and does not prescribe a fixed study design. ### Box 1 Methodological challenges of the AI-based decision support system evaluation
+  > The clinical evaluation of AI-based decision support systems presents several methodological challenges, all of which will likely be encountered at early stage.
+
+- `[S6]`, document `49bf662c-cb09-596b-9a2e-d7a970287e9a`, canonical URL
+  `https://www.nature.com/articles/s43856-024-00492-0`, chunk 59, score `0.8197498`:
+
+  > ing STARD-AI[15](https://www.nature.com/articles/s43856-024-00492-0#ref-CR15 "Sounderajah, V. et al. Developing a reporting guideline for artificial intelligence-centred diagnostic test accuracy studies: the STARD-AI protocol. BMJ Open. 11, e047709 \(2021\)."), TRIPOD-AI[16](https://www.nature.com/articles/s43856-024-00492-0#ref-CR16 "Collins, G. S. et al. Protocol for development of a reporting guideline \(TRIPOD-AI\) and risk of bias tool \(PROBAST-AI\) for diagnostic and prognostic prediction model studies based on artificial intelligence. BMJ Open. 11, e048008 \(2021\)."), and PRISMA-AI[17](https://www.nature.com/articles/s43856-024-00492-0#ref-CR17 "Cacciamani, G. E. et al. PRISMA AI reporting guidelines for systematic reviews and meta-analyses on AI in healthcare. Nat. Med. 29, 14–15 \(2023\).").
+
+- `[S4]`, document `b80b2ef1-eb1b-5d4e-a399-3c471034a506`, canonical URL
+  `https://www.nature.com/articles/s41591-020-1034-x`, chunk 95, score `0.80571586`:
+
+  > t consideration (Supplementary Table [2](https://www.nature.com/articles/s41591-020-1034-x#MOESM1)). This extension is aimed particularly at investigators and readers reporting or appraising clinical trials; however, it may also serve as useful guidance for developers of AI interventions in earlier validation stages of an AI system. Investigators seeking to report studies developing and validating the diagnostic and predictive properties of AI models should refer to TRIPOD-ML (Transparent Reporting of a Multivariable Prediction Model for Individual Prognosis or Diagnosis–Machine Learning) and STARD-AI (Standards for Reporting Diagnostic Accuracy Studies–Artificial Intelligence), both of which are currently under development[32](https://www.nature.com/articles/s41591-020-1034-x#ref-CR32 "Collins, G. S. & Moons, K. G. M. Reporting of artificial intelligence prediction models.
+
+- `[S4]`, the same retained document and canonical URL, chunk 38, score `0.80567974`:
+
+  > https://www.nature.com/articles/s41591-020-1034-x#ref-CR35 "CONSORT-AI and SPIRIT-AI Steering Group. Reporting guidelines for clinical trials evaluating artificial intelligence interventions are needed. Nat. Med. 25, 1467–1468 \(2019\).")), and the two guidelines were registered as reporting guidelines under development on the EQUATOR library of reporting guidelines in May 2019. Both guidelines were developed in accordance with the EQUATOR Network’s methodological framework[37](https://www.nature.com/articles/s41591-020-1034-x#ref-CR37 "Moher, D., Schulz, K. F., Simera, I. & Altman, D. G. Guidance for developers of health research reporting guidelines. PLoS Med. 7, e1000217 \(2010\)."). The SPIRIT-AI and CONSORT-AI Steering Group, consisting of 15 international experts, was formed to oversee the conduct and methodology of the study.
+
+- `[S4]`, the same retained document and canonical URL, chunk 97, score `0.80489826`:
+
+  > on reporting of evaluation studies in Health Informatics. Int. J. Med. Inform. 78, 1–9 \(2009\)."). The CONSORT-AI extension is expected to encourage careful early planning of AI interventions for clinical trials and this, in conjunction with SPIRIT-AI, should help to improve the quality of trials for AI interventions. The development of the CONSORT-AI guidance does not include additional items within the discussion section of trial reports. The guidance provided by CONSORT 2010 on trial limitations, generalizability and interpretation were deemed to be translatable to trials for AI interventions. There is also recognition that AI is a rapidly evolving field, and there will be the need to update CONSORT-AI as the technology, and newer applications for it, develop.
+
+- `[S6]`, document `49bf662c-cb09-596b-9a2e-d7a970287e9a`, canonical URL
+  `https://www.nature.com/articles/s43856-024-00492-0`, chunk 110, score `0.7941949`:
+
+  > =Moy%2CL&author=Kahn%2CCE)
+  > 38. Liu, X., Rivera, S. C., Moher, D., Calvert, M. J. & Denniston, A. K. SPIRIT-AI and CONSORT-AI Working Group Reporting guidelines for clinical trial reports for interventions involving artificial intelligence: the CONSORT-AI Extension. _BMJ._ **370** , m3164 (2020).
+
+- All six supplied entries had an empty sanitization security-label list. The exact
+  generation context used untrusted-evidence delimiters and the stable retained document
+  IDs above; no unsanitized retained Markdown was supplied.
+
+Generation calls and timings:
+
+- One query embedding used 36 prompt tokens in an Ollama 2,048-token embedding context,
+  took 2.5727 seconds, and reported `truncated = 0`. The following scoped Qdrant search
+  returned in approximately 0.0292 seconds based on adjacent application response times.
+- Generation call 1 used 1,982 prompt tokens and generated 192 tokens. Ollama reported
+  a 4,096-token slot, `truncated = 0`, and HTTP processing time 12.2039 seconds. Its
+  response caused one uncited-claim validation rejection and the bounded correction call.
+- Generation call 2 used 2,043 prompt tokens and generated 243 tokens. Ollama reported
+  the same 4,096-token slot, `truncated = 0`, and HTTP processing time 3.0116 seconds.
+  The correction named only `[S4]`, `[S5]`, and `[S6]`; four remaining uncited material
+  claims were omitted.
+- Total Ollama generation HTTP processing time was 15.2154 seconds. Application synthesis
+  took 17.8398 seconds and middleware measured the retry request at 17.8472 seconds; the
+  independent host stopwatch measured 16.7342 seconds. The timing-source discrepancy is
+  retained rather than normalized away.
+- The application packed against configured `MODEL_CONTEXT_TOKENS=8192` with a 1,024-token
+  answer reserve, while Ollama allocated 4,096 tokens. Both prompts were below the live
+  allocation and neither was truncated.
+- The exact initial prompt was deterministically reproduced with the six entries above.
+  Raw JSON bodies returned by the two generation calls are neither persisted nor logged,
+  so they cannot be recovered after this one-time retry without issuing a forbidden second
+  request. The audit therefore records both calls' token/timing data, validator outcomes,
+  final persisted content, and the exact represented input, but not the raw rejected JSON.
+
+Citation and mutation audit:
+
+- The final report displays no material finding or disagreement citation. There is
+  therefore no displayed material citation to resolve; the six-item source registry still
+  resolves to its retained documents, but it is not evidence of a supported finding.
+- Before and after the retry, the job remained at six sources and 870 chunks; SQLite
+  remained at 67 documents, 67 job/source associations, and six associations for this job;
+  Qdrant remained at 24,465 points, 23,369 indexed vectors, and six segments.
+- Bounded API logs show one topic `/api/embeddings` request, one Qdrant `points/search`,
+  two Ollama `/api/generate` requests, and the single approved retry endpoint. Worker logs
+  since the pre-retry boundary contain no `job_started`, `phase_completed`,
+  `crawl_completed`, `ingest`, `embed`, or `upsert` event.
+- No research job, crawl, retained-document embedding, Qdrant upsert, or corpus mutation
+  occurred. The expected report persistence and job `updated_at`/`report_status` update
+  were the only deployed state changes. The binary, fact-extraction, and confidence
+  reports were not retried.
+
+Post-retry verification:
+
+- The deterministic benchmark again exited 0 with critical Recall@4 `1.0`, citation
+  validity `1.0`, and `passed: true`. The combined benchmark/synthesis command passed 13
+  tests in 1.987 seconds.
+- The complete containerized suite against Compose Redis ran 80 tests in 2.696 seconds
+  with no failures or skips; all four Redis worker integration tests ran and passed.
+- Containerized `python -m pip check` reported `No broken requirements found.`
+- `hermes verify --json --port 8000 --timeout 120 --ready-timeout 60` exited 0 with
+  `"ok": true`; its Compose build passed and readiness returned HTTP 200.
+- The CRLF-aware `git diff --check` exited 0 with no whitespace errors. Git emitted only
+  the expected warning that this file's working-copy LF endings will convert to CRLF when
+  touched.
+
+Acceptance, deferred evidence, and risks:
+
+- Phase 4 live acceptance failed. Although dense retrieval again supplied relevant chunks
+  from three retained sources, the report contains supported cited findings from zero
+  sources rather than the required minimum of two. Phase 4 remains unaccepted.
+- Deterministic citation validity remains `100%`, but the live report emitted zero material
+  citations, so it cannot demonstrate live claim-to-evidence citation validity.
+- Raw per-call generation JSON remains an observability gap because the service does not
+  persist or log rejected model bodies. No additional retry is authorized to fill it.
+- The 8,192 configured versus 4,096 allocated context mismatch remains an operational
+  risk, although it caused no truncation here. Dense retrieval continued to find the
+  specialized terms, so Phase 5 remains unapproved and unjustified.
+
+Files changed:
+
+- `PRDs/research-rag-synthesis-modernization-progress.md`: records approval, the one-time
+  retry, exact supplied evidence, model and HTTP diagnostics, mutation audit, failed live
+  acceptance, verification, deferred raw outputs, and remaining risks.
+
+Next action: stop at the Phase 4 review gate. Do not retry this or any other report again
+without new explicit approval, and do not begin Phase 5.
