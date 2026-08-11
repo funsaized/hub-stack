@@ -354,3 +354,29 @@ Deployed 2026-08-11. No secret value is tracked in git any longer:
   `/readyz` is all-true, the 141-test suite passes in-container, and the
   attempt-11 report and source registry remain byte-identical
   (`068d60b2…`, `d6748d76…`) at 67 documents / 13 reports.
+
+## Crawler SSRF guards deployed (HUB-006)
+
+Deployed 2026-08-11. The crawler can no longer be steered at internal services:
+
+- `app/url_policy.py` vets every crawl URL before the fetch: http/https and
+  ports 80/443 only, then every DNS answer (or the IP literal) must be a
+  globally routable unicast address — loopback, RFC1918/ULA, link-local
+  (including `169.254.169.254`), CGNAT, multicast, reserved, and unspecified
+  destinations are rejected, IPv4-mapped IPv6 is unwrapped first, one bad
+  answer among many rejects (rebinding), and DNS failures fail closed.
+- Because the fetch itself runs inside the Crawl4AI container, the landing URL
+  Crawl4AI reports (`redirected_url`) is re-vetted after the fetch and the
+  document is dropped when it landed anywhere disallowed. Documents larger
+  than `CRAWL_MAX_MARKDOWN_CHARS` (default 2,000,000) are rejected.
+- Every rejection logs `crawl_rejected` with job ID, normalized destination,
+  and reason, and increments `hub_crawl_total{outcome="rejected"}`.
+- Crawl4AI moved to a dedicated `crawler` Docker network: verified it cannot
+  resolve Qdrant, SearXNG, or claim-verifier; Redis and Ollama stay reachable
+  because Crawl4AI's own server config requires both (accepted residual, along
+  with the unexposed redirect-count/duration limits and the DNS TOCTOU window
+  — both bounded by landing-URL revalidation).
+- 34 new tests (offline, resolver stubbed); the suite is now 175 tests, green
+  in-container against the deployed image. Deployed modules SHA-verified in
+  hub and worker; `/readyz` all-true; attempt-11 artifacts byte-identical at
+  67 documents / 13 reports.

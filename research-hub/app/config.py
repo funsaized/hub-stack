@@ -33,6 +33,7 @@ class Config:
     answer_reserve_tokens: int = 2048
     allow_custom_system_prompts: bool = False
     respect_robots_txt: bool = True
+    crawl_max_markdown_chars: int = 2_000_000
     report_retrieval_candidates: int = 40
     report_max_chunks_per_source: int = 3
     report_retrieval_min_score: float | None = None
@@ -53,6 +54,8 @@ class Config:
             raise ValueError("REPORT_RETRIEVAL_MIN_SCORE must be finite")
         if not math.isfinite(self.claim_verifier_timeout_seconds) or self.claim_verifier_timeout_seconds <= 0:
             raise ValueError("CLAIM_VERIFIER_TIMEOUT_SECONDS must be positive and finite")
+        if self.crawl_max_markdown_chars < 1:
+            raise ValueError("CRAWL_MAX_MARKDOWN_CHARS must be positive")
 
 
 def load_config() -> Config:
@@ -85,6 +88,9 @@ def load_config() -> Config:
         ).lower() in {"1", "true", "yes"},
         respect_robots_txt=os.environ.get("RESPECT_ROBOTS_TXT", "true").lower()
         in {"1", "true", "yes"},
+        crawl_max_markdown_chars=int(
+            os.environ.get("CRAWL_MAX_MARKDOWN_CHARS", "2000000")
+        ),
         report_retrieval_candidates=int(
             os.environ.get("REPORT_RETRIEVAL_CANDIDATES", "40")
         ),

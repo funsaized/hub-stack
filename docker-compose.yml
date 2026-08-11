@@ -8,6 +8,7 @@ services:
     image: ollama/ollama:latest
     container_name: hub-ollama
     restart: unless-stopped
+    networks: [default, crawler]
     ports:
       # Localhost by default. Set OLLAMA_BIND_ADDRESS to a trusted LAN or
       # Tailscale interface address only when remote model access is intended.
@@ -58,6 +59,7 @@ services:
     image: redis:7-alpine
     container_name: hub-redis
     restart: unless-stopped
+    networks: [default, crawler]
     volumes:
       - redis_data:/data
     # Queue/job keys must never be evicted under memory pressure.
@@ -162,6 +164,11 @@ services:
     image: unclecode/crawl4ai:latest
     container_name: hub-crawl4ai
     restart: unless-stopped
+    # Egress isolation (HUB-006): the crawler fetches untrusted content, so it
+    # sits on the crawler network only. It can reach Ollama and Redis (its own
+    # config depends on both) and the internet, but not Qdrant, SearXNG,
+    # claim-verifier, or the observability services.
+    networks: [crawler]
     volumes:
       - crawl4ai_data:/app/data
       - ./healthcheck:/healthcheck:ro
@@ -207,6 +214,7 @@ services:
       dockerfile: Dockerfile
     container_name: hub-research-hub
     restart: unless-stopped
+    networks: [default, crawler]
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -257,6 +265,7 @@ services:
       dockerfile: Dockerfile
     container_name: hub-research-worker
     restart: unless-stopped
+    networks: [default, crawler]
     command: ["python", "-m", "app.worker"]
     stop_grace_period: 30s
     # The shared image probes the API's /livez endpoint; the worker has no HTTP
@@ -287,6 +296,7 @@ services:
       - MODEL_CONTEXT_TOKENS=${MODEL_CONTEXT_TOKENS:-8192}
       - ANSWER_RESERVE_TOKENS=${ANSWER_RESERVE_TOKENS:-2048}
       - RESPECT_ROBOTS_TXT=${RESPECT_ROBOTS_TXT:-true}
+      - CRAWL_MAX_MARKDOWN_CHARS=${CRAWL_MAX_MARKDOWN_CHARS:-2000000}
       - REPORT_RETRIEVAL_CANDIDATES=${REPORT_RETRIEVAL_CANDIDATES:-40}
       - REPORT_MAX_CHUNKS_PER_SOURCE=${REPORT_MAX_CHUNKS_PER_SOURCE:-3}
       - REPORT_RETRIEVAL_MIN_SCORE=${REPORT_RETRIEVAL_MIN_SCORE:-}
@@ -346,6 +356,11 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+
+networks:
+  # Crawl4AI fetches untrusted web content; this network limits what it can
+  # reach inside the stack (see the crawl4ai service definition).
+  crawler:
 
 volumes:
   ollama_data:

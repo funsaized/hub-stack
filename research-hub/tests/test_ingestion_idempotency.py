@@ -2,7 +2,7 @@
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -119,8 +119,11 @@ class FailedEmbeddingSafetyTests(unittest.IsolatedAsyncioTestCase):
             "id": "prior", "payload": {"document_id": "prior-version"},
         }]
 
-        with self.assertRaisesRegex(RuntimeError, "embed down"):
-            await subject.run_job("job-id")
+        # SSRF vetting resolves DNS; stub it so the test stays offline.
+        with patch("app.research.vet_destination_async",
+                   AsyncMock(return_value="example.com")):
+            with self.assertRaisesRegex(RuntimeError, "embed down"):
+                await subject.run_job("job-id")
 
         subject.qdrant.upsert.assert_not_called()
         subject.qdrant.delete_document.assert_not_called()
@@ -155,7 +158,10 @@ class SourceObservationTests(unittest.IsolatedAsyncioTestCase):
             "payload": {"document_id": document_id},
         }]
 
-        await subject.run_job("job-id")
+        # SSRF vetting resolves DNS; stub it so the test stays offline.
+        with patch("app.research.vet_destination_async",
+                   AsyncMock(return_value="example.com")):
+            await subject.run_job("job-id")
 
         subject.documents.observe_job_source.assert_called_once()
         self.assertEqual(
