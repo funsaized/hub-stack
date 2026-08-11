@@ -471,6 +471,9 @@ class Crawl4AIClient:
                 return None
             return {
                 "url": res.get("url", url),
+                # Where the fetch actually landed after redirects; the SSRF
+                # policy re-vets this against the same destination rules.
+                "final_url": res.get("redirected_url") or res.get("url", url),
                 "title": res.get("metadata", {}).get("title", ""),
                 "markdown": crawl_markdown_text(res.get("markdown", "")),
                 "http_metadata": {

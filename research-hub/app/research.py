@@ -21,6 +21,7 @@ from .clients import OllamaClient, QdrantClient, SearXNGClient, Crawl4AIClient
 from .context import classify_and_sanitize
 from .models import JobStatus, ResearchRequest
 from .document_store import DocumentStore
+from .url_policy import DestinationNotAllowed, vet_destination_async
 from .retrieval import ScopedRetrievalService
 from .claim_support import ClaimVerifierClient
 from .observability import (
@@ -162,6 +163,15 @@ def apply_source_policy(results: list[dict], req: ResearchRequest,
                         freshness_days=(cutoff - published).days if published else None)
         accepted.append(enriched)
     return accepted, decisions
+
+
+async def evaluate_crawl_result(result: dict, max_markdown_chars: int) -> None:
+    """Reject a fetched document that landed on a disallowed destination or is
+    oversized. Raises DestinationNotAllowed with the offending destination."""
+    landing = result.get("final_url") or result.get("url", "")
+    await vet_destination_async(landing)
+    if len(result.get("markdown", "")) > max_markdown_chars:
+        raise DestinationNotAllowed(landing, "response_too_large")
 
 
 def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> list[str]:
@@ -428,6 +438,19 @@ class ResearchOrchestrator:
                 async with sem:
                     domain = urlsplit(url).hostname or "unknown"
                     started = time.monotonic()
+                    # SSRF policy, pass 1: vet scheme, port, and every DNS
+                    # answer for the requested URL before the crawler sees it.
+                    try:
+                        await vet_destination_async(url)
+                    except DestinationNotAllowed as exc:
+                        CRAWLS.labels("rejected").inc()
+                        logger.warning("crawl_rejected", extra={
+                            "job_id": job_id, "phase": "crawl", "source_url": url,
+                            "source_domain": domain,
+                            "normalized_destination": exc.destination,
+                            "rejection_reason": exc.reason,
+                        })
+                        return
                     try:
                         res = await self.crawl4ai.crawl(
                             url, respect_robots_txt=respect_robots
@@ -441,6 +464,23 @@ class ResearchOrchestrator:
                             "failure_category": "dependency_error",
                         })
                         raise
+                    # SSRF policy, pass 2: reject the document when the fetch
+                    # landed somewhere disallowed (redirects) or is oversized.
+                    if res:
+                        try:
+                            await evaluate_crawl_result(
+                                res,
+                                getattr(self.cfg, "crawl_max_markdown_chars", 2_000_000),
+                            )
+                        except DestinationNotAllowed as exc:
+                            CRAWLS.labels("rejected").inc()
+                            logger.warning("crawl_rejected", extra={
+                                "job_id": job_id, "phase": "crawl",
+                                "source_url": url, "source_domain": domain,
+                                "normalized_destination": exc.destination,
+                                "rejection_reason": exc.reason,
+                            })
+                            return
                     CRAWLS.labels("success" if res else "failed").inc()
                     logger.info("crawl_completed", extra={
                         "job_id": job_id, "phase": "crawl", "source_url": url,

@@ -129,16 +129,27 @@ remains unimplemented and is not required at the current single-user exposure.
 
 ### HUB-006 — Add crawler SSRF and network-boundary protections
 
-**Status:** 🔴 Open, partially mitigated — verified against the code 2026-08-11.
-Already present: URL canonicalization restricts schemes to http/https and rejects
-non-default ports (`app/research.py:44-58,138`), domain allow/block policy,
-per-domain limits, and robots handling (HUB-021). Missing: no `ipaddress`-based
-rejection of loopback/private/link-local/metadata destinations anywhere in the app,
-no DNS or redirect revalidation, no response-size/redirect-count/duration limits at
-the application layer, and the crawler shares a network with Redis, Qdrant, and
-Ollama. Note the actual fetch runs inside the Crawl4AI container, so app-level URL
-vetting must be paired with checks on what Crawl4AI reports it finally fetched, or
-with network-layer egress isolation.
+**Status:** ✅ Done — deployed 2026-08-11. `app/url_policy.py` vets every crawl
+destination twice: before the fetch (scheme/port allowlist, then `ipaddress`-based
+rejection of loopback/private/link-local/CGNAT/multicast/reserved/metadata
+destinations across every DNS answer, IPv4-mapped IPv6 unwrapped, DNS failures
+fail closed) and after the fetch against the landing URL Crawl4AI reports
+(`redirected_url`), so redirect-based escapes drop the document. Oversized
+documents are rejected (`CRAWL_MAX_MARKDOWN_CHARS`, default 2,000,000). Every
+rejection logs job ID, normalized destination, and reason (`crawl_rejected`),
+and increments `hub_crawl_total{outcome="rejected"}`. Network layer: Crawl4AI
+now sits on a dedicated `crawler` network — it cannot resolve or reach Qdrant,
+SearXNG, claim-verifier, or the observability services (verified in-container);
+it retains Redis and Ollama access because its own server config requires both.
+Accepted residuals: (a) Redis/Ollama remain reachable from the crawler container
+— cross-protocol HTTP-to-Redis is mitigated by Redis's POST/Host: protection
+and app-level vetting blocks these hosts as crawl targets; (b) no redirect-count
+or request-duration limit at the Crawl4AI API (not exposed) — landing-URL
+revalidation covers redirect-based SSRF; (c) DNS TOCTOU between the hub's check
+and Crawl4AI's fetch — bounded by the landing-URL recheck and network isolation.
+34 new tests cover direct, encoded, DNS-resolved, mixed-answer, IPv6, and
+redirect-based internal destinations plus size limits; the 175-test suite is
+green in-container and public pages still vet cleanly.
 
 **Problem:** The crawler processes discovered URLs while sharing a network with databases and control-plane services. Malicious results or redirects could target internal services.
 
@@ -704,9 +715,9 @@ Do not fine-tune from the corpus by default. First establish data quality, licen
 
 ## Recommended delivery sequence
 
-### Milestone 1 — Safe restarts (open: HUB-006)
+### Milestone 1 — Safe restarts (complete)
 
-HUB-001 ✅, HUB-002 ✅, HUB-003 ✅, HUB-004 ✅, HUB-005 ✅, HUB-006 🔴
+HUB-001 ✅, HUB-002 ✅, HUB-003 ✅, HUB-004 ✅, HUB-005 ✅, HUB-006 ✅
 
 **Exit condition:** restarting the stack preserves data, health diagnostics work, and the default deployment is not broadly exposed.
 
@@ -735,7 +746,7 @@ HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none 
 ### Recommended order for the remaining open work (2026-08-11)
 
 1. **HUB-003** — ✅ done 2026-08-11 (see status above).
-2. **HUB-006** — SSRF guards; builds directly on HUB-003's crawler-token work.
+2. **HUB-006** — ✅ done 2026-08-11 (see status above).
 3. **HUB-013** — backup of `documents.sqlite3` first; it is the only irreplaceable state.
 4. **HUB-012** — CI + pinned images + lockfile, so the gates that exist stop depending on one machine.
 5. **HUB-031** — small correctness fix with a clear test plan.
