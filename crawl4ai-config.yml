@@ -24,8 +24,9 @@ redis:
   task_ttl_seconds: 3600
   ssl: False
 
-# Rate limiting / auth
+# Rate limiting / auth. The API token is NOT set here: the server enforces the
+# CRAWL4AI_API_TOKEN environment variable (required in docker-compose.yml,
+# sourced from .env). Never commit a secret to this file.
 security:
   enabled: true
   trusted_hosts: ["*"]
-  api_token: "hub-crawl4ai-shared-token"

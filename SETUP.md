@@ -153,7 +153,21 @@ git clone https://github.com/<your-username>/hub-stack.git
 cd hub-stack
 ```
 
-## 5. Start the stack
+## 5. Configure secrets
+
+Compose refuses to start until the required secrets exist in `.env`:
+
+```bash
+cp .env.example .env
+# Fill in the required values (see the comments in .env.example):
+sed -i "s/^SEARXNG_SECRET=$/SEARXNG_SECRET=$(openssl rand -hex 32)/" .env
+sed -i "s/^CRAWL4AI_API_TOKEN=$/CRAWL4AI_API_TOKEN=$(openssl rand -hex 32)/" .env
+```
+
+`.env` is gitignored — never commit it. `WEBUI_SECRET_KEY` may stay empty;
+Open WebUI generates and persists its own key when unset.
+
+## 6. Start the stack
 
 ```bash
 docker compose up -d
@@ -202,7 +216,7 @@ http://localhost:3002 for the provisioned dashboard or Prometheus at
 http://localhost:9090. See `docs/OBSERVABILITY.md` for metric names, structured
 log fields, correlation behavior, and thresholds.
 
-## 6. Set up Uptime Kuma monitors
+## 7. Set up Uptime Kuma monitors
 
 To use corpus-backed chat, start Open WebUI with:
 
@@ -234,7 +248,7 @@ services only resolve from Kuma when their profiles are also running.
 Uptime Kuma shares the Compose network, so use service DNS names rather than
 host-published ports. Internal dependencies intentionally have no host listener.
 
-## 7. Verify the pipeline
+## 8. Verify the pipeline
 
 ```bash
 # Submit a research job
@@ -277,9 +291,11 @@ crawl4ai:
   volumes:
     - ./crawl4ai-config.yml:/app/config.yml:ro
   environment:
-    - CRAWL4AI_API_TOKEN=hub-crawl4ai-shared-token
+    - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN:?}  # value comes from .env
     - APP_HOST=0.0.0.0
 ```
+Also confirm `CRAWL4AI_API_TOKEN` is set in `.env` — research-hub and the worker
+authenticate to Crawl4AI with the same value.
 
 ### Healthcheck stays "unhealthy" but the endpoint works
 Different containers have different binaries. See docs/HEALTHCHECKS.md.

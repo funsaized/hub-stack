@@ -2,10 +2,12 @@
 # Most options use defaults; the key one is allowing JSON output for the crawler
 use_default_settings: true
 
+# The server secret is NOT set here: SearXNG reads it from the SEARXNG_SECRET
+# environment variable (required in docker-compose.yml, sourced from .env),
+# which overrides any settings.yml value. Never commit a secret to this file.
 server:
   bind_address: "0.0.0.0"
   port: 8080
-  secret_key: "changeme_in_production"
 
 search:
   formats:
