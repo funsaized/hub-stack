@@ -55,15 +55,18 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-003 — Remove hardcoded credentials and insecure defaults
 
-**Status:** 🔴 Open — verified against the tree 2026-08-11. Checked-in secrets:
-`SEARXNG_SECRET=changeme_in_production` (docker-compose.yml:143) duplicated as
-`secret_key: "changeme_in_production"` in `searxng/settings.yml:8`;
-`CRAWL4AI_API_TOKEN`/`CRAWL4AI_TOKEN=hub-crawl4ai-shared-token` hardcoded at three
-compose sites (crawl4ai, research-hub, research-worker); Open WebUI
-`WEBUI_SECRET_KEY` falls back to `changeme_in_production`. `.env.example` exists but
-carries no secret placeholders and nothing refuses to start on default values.
-Postgres is gone from Compose, so the Postgres part of this item is obsolete. This is
-the highest-priority remaining P0.
+**Status:** ✅ Done — deployed 2026-08-11. All secrets moved to the gitignored
+`.env` with required `${VAR:?}` compose expansion: `SEARXNG_SECRET` (removed from
+`searxng/settings.yml`; the env var overrides the file) and `CRAWL4AI_API_TOKEN`
+(single variable feeding all three compose sites; removed from
+`crawl4ai-config.yml`). Open WebUI's `WEBUI_SECRET_KEY` static fallback removed —
+empty means the container self-generates a persisted key (profile-gated, so hard
+requirement is not possible). `.env.example` documents blank placeholders with
+`openssl rand -hex 32` instructions; `SETUP.md` has a pre-start secrets step.
+Deployed values rotated and containers recreated. Verified: compose refuses to
+parse without the secrets, the old Crawl4AI token gets 401 and the new one
+authenticates, `/readyz` all-true, 141 tests green in-container, attempt-11
+report/sources byte-identical. Postgres part obsolete (Postgres left Compose).
 
 **Problem:** SearXNG, Crawl4AI, and Open WebUI ship with hardcoded or fallback credentials.
 
@@ -701,9 +704,9 @@ Do not fine-tune from the corpus by default. First establish data quality, licen
 
 ## Recommended delivery sequence
 
-### Milestone 1 — Safe restarts (open: HUB-003, HUB-006)
+### Milestone 1 — Safe restarts (open: HUB-006)
 
-HUB-001 ✅, HUB-002 ✅, HUB-003 🔴, HUB-004 ✅, HUB-005 ✅, HUB-006 🔴
+HUB-001 ✅, HUB-002 ✅, HUB-003 ✅, HUB-004 ✅, HUB-005 ✅, HUB-006 🔴
 
 **Exit condition:** restarting the stack preserves data, health diagnostics work, and the default deployment is not broadly exposed.
 
@@ -731,7 +734,7 @@ HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none 
 
 ### Recommended order for the remaining open work (2026-08-11)
 
-1. **HUB-003** — checked-in credentials on a service that crawls untrusted content; smallest item, highest leverage.
+1. **HUB-003** — ✅ done 2026-08-11 (see status above).
 2. **HUB-006** — SSRF guards; builds directly on HUB-003's crawler-token work.
 3. **HUB-013** — backup of `documents.sqlite3` first; it is the only irreplaceable state.
 4. **HUB-012** — CI + pinned images + lockfile, so the gates that exist stop depending on one machine.

@@ -140,7 +140,9 @@ services:
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
       - ./healthcheck:/healthcheck:ro
     environment:
-      - SEARXNG_SECRET=changeme_in_production
+      # Required secret from .env — compose refuses to start without it.
+      # Overrides server.secret_key from the settings file.
+      - SEARXNG_SECRET=${SEARXNG_SECRET:?Set SEARXNG_SECRET in .env — generate with openssl rand -hex 32}
     cap_drop:
       - ALL
     cap_add:
@@ -168,7 +170,8 @@ services:
       - CRAWL4AI_LLM_PROVIDER=ollama
       - OLLAMA_BASE_URL=http://hub-ollama:11434
       - OLLAMA_MODEL=${LLM_MODEL:-qwen3.5:9b}
-      - CRAWL4AI_API_TOKEN=hub-crawl4ai-shared-token
+      # Required shared token from .env — compose refuses to start without it.
+      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN:?Set CRAWL4AI_API_TOKEN in .env — generate with openssl rand -hex 32}
       - APP_HOST=0.0.0.0
     depends_on:
       ollama:
@@ -218,7 +221,7 @@ services:
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-768}
       - SEARXNG_URL=http://hub-searxng:8080
       - CRAWL4AI_URL=http://hub-crawl4ai:11235
-      - CRAWL4AI_TOKEN=hub-crawl4ai-shared-token
+      - CRAWL4AI_TOKEN=${CRAWL4AI_API_TOKEN:?Set CRAWL4AI_API_TOKEN in .env — generate with openssl rand -hex 32}
       - LOG_LEVEL=info
       - DOCUMENT_STORE_PATH=/app/data/documents.sqlite3
       - MODEL_CONTEXT_TOKENS=${MODEL_CONTEXT_TOKENS:-8192}
@@ -271,7 +274,7 @@ services:
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-768}
       - SEARXNG_URL=http://hub-searxng:8080
       - CRAWL4AI_URL=http://hub-crawl4ai:11235
-      - CRAWL4AI_TOKEN=hub-crawl4ai-shared-token
+      - CRAWL4AI_TOKEN=${CRAWL4AI_API_TOKEN:?Set CRAWL4AI_API_TOKEN in .env — generate with openssl rand -hex 32}
       - WORKER_LEASE_SECONDS=${WORKER_LEASE_SECONDS:-60}
       - WORKER_HEARTBEAT_SECONDS=${WORKER_HEARTBEAT_SECONDS:-15}
       - JOB_TIMEOUT_SECONDS=${JOB_TIMEOUT_SECONDS:-1800}
@@ -322,7 +325,11 @@ services:
     environment:
       OLLAMA_BASE_URL: http://hub-ollama:11434
       WEBUI_AUTH: "true"
-      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-changeme_in_production}
+      # Optional: when empty, Open WebUI generates a random key on first start
+      # and persists it in the open_webui_data volume. Set a value in .env only
+      # if sessions must survive a volume wipe. (This service is profile-gated,
+      # so a hard-required ${VAR:?} here would break default startup.)
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-}
       ENABLE_OPENAI_API: "true"
       OPENAI_API_BASE_URLS: http://hub-research-hub:8000/v1
       OPENAI_API_KEYS: hub-local

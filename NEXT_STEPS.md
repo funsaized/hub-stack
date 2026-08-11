@@ -14,14 +14,10 @@ The current 0.1.0 MVP is working end-to-end. Here's the roadmap, prioritized by 
 4. Follow `docs/NETWORKING.md`; expose only Ollama on a trusted interface, or put
    authenticated ingress in front of an approved UI/API.
 
-### 2. Rotate exposed secrets
-**Why**: ships with default credentials (`changeme_in_production`).
-**Effort**: 30 minutes
-**Steps**:
-1. Copy `.env.example` → `.env`
-2. Generate proper passwords: `openssl rand -hex 32`
-3. Replace remaining checked-in fallback secrets with required environment values.
-4. Restart
+### 2. Rotate exposed secrets — ✅ done (HUB-003, 2026-08-11)
+Secrets now live only in the gitignored `.env` (see `.env.example` for the
+required fields); compose refuses to start without them, and the deployed
+values were rotated. See `backlog.md` HUB-003 for details.
 
 ### 3. Real startup script
 **Why**: stack should auto-resume after reboot.

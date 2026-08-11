@@ -329,3 +329,28 @@ SQLite FTS5 needle channel under deterministic reciprocal rank fusion (`k=60`):
 
 Phase 6 (local reranking) is not entered: hybrid recall on the measured manifest is
 `1.0`, so precision is not the bottleneck.
+
+## Hardcoded credentials removed and rotated (HUB-003)
+
+Deployed 2026-08-11. No secret value is tracked in git any longer:
+
+- `SEARXNG_SECRET` and the shared Crawl4AI token (`CRAWL4AI_API_TOKEN`, also
+  injected as `CRAWL4AI_TOKEN` into research-hub and the worker) now come only
+  from the gitignored `.env`, referenced in `docker-compose.yml` with required
+  `${VAR:?}` expansion — compose refuses to parse without them (verified: with
+  `.env` absent, `docker compose config` fails with the generation hint).
+- `searxng/settings.yml` no longer carries `secret_key` (the `SEARXNG_SECRET`
+  env var overrides it) and `crawl4ai-config.yml` no longer carries
+  `api_token` (the server enforces the env token; verified 401 without it).
+- Open WebUI's `WEBUI_SECRET_KEY` fallback `changeme_in_production` was removed;
+  when unset the container generates and persists a random key in its volume.
+  The service is profile-gated, so it cannot use hard-required expansion.
+- `.env.example` documents the required fields with blank placeholders and
+  `openssl rand -hex 32` generation instructions; `SETUP.md` gained a
+  "Configure secrets" step before first start.
+- The deployed values were rotated: new random secrets in the local `.env`,
+  searxng/crawl4ai/research-hub/research-worker recreated. Verified after
+  rotation: the old token is rejected (401), the new token authenticates,
+  `/readyz` is all-true, the 141-test suite passes in-container, and the
+  attempt-11 report and source registry remain byte-identical
+  (`068d60b2…`, `d6748d76…`) at 67 documents / 13 reports.
