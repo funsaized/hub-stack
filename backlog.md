@@ -307,13 +307,20 @@ CI gate.
 
 ### HUB-013 — Implement and test backup and restore
 
-**Status:** 🔴 Open — verified 2026-08-11: no backup scripts or scheduled jobs exist
-anywhere in the repo. Redis AOF provides durability, not backup. Everything of value
-lives in Docker named volumes on one machine: `documents.sqlite3` (canonical
-documents, 13 reports including the attempt-11 acceptance artifact, and the new
-`chunk_fts` lexical index), the Qdrant collection (rebuildable from SQLite via
-`python -m app.rebuild`, at embedding cost), and Redis job state. The SQLite document
-store is the irreplaceable core; a backup of that file alone covers most of the risk.
+**Status:** ✅ Done — deployed 2026-08-11, scoped to the irreplaceable core
+(`documents.sqlite3`); see `docs/BACKUP.md`. `scripts/backup.ps1` snapshots the
+WAL database with `VACUUM INTO` inside the running container (no downtime),
+integrity-checks and count-checks the snapshot, copies it to the gitignored
+`backups/` directory, and prunes to the newest 14. The Windows scheduled task
+`hub-stack-documents-backup` runs it daily at 03:30, logging to
+`backups/backup.log`; failures exit non-zero and surface in the log and the
+task's Last Run Result. `scripts/restore.ps1` restores into a brand-new clean
+volume by default (tested 2026-08-11: `integrity=ok documents=67 reports=13`,
+attempt-11 report present, ~10 s) and `-Live` performs the full swap
+(stop writers → replace DB → restart → `/readyz` poll). Qdrant is deliberately
+not snapshotted — `python -m app.rebuild` from SQLite is the documented vector
+recovery, and Redis job state is transient. Backups stay on this machine, so
+they are unencrypted by scope; encrypt before syncing anywhere off-machine.
 
 **Problem:** The knowledge base and job state live only in local named volumes, and backup instructions are not automated or restore-tested.
 
@@ -727,9 +734,9 @@ HUB-007 ✅, HUB-008 ✅, HUB-009 ✅, HUB-010 ✅, HUB-011 ✅
 
 **Exit condition:** jobs survive process failure, repeated ingestion is idempotent, and the corpus can be rebuilt from retained documents.
 
-### Milestone 3 — Operable daily service (open: HUB-012, HUB-013)
+### Milestone 3 — Operable daily service (open: HUB-012)
 
-HUB-012 🔴, HUB-013 🔴, HUB-014 ✅, HUB-015 ✅, HUB-016 ✅
+HUB-012 🔴, HUB-013 ✅, HUB-014 ✅, HUB-015 ✅, HUB-016 ✅
 
 **Exit condition:** builds are reproducible, recovery is tested, contracts are enforced, and failures are diagnosable.
 
@@ -747,7 +754,7 @@ HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none 
 
 1. **HUB-003** — ✅ done 2026-08-11 (see status above).
 2. **HUB-006** — ✅ done 2026-08-11 (see status above).
-3. **HUB-013** — backup of `documents.sqlite3` first; it is the only irreplaceable state.
+3. **HUB-013** — ✅ done 2026-08-11 (see status above; `docs/BACKUP.md`).
 4. **HUB-012** — CI + pinned images + lockfile, so the gates that exist stop depending on one machine.
 5. **HUB-031** — small correctness fix with a clear test plan.
 6. **HUB-032** — the only remaining quality item; requires a new blind evaluation set before any verifier-rule change, so schedule it deliberately, not incidentally.

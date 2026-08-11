@@ -380,3 +380,22 @@ Deployed 2026-08-11. The crawler can no longer be steered at internal services:
   in-container against the deployed image. Deployed modules SHA-verified in
   hub and worker; `/readyz` all-true; attempt-11 artifacts byte-identical at
   67 documents / 13 reports.
+
+## Backup and restore operational (HUB-013)
+
+Deployed 2026-08-11; full procedure in `docs/BACKUP.md`:
+
+- `scripts/backup.ps1` snapshots `documents.sqlite3` with `VACUUM INTO`
+  inside the running container (WAL-safe, no downtime), integrity- and
+  count-checks the snapshot, copies it to the gitignored `backups/` directory
+  (~46 MB), and keeps the newest 14.
+- The Windows scheduled task `hub-stack-documents-backup` runs it daily at
+  03:30 and logs to `backups/backup.log`; a scheduler-triggered run completed
+  with result 0 on 2026-08-11. Failures exit non-zero.
+- `scripts/restore.ps1` was exercised against a fresh clean volume:
+  `integrity=ok documents=67 reports=13`, newest report is the attempt-11
+  artifact, ~10 s recovery. `-Live` performs stop-writers → replace →
+  restart → `/readyz` poll for real recovery.
+- Qdrant is deliberately not snapshotted (`python -m app.rebuild` from SQLite
+  is the documented recovery); Redis job state is transient. Backups remain
+  on-machine and therefore unencrypted, per the backlog scope.
