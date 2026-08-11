@@ -27,13 +27,11 @@ values were rotated. See `backlog.md` HUB-003 for details.
 2. Add it to Windows Task Scheduler (trigger: at logon)
 3. Include a smoke test that fails if the stack isn't healthy after 3 minutes
 
-### 4. Backup posture
-**Why**: the knowledge base is the only thing of value here. Lose it, lose everything.
-**Effort**: 1 hour
-**Steps**:
-1. Schedule daily `docker run ... alpine tar czf` for qdrant + redis volumes
-2. Upload to a cloud bucket (Backblaze B2 is $5/TB/month)
-3. Verify restore works — actually run a smoke test from a backup
+### 4. Backup posture — ✅ done (HUB-013, 2026-08-11)
+Daily scheduled `VACUUM INTO` backup of `documents.sqlite3` with retention and
+a tested clean-volume restore; see `docs/BACKUP.md`. Qdrant is rebuilt from
+SQLite rather than backed up. Off-machine replication (e.g. Backblaze B2)
+remains optional — encrypt before syncing if adopted.
 
 ## Tier 2 — build next month
 

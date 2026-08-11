@@ -54,6 +54,9 @@ secrets/
 data/
 volumes/
 
+# Local database backups (HUB-013)
+backups/
+
 # Logs
 *.log
 logs/
