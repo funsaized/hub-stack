@@ -280,13 +280,25 @@ green in-container and public pages still vet cleanly.
 
 ### HUB-012 — Add CI and reproducible dependency management
 
-**Status:** 🔴 Open, partially mitigated — verified 2026-08-11. `requirements.txt`
-pins all top-level versions (including the CPU torch index and the frozen
-transformers), but there is no transitive lockfile with hashes. No `.github/workflows`
-exists. Six compose images still track `latest`: ollama, qdrant, dozzle, uptime-kuma,
-searxng, crawl4ai (redis, grafana, prometheus, open-webui are pinned). The full suite
-(141 tests, Redis DB 15 integration) and the three benchmarks are the de facto local
-CI gate.
+**Status:** ✅ Done — deployed 2026-08-11 (except the two optional items noted
+below). The six formerly-`latest` images are pinned to the digests that were
+running (`tag@sha256`, versions read from the containers: ollama 0.32.6,
+qdrant v1.19.0, searxng 2026.8.4, crawl4ai 0.9.2, dozzle v10.6.15, uptime-kuma
+1.23.17) and every container was recreated onto its pin.
+`research-hub/requirements.lock.txt` is a pip-compile transitive lockfile with
+hashes (1,169 hashes, torch CPU extra index preserved), generated inside
+python:3.12-slim against the deployed image's `pip freeze` so it reproduces the
+frozen set exactly; the Dockerfile now installs with `--require-hashes`,
+`pip check` is clean in the built image, and `scripts/relock.ps1` documents
+regeneration. `.github/workflows/ci.yml` gates pushes/PRs on: ruff E9/F +
+compileall, the full 175-test suite against a Redis 7 service container
+(DB 15 integration included), `docker compose config` with placeholder
+secrets, and the research-hub image build (buildx + GHA cache) followed by
+in-image `pip check`. The three live benchmarks stay local by design (need
+Ollama and the corpus). Not done, deliberately: automated dependency-update
+PRs and vulnerability scanning (single-user local stack; revisit if exposure
+grows), and the FastAPI/Starlette upgrade (would change the pinned set the
+sealed evaluation ran on — bundle it with the next verifier-affecting change).
 
 **Problem:** There is no CI, most container images use `latest` or `main`, and Python dependencies lack a transitive lock with hashes.
 
@@ -734,9 +746,9 @@ HUB-007 ✅, HUB-008 ✅, HUB-009 ✅, HUB-010 ✅, HUB-011 ✅
 
 **Exit condition:** jobs survive process failure, repeated ingestion is idempotent, and the corpus can be rebuilt from retained documents.
 
-### Milestone 3 — Operable daily service (open: HUB-012)
+### Milestone 3 — Operable daily service (complete)
 
-HUB-012 🔴, HUB-013 ✅, HUB-014 ✅, HUB-015 ✅, HUB-016 ✅
+HUB-012 ✅, HUB-013 ✅, HUB-014 ✅, HUB-015 ✅, HUB-016 ✅
 
 **Exit condition:** builds are reproducible, recovery is tested, contracts are enforced, and failures are diagnosable.
 
@@ -755,7 +767,7 @@ HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none 
 1. **HUB-003** — ✅ done 2026-08-11 (see status above).
 2. **HUB-006** — ✅ done 2026-08-11 (see status above).
 3. **HUB-013** — ✅ done 2026-08-11 (see status above; `docs/BACKUP.md`).
-4. **HUB-012** — CI + pinned images + lockfile, so the gates that exist stop depending on one machine.
+4. **HUB-012** — ✅ done 2026-08-11 (see status above).
 5. **HUB-031** — small correctness fix with a clear test plan.
 6. **HUB-032** — the only remaining quality item; requires a new blind evaluation set before any verifier-rule change, so schedule it deliberately, not incidentally.
 

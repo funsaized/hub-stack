@@ -1,6 +1,5 @@
 """Unit and integration-style coverage for HUB-009 and HUB-010."""
 
-import asyncio
 import json
 import sqlite3
 import tempfile

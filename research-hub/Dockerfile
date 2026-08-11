@@ -9,9 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python deps
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python deps from the hashed transitive lockfile (HUB-012).
+# Regenerate with scripts/relock.ps1 after editing requirements.txt.
+COPY requirements.lock.txt .
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock.txt
 
 # Bake the immutable verifier snapshot into the image; runtime is offline-only.
 # Kept above the app copy so editing application code cannot invalidate the

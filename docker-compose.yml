@@ -5,7 +5,8 @@ services:
   # Local LLM server (OpenAI-compatible API on :11434)
   # =====================================================================
   ollama:
-    image: ollama/ollama:latest
+    # Pinned to the running digest 2026-08-11 (ollama 0.32.6); HUB-012.
+    image: ollama/ollama:0.32.6@sha256:b88c73ace3e115f8ec53dc8761ae1c0aabfa675406e3681786b98757ce050f42
     container_name: hub-ollama
     restart: unless-stopped
     networks: [default, crawler]
@@ -40,7 +41,8 @@ services:
   # Vector database for RAG over crawled content
   # =====================================================================
   qdrant:
-    image: qdrant/qdrant:latest
+    # Pinned to the running digest 2026-08-11 (qdrant v1.19.0); HUB-012.
+    image: qdrant/qdrant:v1.19.0@sha256:057ee3a8da769fe7310dd3537b4dc7583bf87a95ce8ac43c0af5a46bc580d1fc
     container_name: hub-qdrant
     restart: unless-stopped
     volumes:
@@ -75,7 +77,8 @@ services:
   # =====================================================================
   dozzle:
     profiles: [logs]
-    image: amir20/dozzle:latest
+    # Pinned to the running digest 2026-08-11 (dozzle v10.6.15); HUB-012.
+    image: amir20/dozzle:v10.6.15@sha256:5bb13e26b62f9bc4bd390e3e0c9423263b7df86e3a4167b718cc6e352f96b54f
     container_name: hub-dozzle
     restart: unless-stopped
     ports:
@@ -91,7 +94,8 @@ services:
   # =====================================================================
   uptime-kuma:
     profiles: [uptime]
-    image: louislam/uptime-kuma:latest
+    # Pinned to the running digest 2026-08-11 (uptime-kuma 1.23.17); HUB-012.
+    image: louislam/uptime-kuma:1.23.17@sha256:3d632903e6af34139a37f18055c4f1bfd9b7205ae1138f1e5e8940ddc1d176f9
     container_name: hub-uptime-kuma
     restart: unless-stopped
     ports:
@@ -133,7 +137,8 @@ services:
   # SearXNG — private meta-search
   # =====================================================================
   searxng:
-    image: searxng/searxng:latest
+    # Pinned to the running digest 2026-08-11 (searxng 2026.8.4-c63835bd2); HUB-012.
+    image: searxng/searxng:2026.8.4-c63835bd2@sha256:f4c8e59de166ed71f6380c0847c312ca51f0d41996e31d0559163b6b09ecde52
     container_name: hub-searxng
     restart: unless-stopped
     ports:
@@ -161,7 +166,8 @@ services:
   # Crawl4AI — web crawler
   # =====================================================================
   crawl4ai:
-    image: unclecode/crawl4ai:latest
+    # Pinned to the running digest 2026-08-11 (crawl4ai 0.9.2); HUB-012.
+    image: unclecode/crawl4ai:0.9.2@sha256:bd36741e7bdd35ddc1a05d9183e1d6d8cefb61dd640d944a25d026b76e917690
     container_name: hub-crawl4ai
     restart: unless-stopped
     # Egress isolation (HUB-006): the crawler fetches untrusted content, so it
