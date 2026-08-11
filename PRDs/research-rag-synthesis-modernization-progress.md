@@ -717,3 +717,91 @@ Acceptance and gate disposition:
   findings from at least two supplied retained sources and every displayed citation resolves
   to the exact selected evidence. Dense retrieval already found the specialized evidence,
   so Phase 5 remains both unapproved and unjustified.
+
+## 2026-08-11 - Phase 4 authoritative retry gate continuation
+
+Status: stopped at the Phase 4 review gate. The deployment approval field remained the
+literal `[YES/NO must be explicitly completed by the owner]` placeholder, so it was
+treated as `NO`. The authoritative report was not retried, Phase 4 remains unaccepted,
+and Phase 5 was not started.
+
+Pre-action checks:
+
+- The entire PRD and this progress log were read before repository inspection. No
+  repository-local `AGENTS.md` was present.
+- `git status --short --branch` reported `## main...origin/main` with no changes.
+  `git branch --show-current` reported `main`; `git rev-parse HEAD` and
+  `git rev-parse '@{upstream}'` both reported
+  `551f672638ace9ea3076e17d53db10d6a52fa174`; the configured upstream was
+  `origin/main`. The commands used the Hermes-managed Git executable because `git` was
+  not resolvable from the sandboxed PowerShell process.
+- No existing worktree change was reset, overwritten, or removed.
+
+Automated Phase 4 reproduction:
+
+- `docker compose run --rm --no-deps -v "${PWD}\research-hub:/app" research-hub
+  python -m tests.benchmark_report_retrieval`: exit code 0. Aggregate Recall@4 and
+  critical Recall@4 were `1.0`, Precision@4 was `0.5`, reciprocal rank and source
+  coverage were `1.0`, duplicate rate was `0.0`, citation validity was `1.0`,
+  unsupported-claim rejection count was `4`, and `passed` was `true`.
+- `docker compose run --rm --no-deps -v "${PWD}\research-hub:/app" research-hub
+  python -m unittest tests.test_report_retrieval_benchmark tests.test_synthesis -v`:
+  13 tests passed in 2.014 seconds. This included both benchmark failure-gate tests and
+  `test_correction_names_only_represented_citation_ids`.
+
+Deployed-code provenance:
+
+- The running `research-hub` API and `research-worker` were healthy/running. SHA-256
+  manifests for all 15 top-level `/app/app/*.py` files in each container exactly matched
+  the clean local `551f672` checkout. In particular, all three copies of `synthesis.py`
+  had SHA-256
+  `0b3ab7189b8b49eda5ebff7c9538ae5b7d9dc41286cae4d2e446f5d53869b4ea`.
+  The containers do not embed Git metadata, so the complete source manifest was used to
+  verify deployed revision content.
+
+Final verification:
+
+- `docker compose build research-hub research-worker`: exit code 0; both current-commit
+  images built successfully from cache. Running containers were not recreated.
+- `docker compose run --rm --no-deps
+  -e TEST_REDIS_URL=redis://hub-redis:6379/15
+  -v "${PWD}\research-hub:/app" research-hub
+  python -m unittest discover -s tests -v`: 80 tests passed in 2.818 seconds with no
+  failures or skips; all four Compose Redis worker integration tests ran and passed.
+- `docker compose run --rm --no-deps research-hub python -m pip check` reported
+  `No broken requirements found.`
+- The known `port: null` no-port Hermes path was not repeated. The explicit command
+  `hermes verify --json --port 8000 --timeout 120 --ready-timeout 60` exited 0 in 2.4
+  seconds with `"ok": true`; its Compose build passed and readiness returned HTTP 200.
+- `git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff
+  --check`: exit code 0 with no whitespace errors. Git emitted only the expected warning
+  that this progress file's working-copy LF endings will be converted to CRLF when touched.
+
+Approval, mutation, acceptance, and risks:
+
+- `POST /research/4b8acd0f-088f-4b97-92fc-f52b69b8a3ee/report/retry` was not called.
+  The binary, fact-extraction, and confidence reports were also not retried. No report
+  was captured because capture and retry evidence collection are conditional on explicit
+  `YES` approval.
+- No research job, crawl, retained-document embedding, Qdrant upsert, corpus mutation,
+  or deployed report-state mutation was invoked. The benchmark and tests use deterministic
+  fixtures/mocks; build and verification did not recreate the running containers.
+- Deterministic critical Recall@4 remains `1.0` and citation validity remains `100%`, but
+  the required post-correction authoritative live result is deferred. Phase 4 cannot be
+  accepted until one explicitly approved retry produces supported cited findings from at
+  least two supplied retained sources and every displayed material citation resolves to
+  exact selected retained evidence.
+- The 4,096-token deployed Ollama context allocation versus the configured 8,192-token
+  packing budget remains an operational risk. The synthetic fixture set still does not
+  establish broader healthcare retrieval quality, and dense retrieval has not shown the
+  miss required to justify Phase 5.
+
+Files changed:
+
+- `PRDs/research-rag-synthesis-modernization-progress.md`: records the unapproved retry
+  disposition, deployed source provenance, repeated deterministic gates, full release
+  verification, deferred live evidence, and remaining risks.
+
+Next action: stop at the Phase 4 review gate. Retry only authoritative job
+`4b8acd0f-088f-4b97-92fc-f52b69b8a3ee`, exactly once, after the owner explicitly enters
+`YES`; do not begin Phase 5.
