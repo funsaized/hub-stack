@@ -342,7 +342,7 @@ Deployed 2026-08-11. No secret value is tracked in git any longer:
 - `searxng/settings.yml` no longer carries `secret_key` (the `SEARXNG_SECRET`
   env var overrides it) and `crawl4ai-config.yml` no longer carries
   `api_token` (the server enforces the env token; verified 401 without it).
-- Open WebUI's `WEBUI_SECRET_KEY` fallback `changeme_in_production` was removed;
+- Open WebUI's static `WEBUI_SECRET_KEY` fallback was removed;
   when unset the container generates and persists a random key in its volume.
   The service is profile-gated, so it cannot use hard-required expansion.
 - `.env.example` documents the required fields with blank placeholders and

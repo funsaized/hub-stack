@@ -23,13 +23,16 @@ Work them **one at a time, in this order**, each to its own commit:
 
 Verified inventory (2026-08-11):
 
-- `docker-compose.yml:143` — `SEARXNG_SECRET=changeme_in_production`
-- `searxng/settings.yml:8` — `secret_key: "changeme_in_production"` (duplicate of
-  the same secret; check how SearXNG resolves env vs file before touching)
-- `docker-compose.yml` ×3 — `CRAWL4AI_API_TOKEN` / `CRAWL4AI_TOKEN=hub-crawl4ai-shared-token`
-  (crawl4ai, research-hub, research-worker; all three must agree)
-- Open WebUI `WEBUI_SECRET_KEY` falls back to `changeme_in_production` (optional
-  `webui` profile — still fix the fallback)
+(Literal values scrubbed 2026-08-11 after the item closed; they were rotated
+and are dead. See git history before `7ff546b` if the exact strings matter.)
+
+- `docker-compose.yml:143` — `SEARXNG_SECRET` set to a checked-in placeholder
+- `searxng/settings.yml:8` — `secret_key` duplicating the same placeholder
+  (check how SearXNG resolves env vs file before touching)
+- `docker-compose.yml` ×3 — `CRAWL4AI_API_TOKEN` / `CRAWL4AI_TOKEN` sharing one
+  checked-in token (crawl4ai, research-hub, research-worker; all three must agree)
+- Open WebUI `WEBUI_SECRET_KEY` falling back to the same checked-in placeholder
+  (optional `webui` profile — still fix the fallback)
 
 Approach constraints:
 
