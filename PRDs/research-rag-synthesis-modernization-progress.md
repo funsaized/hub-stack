@@ -2080,3 +2080,76 @@ the sealed claim-support contract. Per the PRD, implementation is gated on the d
 spike comparing SQLite FTS5, Qdrant sparse vectors and an in-process BM25 index. No
 retrieval code changed in this iteration and no report, corpus, queue or sealed
 artifact was touched.
+
+## 2026-08-11 - Phase 5 hybrid retrieval implemented, measured and deployed
+
+Status: Phase 5 is complete. The report retrieval path is hybrid: dense embedding
+search fused with an SQLite FTS5 needle channel under deterministic reciprocal rank
+fusion. Hybrid hit@4 on the exact-term manifest is `1.0` against the dense-only
+baseline of `0.692308`, with no regression anywhere in the deterministic gate.
+
+### Design spike and ADR
+
+`docs/ADR-001-lexical-index-for-hybrid-retrieval.md` records the required comparison of
+SQLite FTS5, Qdrant sparse vectors and in-process BM25 against the PRD's seven
+criteria. FTS5 won on every criterion; the deployed `python:3.12-slim` image ships
+SQLite 3.46.1 with `ENABLE_FTS5`, verified in-container before implementation, and
+chunk rebuildability from SQLite documents alone was already proven by `app/rebuild.py`.
+
+### Implementation
+
+- `chunk_fts` FTS5 table in the document store, rows keyed `(document_id,
+  chunk_index)` holding sanitized chunk text byte-equal to the Qdrant payloads.
+  Ingestion writes a document's full chunk set transactionally after the document row;
+  `DELETE /documents` removes lexical rows with document rows;
+  `python -m app.rebuild --lexical-only` rebuilds the index from retained documents
+  with no embedding or Qdrant access (backfilled live: 67 documents, 24,854 chunks).
+- The lexical channel is a needle channel, which the measurements forced twice over.
+  Naive OR-of-all-tokens produced hybrid == dense (`0.692308`): the lexical list
+  mirrored the dense list, so under RRF a lexical-only needle's single 1/(k+r)
+  contribution could never beat dual-channel chunks. Corpus-wide rarity filtering
+  reached `0.846154` but scope-common terms like "consort ai" still flooded the list.
+  The deployed selection measures document frequency within the retrieval scope,
+  keeps unigrams and adjacent-bigram phrases with DF <= max(5, 1% of scoped chunks),
+  and then keeps only the rarest band (DF <= 2x the minimum), which fixed the final
+  miss where DF-6 words ("conduct", "surveys") outweighed the DF-1 needle
+  ("DelphiManager"). Topic text is reduced to quoted alphanumeric tokens, so FTS5
+  operators in user input can neither inject syntax nor raise parse errors.
+- `ScopedRetrievalService` fuses the dense-ranked and lexical-ranked lists with
+  reciprocal rank fusion (`k=60`, `REPORT_RRF_K`) keyed by chunk identity, annotates
+  `retrieval_channels` and `rrf_score` in candidate metadata, and leaves the existing
+  sanitize/dedup/per-source-cap selection untouched. With the channel disabled
+  (`REPORT_HYBRID_RETRIEVAL=false`) or an empty lexical result, ordering is identical
+  to dense-only, covered by test. `/query` and `/rag` remain dense-only per the PRD
+  regression boundaries.
+
+### Measurements
+
+Exact-term manifest, 13 cases, top-4, identical queries through both paths:
+
+- dense-only hit@4 `0.692308` (unchanged baseline); hybrid hit@4 `1.0`, no fixture
+  drift. Eleven of thirteen hybrid hits rank 1-2; the recovered dense misses rank
+  1 (`consort-ai-80-percent-threshold`, `delphimanager-software`), 2 (`tripod-bmj-doi`,
+  the out-of-pool DOI only lexical generation could recover) and 3 (`consort-item-13b`).
+- No regression: 141 tests pass with zero skips (16 new hybrid tests, one new
+  selectivity test); report retrieval benchmark gates pass with identical metrics
+  (critical Recall@4 `1.0`, citation validity `1.0`, duplicate rate `0.0`); claim
+  drafting benchmark still reports `failures: []`; `pip check` and compose validation
+  clean.
+
+### Deployment and mutation audit
+
+- Images rebuilt from the working tree; research-hub and research-worker recreated;
+  deployed `retrieval.py` and `document_store.py` SHA-256-verified identical to the
+  tree in the running containers; `/readyz` ok with capability `all`;
+  `REPORT_HYBRID_RETRIEVAL=true`, `REPORT_RRF_K=60` live in both services.
+- The only persisted mutation is the additive `chunk_fts` table. The attempt-11 report
+  remains byte-identical (Markdown `068d60b2...`, sources `d6748d76...`), SQLite counts
+  67/13, Redis queues empty, Qdrant untouched, and all three sealed hashes unchanged.
+  No report retry, crawl, ingestion, embedding or upsert occurred.
+
+Gate disposition: Phase 5 acceptance is met - lexical retrieval added, deterministic
+RRF fusion, evaluated on the fixture manifest, enabled after measured improvement with
+no regression. HUB-017 moves to Done. Phase 6 (local reranking) is not entered: its
+entry condition requires precision to be the bottleneck after adequate hybrid recall,
+and hybrid recall on the measured manifest is `1.0` with no precision defect observed.

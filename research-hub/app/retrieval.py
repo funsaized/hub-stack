@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .context import (
@@ -53,17 +53,23 @@ class ScopedRetrievalService:
         candidate_limit: int = 40,
         max_chunks_per_source: int = 3,
         min_score: float | None = None,
+        lexical=None,
+        rrf_k: int = 60,
     ):
         if candidate_limit < 1 or max_chunks_per_source < 1:
             raise ValueError("retrieval limits must be positive")
         if min_score is not None and not math.isfinite(min_score):
             raise ValueError("minimum retrieval score must be finite")
+        if rrf_k < 1:
+            raise ValueError("reciprocal rank fusion constant must be positive")
         self.ollama = ollama
         self.qdrant = qdrant
         self.documents = documents
         self.candidate_limit = candidate_limit
         self.max_chunks_per_source = max_chunks_per_source
         self.min_score = min_score
+        self.lexical = lexical
+        self.rrf_k = rrf_k
 
     async def retrieve(self, job_id: str, topic: str) -> RetrievedEvidence:
         retained = await asyncio.to_thread(self.documents.documents_for_job, job_id)
@@ -112,6 +118,16 @@ class ScopedRetrievalService:
             value.chunk_index,
             value.text,
         ))
+
+        lexical_hits = []
+        if self.lexical is not None:
+            lexical_hits = await asyncio.to_thread(
+                self.lexical.search_chunks, topic, document_ids, self.candidate_limit
+            )
+            candidates = _fuse_rankings(
+                candidates, lexical_hits, retained_by_id, self.rrf_k
+            )
+
         selected: list[EvidenceCandidate] = []
         seen_text: set[str] = set()
         source_counts: dict[str, int] = {}
@@ -127,8 +143,68 @@ class ScopedRetrievalService:
 
         return RetrievedEvidence(
             selected,
-            _diagnostics(len(hits), selected, len(retained_by_id)),
+            _diagnostics(len(hits) + len(lexical_hits), selected, len(retained_by_id)),
         )
+
+
+def _fuse_rankings(
+    dense: list[EvidenceCandidate],
+    lexical_hits: list[dict],
+    retained_by_id: dict[str, dict],
+    rrf_k: int,
+) -> list[EvidenceCandidate]:
+    """Deterministic reciprocal rank fusion keyed by canonical chunk identity."""
+    if not lexical_hits:
+        return dense
+
+    fused: dict[tuple[str, int], float] = {}
+    channels: dict[tuple[str, int], list[str]] = {}
+    by_key: dict[tuple[str, int], EvidenceCandidate] = {}
+
+    for rank, candidate in enumerate(dense, 1):
+        key = (candidate.document_id, candidate.chunk_index)
+        fused[key] = fused.get(key, 0.0) + 1.0 / (rrf_k + rank)
+        channels.setdefault(key, []).append("dense")
+        by_key.setdefault(key, candidate)
+
+    for rank, hit in enumerate(lexical_hits, 1):
+        source = retained_by_id.get(hit["document_id"])
+        if not source:
+            continue
+        key = (hit["document_id"], hit["chunk_index"])
+        fused[key] = fused.get(key, 0.0) + 1.0 / (rrf_k + rank)
+        channels.setdefault(key, []).append("lexical")
+        if key not in by_key:
+            text, labels = classify_and_sanitize(hit.get("text", ""))
+            by_key[key] = EvidenceCandidate(
+                text=text,
+                canonical_url=source["canonical_url"],
+                source_title=source.get("title") or "",
+                document_id=hit["document_id"],
+                chunk_index=int(hit["chunk_index"]),
+                score=0.0,
+                metadata={"security_labels": labels},
+            )
+
+    candidates = [
+        replace(
+            by_key[key],
+            metadata={
+                **by_key[key].metadata,
+                "retrieval_channels": channels[key],
+                "rrf_score": round(fused[key], 6),
+            },
+        )
+        for key in fused
+    ]
+    candidates.sort(key=lambda value: (
+        -value.metadata["rrf_score"],
+        value.canonical_url,
+        value.document_id,
+        value.chunk_index,
+        value.text,
+    ))
+    return candidates
 
 
 def _diagnostics(

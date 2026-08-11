@@ -348,16 +348,17 @@ remains unimplemented and is not required at the current single-user exposure.
 
 ### HUB-017 — Replace dense-only retrieval with hybrid retrieval
 
-**Status:** 🔴 Open — entry condition now measured and met. The prior "no recall gap"
-evidence came from a benchmark that replays pre-scored candidates and cannot show a
-dense miss. The live exact-term probe (`tests/benchmark_retrieval_exact_terms.py`,
-2026-08-11) measures the real embed-and-search path against 13 needle cases mined from
-the retained authoritative corpus: dense-only hit@4 is `0.6923`. Three sentinels
-entered the 40-candidate pool but lost dense ranking (fusion recovers them); one DOI
-sentinel never entered the pool at all (only a lexical channel recovers it). Hybrid
-acceptance target: hit@4 `1.0` on that manifest without regressing the dense-only
-report benchmark. The PRD's design spike (FTS5 vs Qdrant sparse vs in-process BM25)
-gates implementation.
+**Status:** ✅ Done (report retrieval) — deployed 2026-08-11. SQLite FTS5 needle
+channel (scoped-rarity term selection over sanitized derived chunks) fused with dense
+retrieval via deterministic RRF (`k=60`) in `ScopedRetrievalService`, per
+`docs/ADR-001-lexical-index-for-hybrid-retrieval.md`. Measured on the versioned
+exact-term manifest: dense-only hit@4 `0.6923`, hybrid hit@4 `1.0`, no regression in
+the report benchmark, claim benchmarks, or the 141-test suite. Rebuildable via
+`python -m app.rebuild --lexical-only`; disable with `REPORT_HYBRID_RETRIEVAL=false`.
+`/query` and `/rag` remain dense-only by design (PRD regression boundary); extending
+hybrid to the query path would be new scope. Reranking (HUB-017's optional evaluation
+item) not entered: hybrid recall is `1.0` on the measured manifest, so precision is
+not the bottleneck (Phase 6 entry condition unmet).
 
 **Problem:** `QueryEngine` is described as hybrid but currently performs dense-vector search only.
 

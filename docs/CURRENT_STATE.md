@@ -302,5 +302,30 @@ gap is specifically exact identifiers.
 HUB-017 is therefore Open with measured justification. Acceptance: hybrid hit@4 `1.0`
 on the exact-term manifest with no regression in the dense-only report benchmark or the
 sealed claim-support contract. Implementation is gated on the PRD design spike (SQLite
-FTS5 vs Qdrant sparse vectors vs in-process BM25). Production retrieval is unchanged;
-the full suite is green at 125 tests.
+FTS5 vs Qdrant sparse vectors vs in-process BM25).
+
+## Hybrid report retrieval deployed (Phase 5, HUB-017)
+
+Phase 5 of the modernization is implemented, measured and deployed
+(2026-08-11, ADR-001). Report retrieval now fuses dense embedding search with an
+SQLite FTS5 needle channel under deterministic reciprocal rank fusion (`k=60`):
+
+- `chunk_fts` lives in `documents.sqlite3`, holding sanitized derived chunks
+  byte-equal to Qdrant payload text, written at ingestion, removed with document
+  deletion, and rebuildable from retained documents alone via
+  `python -m app.rebuild --lexical-only` (backfilled: 67 documents, 24,854 chunks).
+- The lexical channel selects needle terms by document frequency measured within the
+  retrieval scope (unigrams and adjacent bigram phrases, DF <= max(5, 1% of scoped
+  chunks), rarest band only). User topic text is reduced to quoted alphanumeric
+  tokens, so FTS5 query operators cannot inject or crash.
+- Measured on the versioned exact-term manifest: dense-only hit@4 `0.6923`, hybrid
+  hit@4 `1.0`, including the out-of-pool DOI case that no reranking could recover.
+  141 tests pass; report retrieval and claim benchmarks are unchanged; the attempt-11
+  report, Qdrant, Redis and all sealed hashes are untouched (the only persisted
+  mutation is the additive `chunk_fts` table).
+- `REPORT_HYBRID_RETRIEVAL` (default true) disables the channel; with it off, or when
+  no needle term matches, candidate ordering is byte-identical to dense-only.
+  `/query` and `/rag` remain dense-only per the PRD regression boundaries.
+
+Phase 6 (local reranking) is not entered: hybrid recall on the measured manifest is
+`1.0`, so precision is not the bottleneck.

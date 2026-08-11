@@ -3,9 +3,97 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Iterator
+
+
+# A lexical candidate term is kept only when it is rare in the index. With an
+# OR over every topic token the lexical list mirrors the dense list, and under
+# reciprocal rank fusion a lexical-only needle (one 1/(k+r) contribution) can
+# never outrank chunks present in both channels - measured as hybrid == dense
+# on the exact-term manifest. Rarity keeps the channel precise so fusion can
+# actually lift needles.
+LEXICAL_RARITY_FLOOR = 5
+LEXICAL_RARITY_FRACTION = 0.01
+
+
+def lexical_tokens(topic: str) -> list[str]:
+    """Alphanumeric tokens only, so FTS5 operators and quotes cannot inject."""
+    return [token.lower() for token in re.findall(r"[A-Za-z0-9]+", topic)]
+
+
+def selective_match_terms(
+    db: sqlite3.Connection, topic: str, document_ids: list[str]
+) -> list[str]:
+    """Quoted unigrams and adjacent-bigram phrases rare enough to be needles.
+
+    Rarity is measured within the retrieval scope, not corpus-wide: a term
+    ubiquitous in the retained sources ("consort ai" in a CONSORT-AI job)
+    would flood the lexical list and hand dense candidates dual-channel RRF
+    boosts even though it is rare globally.
+    """
+    tokens = lexical_tokens(topic)
+    if not tokens:
+        return []
+    placeholders = ",".join("?" for _ in document_ids)
+    total = db.execute(
+        f"SELECT COUNT(*) FROM chunk_fts WHERE document_id IN ({placeholders})",
+        document_ids,
+    ).fetchone()[0]
+    if not total:
+        return []
+    threshold = max(LEXICAL_RARITY_FLOOR, int(total * LEXICAL_RARITY_FRACTION))
+    candidates = list(dict.fromkeys(
+        [f'"{token}"' for token in tokens]
+        + [f'"{a} {b}"' for a, b in zip(tokens, tokens[1:])]
+    ))
+    eligible = []
+    for phrase in candidates:
+        frequency = db.execute(
+            f"""SELECT COUNT(*) FROM chunk_fts
+                WHERE chunk_fts MATCH ? AND document_id IN ({placeholders})""",
+            (phrase, *document_ids),
+        ).fetchone()[0]
+        if 0 < frequency <= threshold:
+            eligible.append((phrase, frequency))
+    if not eligible:
+        return []
+    # Keep only the rarest band: a DF-6 word like "conduct" beside a DF-1
+    # needle floods the list with topical chunks that then collect
+    # dual-channel RRF boosts and outrank the needle - measured on the
+    # delphimanager case. The band self-scales when no ultra-rare term exists.
+    rarest = min(frequency for _phrase, frequency in eligible)
+    return [
+        phrase for phrase, frequency in eligible if frequency <= 2 * rarest
+    ]
+
+
+def search_chunk_index(
+    db: sqlite3.Connection, topic: str, document_ids: list[str], limit: int
+) -> list[dict]:
+    """BM25-ranked needle-term search over chunk_fts, scoped and deterministic."""
+    terms = selective_match_terms(db, topic, document_ids)
+    if not terms or limit < 1:
+        return []
+    placeholders = ",".join("?" for _ in document_ids)
+    rows = db.execute(
+        f"""SELECT document_id, chunk_index, text
+            FROM chunk_fts
+            WHERE chunk_fts MATCH ? AND document_id IN ({placeholders})
+            ORDER BY bm25(chunk_fts), document_id, chunk_index
+            LIMIT ?""",
+        (" OR ".join(terms), *document_ids, limit),
+    ).fetchall()
+    return [
+        {
+            "document_id": row["document_id"],
+            "chunk_index": int(row["chunk_index"]),
+            "text": row["text"],
+        }
+        for row in rows
+    ]
 
 
 class DocumentStore:
@@ -79,6 +167,12 @@ class DocumentStore:
                     attempts INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+                CREATE VIRTUAL TABLE IF NOT EXISTS chunk_fts USING fts5(
+                    document_id UNINDEXED,
+                    chunk_index UNINDEXED,
+                    text,
+                    tokenize='unicode61'
                 );
             """)
 
@@ -171,10 +265,38 @@ class DocumentStore:
 
     def delete_url(self, canonical_url: str) -> int:
         with self._connect() as db:
+            document_ids = [row[0] for row in db.execute(
+                "SELECT document_id FROM documents WHERE canonical_url = ?",
+                (canonical_url,),
+            )]
+            if document_ids:
+                placeholders = ",".join("?" for _ in document_ids)
+                db.execute(
+                    f"DELETE FROM chunk_fts WHERE document_id IN ({placeholders})",
+                    document_ids,
+                )
             result = db.execute(
                 "DELETE FROM documents WHERE canonical_url = ?", (canonical_url,)
             )
             return result.rowcount
+
+    def replace_chunks(self, document_id: str, chunks: list[str]) -> None:
+        """Replace a document's lexical rows with its full derived chunk set."""
+        with self._connect() as db:
+            db.execute("DELETE FROM chunk_fts WHERE document_id = ?", (document_id,))
+            db.executemany(
+                "INSERT INTO chunk_fts (document_id, chunk_index, text) VALUES (?, ?, ?)",
+                [(document_id, index, text) for index, text in enumerate(chunks)],
+            )
+
+    def search_chunks(
+        self, topic: str, document_ids: list[str], limit: int
+    ) -> list[dict]:
+        """BM25-ranked lexical candidates scoped to retained document identity."""
+        if not document_ids:
+            raise ValueError("lexical search requires retained source scope")
+        with self._connect() as db:
+            return search_chunk_index(db, topic, document_ids, limit)
 
     def checkpoint(self, index_name: str, document_id: str, chunker_version: str) -> int:
         with self._connect() as db:

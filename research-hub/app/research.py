@@ -241,6 +241,8 @@ class ResearchOrchestrator:
             candidate_limit=cfg.report_retrieval_candidates,
             max_chunks_per_source=cfg.report_max_chunks_per_source,
             min_score=cfg.report_retrieval_min_score,
+            lexical=self.documents if cfg.report_hybrid_retrieval else None,
+            rrf_k=cfg.report_rrf_k,
         )
         self.claim_verifier = ClaimVerifierClient(
             cfg.claim_verifier_url, cfg.claim_verifier_timeout_seconds
@@ -516,6 +518,12 @@ class ResearchOrchestrator:
                 await asyncio.to_thread(
                     self.documents.observe_job_source,
                     job_id, document_id, fetched_at, research_metadata,
+                )
+                # Lexical rows must be byte-equal to the sanitized Qdrant payload
+                # text so cross-channel dedup by text stays exact.
+                await asyncio.to_thread(
+                    self.documents.replace_chunks, document_id,
+                    [classify_and_sanitize(chunk)[0] for chunk in chunks],
                 )
                 existing = await asyncio.to_thread(
                     self.qdrant.document_chunks, canonical_url

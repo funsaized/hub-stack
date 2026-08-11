@@ -9,8 +9,32 @@ from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential
 
 from .clients import OllamaClient, QdrantClient
 from .config import load_config
+from .context import classify_and_sanitize
 from .document_store import DocumentStore
 from .research import CHUNKER_VERSION, chunk_identity, chunk_text, embedding_batches, utcnow
+
+
+def rebuild_lexical_index() -> dict:
+    """Rebuild the FTS5 lexical index from retained documents alone.
+
+    No embedding or Qdrant access: chunk texts derive deterministically from
+    stored markdown, and rows must be byte-equal to the sanitized Qdrant
+    payload text, so this is safe to run against a live corpus at any time.
+    """
+    cfg = load_config()
+    store = DocumentStore(cfg.document_store_path)
+    documents = chunks_written = 0
+    for document in store.iter_documents():
+        chunks = chunk_text(document["markdown"], cfg.chunk_size, cfg.chunk_overlap)
+        store.replace_chunks(
+            document["document_id"],
+            [classify_and_sanitize(chunk)[0] for chunk in chunks],
+        )
+        documents += 1
+        chunks_written += len(chunks)
+        logging.info("lexical indexed document=%s chunks=%s",
+                     document["document_id"], len(chunks))
+    return {"documents": documents, "chunks_written": chunks_written}
 
 
 def versioned_collection(base: str, model: str, dimension: int) -> str:
@@ -33,6 +57,10 @@ async def rebuild(collection: str | None = None) -> dict:
     try:
         for document in store.iter_documents():
             chunks = chunk_text(document["markdown"], cfg.chunk_size, cfg.chunk_overlap)
+            store.replace_chunks(
+                document["document_id"],
+                [classify_and_sanitize(chunk)[0] for chunk in chunks],
+            )
             existing = await asyncio.to_thread(
                 qdrant.document_chunks, document["canonical_url"]
             )
@@ -95,8 +123,15 @@ async def rebuild(collection: str | None = None) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--collection", help="Explicit destination collection")
+    parser.add_argument(
+        "--lexical-only", action="store_true",
+        help="Rebuild only the FTS5 lexical index; no embedding or Qdrant access",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
+    if args.lexical_only:
+        print(rebuild_lexical_index())
+        return
     print(asyncio.run(rebuild(args.collection)))
 
 

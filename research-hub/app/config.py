@@ -36,10 +36,14 @@ class Config:
     report_retrieval_candidates: int = 40
     report_max_chunks_per_source: int = 3
     report_retrieval_min_score: float | None = None
+    report_hybrid_retrieval: bool = True
+    report_rrf_k: int = 60
     claim_verifier_url: str = "http://claim-verifier:8001"
     claim_verifier_timeout_seconds: float = 30.0
 
     def __post_init__(self) -> None:
+        if not 1 <= self.report_rrf_k <= 1000:
+            raise ValueError("REPORT_RRF_K must be between 1 and 1000")
         if not 1 <= self.report_retrieval_candidates <= 1000:
             raise ValueError("REPORT_RETRIEVAL_CANDIDATES must be between 1 and 1000")
         if not 1 <= self.report_max_chunks_per_source <= 100:
@@ -88,6 +92,10 @@ def load_config() -> Config:
             os.environ.get("REPORT_MAX_CHUNKS_PER_SOURCE", "3")
         ),
         report_retrieval_min_score=float(min_score) if min_score else None,
+        report_hybrid_retrieval=os.environ.get(
+            "REPORT_HYBRID_RETRIEVAL", "true"
+        ).lower() in {"1", "true", "yes"},
+        report_rrf_k=int(os.environ.get("REPORT_RRF_K", "60")),
         claim_verifier_url=os.environ.get(
             "CLAIM_VERIFIER_URL", "http://claim-verifier:8001"
         ),

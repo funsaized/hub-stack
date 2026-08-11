@@ -18,9 +18,11 @@ or touches reports, Redis, or the sealed evaluation fixtures.
 
 Per case it reports whether the sentinel chunk entered the scoped candidate
 pool, whether it survived selection into the top-k, its rank, and how many
-chunks a trivial lexical scan finds for the same terms. Exit code 1 means
-fixture drift (a term no longer occurs in the corpus) or a malformed
-manifest - never a dense miss; misses are the measurement, not a failure.
+chunks a trivial lexical scan finds for the same terms - measured twice, once
+dense-only and once through the hybrid FTS5+RRF path, so the Phase 5
+acceptance comparison runs on identical queries. Exit code 1 means fixture
+drift (a term no longer occurs in the corpus) or a malformed manifest -
+never a retrieval miss; misses are the measurement, not a failure.
 """
 
 import argparse
@@ -32,6 +34,7 @@ from collections import Counter
 from pathlib import Path
 
 from app.clients import OllamaClient, QdrantClient
+from app.document_store import search_chunk_index
 from app.retrieval import ScopedRetrievalService
 
 
@@ -76,23 +79,35 @@ def load(path: Path) -> dict:
 
 
 class ReadOnlyDocuments:
-    """Mirror of DocumentStore.documents_for_job over an immutable connection."""
+    """Mirror of the DocumentStore read paths over an immutable connection."""
 
     def __init__(self, path: str):
         self.path = path
 
-    def documents_for_job(self, job_id: str) -> list[dict]:
+    def _rows(self, sql: str, params: tuple) -> list[dict]:
         db = sqlite3.connect(f"file:{self.path}?immutable=1", uri=True)
         try:
             db.row_factory = sqlite3.Row
-            rows = db.execute(
-                """SELECT documents.* FROM job_sources
-                   JOIN documents USING(document_id)
-                   WHERE job_sources.job_id = ?
-                   ORDER BY documents.canonical_url, documents.document_id""",
-                (job_id,),
-            ).fetchall()
-            return [dict(row) for row in rows]
+            return [dict(row) for row in db.execute(sql, params).fetchall()]
+        finally:
+            db.close()
+
+    def documents_for_job(self, job_id: str) -> list[dict]:
+        return self._rows(
+            """SELECT documents.* FROM job_sources
+               JOIN documents USING(document_id)
+               WHERE job_sources.job_id = ?
+               ORDER BY documents.canonical_url, documents.document_id""",
+            (job_id,),
+        )
+
+    def search_chunks(self, topic: str, document_ids: list[str], limit: int) -> list[dict]:
+        if not document_ids:
+            raise ValueError("lexical search requires retained source scope")
+        db = sqlite3.connect(f"file:{self.path}?immutable=1", uri=True)
+        try:
+            db.row_factory = sqlite3.Row
+            return search_chunk_index(db, topic, document_ids, limit)
         finally:
             db.close()
 
@@ -159,12 +174,14 @@ async def evaluate(manifest: dict) -> dict:
         os.environ.get("DOCUMENT_STORE_PATH", "/app/data/documents.sqlite3")
     )
     recorder = RecordingQdrant(qdrant)
-    service = ScopedRetrievalService(
-        ollama,
-        recorder,
-        documents,
-        candidate_limit=int(os.environ.get("REPORT_RETRIEVAL_CANDIDATES", "40")),
-        max_chunks_per_source=int(os.environ.get("REPORT_MAX_CHUNKS_PER_SOURCE", "3")),
+    limits = {
+        "candidate_limit": int(os.environ.get("REPORT_RETRIEVAL_CANDIDATES", "40")),
+        "max_chunks_per_source": int(os.environ.get("REPORT_MAX_CHUNKS_PER_SOURCE", "3")),
+    }
+    dense_service = ScopedRetrievalService(ollama, recorder, documents, **limits)
+    hybrid_service = ScopedRetrievalService(
+        ollama, recorder, documents, lexical=documents,
+        rrf_k=int(os.environ.get("REPORT_RRF_K", "60")), **limits,
     )
 
     job_id = manifest["job_id"]
@@ -186,8 +203,8 @@ async def evaluate(manifest: dict) -> dict:
                 drift.append(case["id"])
                 continue
 
-            retrieved = await service.retrieve(job_id, case["query"])
-            selected = retrieved.candidates[:top_k]
+            dense_retrieved = await dense_service.retrieve(job_id, case["query"])
+            dense_selected = dense_retrieved.candidates[:top_k]
             pool_hit = any(
                 hit.get("document_id") == case["expected_document_id"]
                 and (
@@ -199,8 +216,14 @@ async def evaluate(manifest: dict) -> dict:
                 )
                 for hit in recorder.last_hits
             )
-            ranks = [
-                rank for rank, candidate in enumerate(selected, 1)
+            dense_ranks = [
+                rank for rank, candidate in enumerate(dense_selected, 1)
+                if sentinel_matches(candidate, case)
+            ]
+            hybrid_retrieved = await hybrid_service.retrieve(job_id, case["query"])
+            hybrid_selected = hybrid_retrieved.candidates[:top_k]
+            hybrid_ranks = [
+                rank for rank, candidate in enumerate(hybrid_selected, 1)
                 if sentinel_matches(candidate, case)
             ]
             results.append({
@@ -209,23 +232,28 @@ async def evaluate(manifest: dict) -> dict:
                 "lexical_chunks": len(lexical),
                 "candidates_considered": len(recorder.last_hits),
                 "in_candidate_pool": pool_hit,
-                "hit_at_k": bool(ranks),
-                "rank": ranks[0] if ranks else None,
+                "hit_at_k": bool(dense_ranks),
+                "rank": dense_ranks[0] if dense_ranks else None,
+                "hybrid_hit_at_k": bool(hybrid_ranks),
+                "hybrid_rank": hybrid_ranks[0] if hybrid_ranks else None,
             })
     finally:
         await ollama.close()
 
     hits = sum(result["hit_at_k"] for result in results)
+    hybrid_hits = sum(result["hybrid_hit_at_k"] for result in results)
     pool_hits = sum(result["in_candidate_pool"] for result in results)
     by_category = {}
     for category, count in sorted(Counter(r["category"] for r in results).items()):
-        category_hits = sum(
-            result["hit_at_k"] for result in results if result["category"] == category
-        )
+        category_results = [r for r in results if r["category"] == category]
         by_category[category] = {
             "cases": count,
-            "hit_at_k": category_hits,
-            "hit_rate": round(category_hits / count, 6),
+            "hit_at_k": sum(r["hit_at_k"] for r in category_results),
+            "hit_rate": round(sum(r["hit_at_k"] for r in category_results) / count, 6),
+            "hybrid_hit_at_k": sum(r["hybrid_hit_at_k"] for r in category_results),
+            "hybrid_hit_rate": round(
+                sum(r["hybrid_hit_at_k"] for r in category_results) / count, 6
+            ),
         }
     return {
         "provenance": manifest["provenance"],
@@ -238,10 +266,15 @@ async def evaluate(manifest: dict) -> dict:
             "total_cases": len(results),
             "dense_hit_at_k": hits,
             "dense_hit_rate": round(hits / len(results), 6) if results else 0.0,
+            "hybrid_hit_at_k": hybrid_hits,
+            "hybrid_hit_rate": round(hybrid_hits / len(results), 6) if results else 0.0,
             "in_candidate_pool": pool_hits,
             "pool_rate": round(pool_hits / len(results), 6) if results else 0.0,
             "by_category": by_category,
             "misses": [result["id"] for result in results if not result["hit_at_k"]],
+            "hybrid_misses": [
+                result["id"] for result in results if not result["hybrid_hit_at_k"]
+            ],
         },
     }
 
