@@ -399,3 +399,26 @@ Deployed 2026-08-11; full procedure in `docs/BACKUP.md`:
 - Qdrant is deliberately not snapshotted (`python -m app.rebuild` from SQLite
   is the documented recovery); Redis job state is transient. Backups remain
   on-machine and therefore unencrypted, per the backlog scope.
+
+## CI, pinned images, and hashed lockfile (HUB-012)
+
+Deployed 2026-08-11; Milestones 1 and 3 are now complete:
+
+- All six formerly-`latest` compose images are pinned as `tag@sha256` to the
+  digests that were running (ollama 0.32.6, qdrant v1.19.0, searxng 2026.8.4,
+  crawl4ai 0.9.2, dozzle v10.6.15, uptime-kuma 1.23.17), so recreation cannot
+  change behavior; every container, including the profile-gated ones, was
+  recreated onto its pin.
+- `research-hub/requirements.lock.txt`: pip-compile transitive lockfile with
+  hashes, compiled in python:3.12-slim constrained to the deployed image's
+  `pip freeze` — verified to reproduce the frozen set exactly, torch CPU
+  extra index intact. The Dockerfile installs `--require-hashes`; `pip check`
+  is clean in the built image; regenerate with `scripts/relock.ps1`.
+- `.github/workflows/ci.yml` runs on push/PR: ruff (E9/F) + compileall, the
+  full suite against a Redis 7 service container (`TEST_REDIS_URL` DB 15),
+  `docker compose config` with placeholder secrets, and the research-hub
+  image build with in-image `pip check`. Live benchmarks remain local-only
+  (Ollama + corpus required).
+- Post-deploy: 175 tests green in the lockfile-built image, `/readyz`
+  all-true, sealed attempt-11 artifacts byte-identical at 67 documents /
+  13 reports.

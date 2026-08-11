@@ -93,7 +93,7 @@ class WorkerRedisIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_expired_worker_claim_is_requeued_after_restart(self):
         job_id = await self.add_job()
         first_worker = self.worker(StubOrchestrator(self.redis))
-        claim = await first_worker.claim()
+        await first_worker.claim()
         await self.redis.delete(f"research:lease:{job_id}")  # simulate process death/TTL expiry
 
         restarted_worker = self.worker(StubOrchestrator(self.redis))

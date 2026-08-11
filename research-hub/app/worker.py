@@ -1,7 +1,6 @@
 """Durable Redis-backed ingestion worker."""
 
 import asyncio
-import json
 import logging
 import signal
 import time

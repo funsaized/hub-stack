@@ -1,0 +1,82 @@
+# CI gate (HUB-012): syntax/lint, the unit+Redis suite, Compose validation,
+# and the research-hub image build. The live benchmarks (report retrieval,
+# claim drafting, exact-term hybrid) stay local — they need Ollama and the
+# retained corpus.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff
+        run: pip install ruff
+      - name: Syntax and error lint
+        run: ruff check --select E9,F research-hub/app research-hub/tests
+      - name: Byte-compile application
+        run: python -m compileall -q research-hub/app
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: research-hub/requirements.lock.txt
+      - name: Install locked dependencies
+        run: pip install --require-hashes -r research-hub/requirements.lock.txt
+      - name: Install test runner
+        run: pip install pytest
+      - name: Run the suite (includes Redis DB 15 integration)
+        working-directory: research-hub
+        env:
+          TEST_REDIS_URL: redis://localhost:6379/15
+        run: python -m pytest tests -q
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose configuration
+        env:
+          # Placeholders satisfy the required ${VAR:?} expansions; real values
+          # live only in the deployment's .env.
+          SEARXNG_SECRET: ci-placeholder
+          CRAWL4AI_API_TOKEN: ci-placeholder
+        run: docker compose config --quiet
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build research-hub image
+        uses: docker/build-push-action@v6
+        with:
+          context: research-hub
+          load: true
+          tags: research-hub:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: pip check in built image
+        run: docker run --rm --entrypoint pip research-hub:ci check
