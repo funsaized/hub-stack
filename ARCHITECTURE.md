@@ -159,6 +159,9 @@ later ────────────────────────�
 - After successful ingestion, the worker synthesizes a stable Markdown report from
   retained SQLite evidence. Reports have an independent persisted lifecycle and can
   be retrieved or retried without entering search, crawl, or embedding again.
+- Material report claims carry private exact packed-span refs and are accepted only after the
+  shared CPU claim-verifier returns argmax entailment at the frozen `0.97` threshold. The one
+  correction is reverified from scratch; public citations are rendered only from passing refs.
 - Canonical URLs and content hashes form stable document IDs; chunk IDs also include
   chunk index and chunker version. Unchanged content is skipped and changed content is
   fully embedded/upserted before stale chunks are removed.
@@ -212,7 +215,8 @@ later ────────────────────────�
 
 **Redis over RabbitMQ/Postgres-MQ**: Overkill for our throughput. Redis is already small and fast.
 
-**PyTorch-free stack**: No ML framework dependencies in the orchestrator. Ollama owns the GPU.
+**CPU claim verifier**: PyTorch is confined to one offline, pinned CPU service shared by the
+API and worker. Ollama remains the only GPU consumer.
 
 ## Notable design decisions
 
@@ -226,6 +230,9 @@ later ────────────────────────�
 - **Separate liveness and readiness**: Docker probes research-hub `/livez`; capability readiness and dependency diagnostics use `/readyz` and `/health/full`. See `docs/HEALTHCHECKS.md` and `docs/CURRENT_STATE.md`.
 - **API/worker separation**: restarting or scaling the API cannot interrupt claimed work.
   Worker leases and reconciliation resume abandoned jobs after a worker failure.
+- **Fail-closed claim support**: research/all readiness includes the verifier. Timeout,
+  unavailability, revision mismatch, malformed output, unresolved spans, non-entailment, and
+  inputs over 512 tokens reject persistence; no input is truncated.
 
 ## Boundaries
 

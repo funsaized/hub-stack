@@ -163,3 +163,18 @@ and disagreements are rejected unless they reference retained job documents.
 Failed synthesis is stored separately from completed ingestion and can be retried with
 `POST /research/{job_id}/report/retry` or `research report JOB_ID --retry`; that path does
 not invoke search, crawling, embedding, or Qdrant writes.
+
+## Claim-support gate ready for owner review
+
+Material findings and disagreements now use private unique packed evidence IDs, exact spans,
+and atomic support propositions. One shared CPU service verifies every required span link and
+the complete claim against the span union with the frozen DeBERTa revision and `0.97`
+threshold. Corrected output is independently reverified before citations or persistence.
+
+The verifier is offline-only, batches eight checks, rejects inputs over 512 tokens without
+truncation, and has a 2.5 GiB Compose memory cap. Research/all readiness requires its health
+and exact revision; query/RAG readiness remains independent. Any neutral, contradiction,
+low-confidence, unresolved, malformed, timeout, unavailable, over-budget, or revision-mismatch
+outcome fails closed. A failed retry preserves the prior persisted report and source registry.
+
+The sealed evaluation was not rerun or changed, and no live report retry has been performed.

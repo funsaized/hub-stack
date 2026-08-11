@@ -1,0 +1,54 @@
+{
+  "schema_version": "2.0.0",
+  "status": "frozen",
+  "frozen_at": "2026-08-11",
+  "corpus_file": "claim_support_final_v2.json",
+  "corpus_id": "claim-support-final-blind-2026-08-11",
+  "corpus_sha256": "1675d9ede5425dad37e6b8168886b91234b56896171882b704fb3bd6f9e490dc",
+  "draft_sha256": "fd71c6fed5b778abbaa4dcb73794ac4964063bee686a72bdfacca871a4712654",
+  "review_package_sha256": "57e3675d7c6ae570e748551e771b5e1c7498a4657d2fa97577af7e112ae8725d",
+  "reviewers": [
+    "isolated-reviewer-a",
+    "isolated-reviewer-b"
+  ],
+  "method": "Two isolated full-set reviews over opaque IDs and claim/evidence only; comparison occurred after both completed.",
+  "agreement": {
+    "cases": 405,
+    "agreements": 392,
+    "disagreements": 13,
+    "percent_agreement": 0.967901,
+    "cohens_kappa": 0.94541,
+    "reviewer_a_labels": {
+      "neutral": 234,
+      "contradiction": 91,
+      "entailment": 80
+    },
+    "reviewer_b_labels": {
+      "neutral": 221,
+      "contradiction": 104,
+      "entailment": 80
+    }
+  },
+  "adjudication": {
+    "disagreements_adjudicated": 13,
+    "agreement_spot_checks": 35,
+    "agreement_overrides": 13,
+    "total_final_label_decisions_differing_from_at_least_one_review": 26,
+    "disagreement_resolution": "All study-stage disagreements resolved neutral.",
+    "agreement_override": "All lexical-overlap cases resolved neutral because absence of a reported result does not refute an unreported finding."
+  },
+  "composition": {
+    "cases": 405,
+    "labels": {
+      "neutral": 247,
+      "contradiction": 78,
+      "entailment": 80
+    },
+    "supported": 80,
+    "unsupported": 325,
+    "critical": 333,
+    "critical_unsupported": 325,
+    "categories": 34,
+    "phi_false": 405
+  }
+}

@@ -15,7 +15,8 @@ class HealthEndpointTests(unittest.TestCase):
         self.orchestrator = Mock()
         self.orchestrator.health_check = AsyncMock(return_value={
             "ollama": True, "qdrant": True, "redis": True,
-            "searxng": False, "crawl4ai": False, "all_ok": False,
+            "searxng": False, "crawl4ai": False,
+            "claim_verifier": True, "all_ok": False,
         })
         main.orchestrator = self.orchestrator
         self.client = TestClient(main.app)
@@ -53,12 +54,14 @@ class OrchestratorHealthTests(unittest.IsolatedAsyncioTestCase):
         subject.qdrant = Mock(health=Mock(return_value=True))
         subject.searxng = Mock(health=AsyncMock(side_effect=RuntimeError("down")))
         subject.crawl4ai = Mock(health=AsyncMock(return_value=True))
+        subject.claim_verifier = Mock(health=AsyncMock(return_value=True))
         subject._redis = Mock(ping=AsyncMock(return_value=True))
 
         result = await subject.health_check()
 
         self.assertTrue(result["qdrant"])
         self.assertFalse(result["searxng"])
+        self.assertTrue(result["claim_verifier"])
         self.assertFalse(result["all_ok"])
         self.assertTrue(all(isinstance(value, bool) for value in result.values()))
 

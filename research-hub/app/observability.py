@@ -33,6 +33,15 @@ REPORT_CLAIMS_REJECTED = Counter(
 REPORT_GENERATION_LATENCY = Histogram(
     "hub_report_generation_duration_seconds", "Report generation latency"
 )
+REPORT_VERIFIER = Counter(
+    "hub_report_verifier_total", "Claim verifier outcomes", ["outcome"]
+)
+REPORT_VERIFIER_LATENCY = Histogram(
+    "hub_report_verifier_duration_seconds", "Claim verifier request latency"
+)
+REPORT_CORRECTION = Counter(
+    "hub_report_correction_total", "Report correction outcomes", ["outcome"]
+)
 ACTIVE_JOBS = Gauge("hub_active_jobs", "Jobs currently executing")
 
 

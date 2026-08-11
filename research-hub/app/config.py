@@ -36,6 +36,8 @@ class Config:
     report_retrieval_candidates: int = 40
     report_max_chunks_per_source: int = 3
     report_retrieval_min_score: float | None = None
+    claim_verifier_url: str = "http://claim-verifier:8001"
+    claim_verifier_timeout_seconds: float = 30.0
 
     def __post_init__(self) -> None:
         if not 1 <= self.report_retrieval_candidates <= 1000:
@@ -45,6 +47,8 @@ class Config:
         if (self.report_retrieval_min_score is not None and
                 not math.isfinite(self.report_retrieval_min_score)):
             raise ValueError("REPORT_RETRIEVAL_MIN_SCORE must be finite")
+        if not math.isfinite(self.claim_verifier_timeout_seconds) or self.claim_verifier_timeout_seconds <= 0:
+            raise ValueError("CLAIM_VERIFIER_TIMEOUT_SECONDS must be positive and finite")
 
 
 def load_config() -> Config:
@@ -84,4 +88,10 @@ def load_config() -> Config:
             os.environ.get("REPORT_MAX_CHUNKS_PER_SOURCE", "3")
         ),
         report_retrieval_min_score=float(min_score) if min_score else None,
+        claim_verifier_url=os.environ.get(
+            "CLAIM_VERIFIER_URL", "http://claim-verifier:8001"
+        ),
+        claim_verifier_timeout_seconds=float(
+            os.environ.get("CLAIM_VERIFIER_TIMEOUT_SECONDS", "30")
+        ),
     )

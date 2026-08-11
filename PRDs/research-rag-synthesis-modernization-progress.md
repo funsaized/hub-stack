@@ -1228,3 +1228,186 @@ Mutation audit and final verification:
 Next action: review the structured-citation success and unsupported composite claim at the
 Phase 4 gate. Do not retry another report or begin Phase 5 without new explicit owner
 approval.
+
+## 2026-08-11 - Phase 4 claim-level support research spike
+
+Status: the semantic-support failure was researched and benchmarked before production design.
+No production code, dependency, report, ingestion, retrieval, corpus, or public schema was
+changed. Phase 4 remains unaccepted and Phase 5 remains unstarted.
+
+Research artifacts:
+
+- `PRDs/research-claim-support-verification.md` defines evidence-only claim support,
+  atomic/multi-source behavior, fail-closed correction and availability behavior, the
+  measured comparison matrices, and a gated production-change outline.
+- `research-hub/tests/fixtures/claim_support_cases.json` contains 28 deterministic non-PHI
+  premise/claim pairs: 10 entailments and 18 unsupported claims, including the exact
+  SPIRIT-AI/TRIPOD-ML failure class, contradictions, neutral relations, negation,
+  fragmentation, bibliography-only evidence, compounds, and genuine multi-source support.
+- `research-hub/tests/fixtures/claim_support_long_context_cases.json` adds two generated
+  long-context diagnostics.
+- `research-hub/tests/benchmark_claim_support.py` is opt-in research tooling for pinned local
+  NLI model evaluation; it is not imported by production and adds no production dependency.
+
+Measured result:
+
+- With a predeclared argmax-entailment plus `0.90` threshold,
+  `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli` was the best of five local candidates: 0/18
+  unsupported claims accepted, 0/14 critical unsupported claims accepted, and 8/10 supported
+  claims retained. The exact live composite failure was classified neutral and rejected.
+- Median warm latency for that model was 3.392 ms/claim on the RTX 3080 Ti and 46.081
+  ms/claim on CPU at batch size eight; peak CUDA reservation was 870 MiB and parameter memory
+  was 703.5 MiB. A loaded Qwen 3.5 9B model remained resident during the NLI co-residency
+  check.
+- The 0/18 result is not a production false-support guarantee: its one-sided 95% binomial
+  upper bound is 15.3%. The research therefore requires a larger blinded calibration/test set
+  before implementation acceptance and recommends CPU-first deployment to avoid Ollama GPU
+  contention.
+- Prompt/current citation validation and exact evidence presence each accepted all 18
+  unsupported fixture claims. Exact extractive matching accepted none of the unsupported
+  claims but retained only 1/10 supported paraphrased claims.
+
+Proposed boundary and disposition:
+
+- The private flow should become structured parse -> exact packed-span resolution -> local
+  entailment gate -> existing one correction -> independent re-verification -> Markdown
+  citation rendering -> persistence.
+- Neutral, contradiction, low-confidence, unresolved, over-budget, timeout, and unavailable
+  verifier outcomes fail closed. A failed retry preserves the previous report; citation-only
+  fallback is prohibited.
+- The public report/source contracts and source provenance remain unchanged. No ingestion,
+  retrieval, or corpus mutation belongs to this change.
+
+Verification:
+
+- The checked-in runner was executed against immutable candidate revision
+  `6f5cf0a2b59cabb106aca4c287eed12e357e90eb`; it reproduced 0/18 false accepts and 8/10
+  supported retention on CPU.
+- Both fixture files passed `python -m json.tool`; the runner passed `py_compile`.
+- The source ledger's strict citation verification passed for the research report with all
+  11 cited source IDs resolving to retrieved URLs.
+- The complete containerized Research Hub suite ran 81 tests in 2.744 seconds with no
+  failures or skips; all four Redis worker integration tests ran and passed.
+
+Next action: review the research artifact. Do not implement the verifier, retry a report, or
+begin Phase 5 without separate explicit approval.
+
+## 2026-08-11 - Expanded deterministic claim-support evaluation gate
+
+Status: calibration expanded and threshold frozen; final blind gate remains blocked; no
+production verifier, dependency, report, retrieval, ingestion, embedding, database, or corpus
+change was made.
+
+- Re-audited all 28 legacy labels under the evidence-only policy. No duplicates were found.
+  Expanded `Cr` in one evidence sentence to remove prohibited outside-knowledge dependence and
+  corrected the exactly-three-of-four/all-four case from neutral to contradiction. The exact
+  SPIRIT-AI/TRIPOD-ML regression text remains unchanged and validator-protected.
+- Added a v2 schema, concise annotation guide, deterministic fixture validator, five unit
+  checks, a 41-case/38-category calibration partition, one separate critical regression, and
+  a reproducible 405-case unlabeled final-review draft. The draft construction targets 325
+  unsupported cases and 80 supported controls but has zero independent labels; two reviews
+  plus adjudication are still required before it is a final test set.
+- Extended the research-only benchmark with immutable revisions, offline/local-only startup,
+  no-truncation fail-closed behavior, full acceptance/class/calibration/risk/category metrics,
+  repeat determinism, latency, and CPU/CUDA memory output. `research-hub/requirements.txt` and
+  all files under `research-hub/app/` remain unchanged.
+- Reran pinned `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli` revision
+  `6f5cf0a2b59cabb106aca4c287eed12e357e90eb` on CPU from `.hermes/nli-venv`. A calibration-only
+  sweep over every threshold from 0.50 through 0.99 selected and froze 0.97: 0/27 false
+  accepts, 0/27 critical false accepts, and 13/14 supported retained. Seven repeats were exact.
+  The one rejected supported case exceeded 512 tokens and failed closed without truncation.
+- At frozen 0.97, the exact critical regression was neutral and rejected on all seven repeats:
+  entailment 0.204776, neutral 0.785296, contradiction 0.009928. Offline pinned startup passed.
+- The calibration run measured 37.596 ms per scored claim, 703.5 MiB parameters, and 2,025.7
+  MiB peak CPU working set. Raw-softmax diagnostics were NLL 0.754148, Brier 0.425006, and
+  10-bin ECE 0.212037; they are not calibrated probabilities.
+- The calibration zero-failure one-sided 95% FSR upper bound is still 10.5019%. The intended
+  sub-1% claim requires at least 299 adjudicated unsupported final cases with zero accepts.
+  Because the 405-case draft is not independently reviewed and production unavailable behavior
+  cannot be tested before implementation, production implementation remains unapproved.
+- Every JSON artifact, deterministic validator, threshold-hash check, and benchmark compile
+  check passed. Five focused unit tests passed, followed by the exact requested containerized
+  suite: 86 tests in 2.817 seconds with no failures or skips. `git diff --check` and a separate
+  scan of untracked research files found no whitespace errors. Final status showed no change
+  under `research-hub/app/` and no change to `research-hub/requirements.txt`.
+- External methodological claims were rechecked against the SciFact and health-evidence primary
+  papers, the official MedNLI methods page, and official model cards. No live report, ingestion,
+  retrieval, embedding, Qdrant, SQLite, retained-document, or source-corpus operation was run.
+
+Next action: give the shuffled draft to two independent reviewers, adjudicate and seal it, then
+run the frozen model/threshold exactly once. Do not tune on the final partition or implement the
+production verifier before this gate passes.
+
+## 2026-08-11 - Final blind claim-support evaluation
+
+Status: independent review, adjudication, sealing, and the one-time final run are complete.
+No production verifier, report retry, ingestion/retrieval path, retained corpus, embedding,
+Qdrant, SQLite, application file, or dependency file was changed.
+
+- Two isolated reviewers each completed all 405 opaque claim/evidence cases before comparison.
+  They agreed on 392 labels (`96.7901%`, Cohen's kappa `0.945410`) and disagreed on 13
+  study-stage cases, all adjudicated neutral. A 35-family agreement spot-check corrected 13
+  lexical-overlap agreements from contradiction to neutral. Both original reviews and final
+  exact-span annotations remain in the frozen fixture.
+- The frozen composition is 80 entailments, 78 contradictions, and 247 neutrals: 325
+  unsupported cases. All cases are synthetic and `phi=false`. Corpus SHA-256 is
+  `1675d9ede5425dad37e6b8168886b91234b56896171882b704fb3bd6f9e490dc`; the draft remains
+  unchanged.
+- The pinned offline model/revision ran once on the sealed final partition with threshold
+  `0.97`; seven repeats inside that run were exact. It accepted 0/325 unsupported and 79/80
+  supported cases. Critical FSR was 0/325 and the exact one-sided 95% zero-failure upper bound
+  was `0.9175%`.
+- Argmax precision/recall was contradiction `0.416667/0.833333`, entailment
+  `0.672269/1.000000`, and neutral `1.000000/0.526316`. NLL was `0.834496`, Brier `0.485016`,
+  and 10-bin ECE `0.249498`; raw softmax scores remain uncalibrated.
+- Median CPU time was `31.694 ms` per claim (`12,835.881 ms` per set), CPU peak working set
+  was `2,027.0 MiB`, and parameter memory was `703.5 MiB`. All 405 cases were scored, no case
+  exceeded 512 tokens, no silent truncation occurred, and offline pinned startup succeeded.
+- No unsupported case was accepted. The sole supported rejection was irrelevant-padding case
+  `final-draft-0239`, whose entailment argmax score `0.959341` missed the frozen threshold.
+- The exact SPIRIT-AI/TRIPOD-ML critical regression remains neutral and rejected: entailment
+  `0.204776`, neutral `0.785296`, contradiction `0.009928`, with exact repeats and no
+  truncation.
+- Production implementation remains blocked. The quantitative safety conditions passed, but
+  no stakeholder-approved retention floor or owner-accepted CPU budget is recorded. The
+  synthetic templated final set also limits external statistical interpretation. The threshold
+  was not changed and the final partition was not used to compare or tune models.
+- Every JSON fixture parsed, all four benchmark/validation scripts compiled, the deterministic
+  validator and six focused assertions passed, and the exact requested container suite passed
+  87 tests in 2.848 seconds. `git diff --check` passed and status was empty for
+  `research-hub/app/` and `research-hub/requirements.txt`.
+
+Next action: stakeholder review of the retention and CPU budgets. Do not implement the
+production verifier until every explicit gate condition is approved; any model or threshold
+change requires a new untouched final set.
+
+## 2026-08-11 - Minimal production claim-support verifier
+
+Status: stakeholder retention and CPU gates were approved; the minimal production boundary is
+implemented and ready for owner review. No live report retry, ingestion, crawl, retained-source
+embedding, Qdrant upsert, document/corpus mutation, final evaluation rerun, commit, or push was
+performed.
+
+- Added one shared CPU verifier service with the frozen model, immutable revision, batch size
+  eight, 512-token no-truncation limit, and argmax-entailment plus `0.97` rule. The image bakes
+  the model snapshot and runtime is offline-only; Compose caps the service at 2.5 GiB.
+- The private generation schema now carries unique packed evidence IDs, exact substrings, and
+  atomic `supports` propositions. Synthesis resolves them before NLI, verifies required links
+  plus union-to-complete-claim support, runs the existing one correction, independently
+  re-verifies it, filters failures, then derives public citations from passing refs.
+- Neutral, contradiction, low confidence, unresolved span, malformed claim/output,
+  over-budget input, timeout, unavailable verifier, and revision mismatch fail closed. A
+  service-level failure marks the attempt failed while preserving the prior report and sources.
+- Public report/source schemas and ingestion/retrieval/storage boundaries are unchanged.
+  Readiness now includes the verifier for research/all capabilities; query and RAG readiness
+  remain independent.
+- Focused verifier/synthesis tests passed 23/23. The required full container suite passed 98
+  tests in 2.353 seconds. The production image built successfully, offline startup loaded the
+  exact baked revision, and `pip check` reported no broken requirements. The sealed corpus,
+  seal, and result SHA-256 values remained
+  `1675d9ede5425dad37e6b8168886b91234b56896171882b704fb3bd6f9e490dc`,
+  `6c94272b771843325684bee9b6afb22e66c2c4fa42f849f88568fc3ee081f2f2`, and
+  `5c65544cf381335174e5ee4f00aca28941a3c5134568a4ecc0388a2353a129b5`.
+
+Next action: owner review. A live report retry remains a separate explicit acceptance action
+and was not run.

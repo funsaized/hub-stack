@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "support": "The cited evidence set, read together and without outside knowledge, entails the entire claim.",
+    "accept_label": "entailment"
+  },
+  "cases": [
+    {
+      "id": "long-context-supported-at-end",
+      "gold": "entailment",
+      "category": "long_context",
+      "critical": false,
+      "evidence": [
+        {
+          "prefix": "",
+          "repeat": "Background material describes study administration and reporting procedures.",
+          "count": 90,
+          "suffix": "Final result: external validation sensitivity was 0.91."
+        }
+      ],
+      "claim": "External validation sensitivity was 0.91."
+    },
+    {
+      "id": "long-context-neutral-false-link",
+      "gold": "neutral",
+      "category": "long_context",
+      "critical": true,
+      "evidence": [
+        {
+          "prefix": "SPIRIT-AI addresses clinical trial protocols.",
+          "repeat": "Background material describes study administration and reporting procedures.",
+          "count": 90,
+          "suffix": "TRIPOD-ML addresses reporting of prediction model studies."
+        }
+      ],
+      "claim": "SPIRIT-AI requires use of TRIPOD-ML."
+    }
+  ]
+}

@@ -22,6 +22,7 @@ from .context import classify_and_sanitize
 from .models import JobStatus, ResearchRequest
 from .document_store import DocumentStore
 from .retrieval import ScopedRetrievalService
+from .claim_support import ClaimVerifierClient
 from .observability import (
     CHUNKS, CRAWLS, EMBED_LATENCY, JOB_PHASE_LATENCY, SEARCH_RESULTS,
     UPSERT_LATENCY, phase_timer,
@@ -241,6 +242,9 @@ class ResearchOrchestrator:
             max_chunks_per_source=cfg.report_max_chunks_per_source,
             min_score=cfg.report_retrieval_min_score,
         )
+        self.claim_verifier = ClaimVerifierClient(
+            cfg.claim_verifier_url, cfg.claim_verifier_timeout_seconds
+        )
         self._redis: redis_async.Redis | None = None
 
     async def init(self):
@@ -250,6 +254,7 @@ class ResearchOrchestrator:
         await self.ollama.close()
         await self.searxng.close()
         await self.crawl4ai.close()
+        await self.claim_verifier.close()
         if self._redis:
             await self._redis.close()
 
@@ -265,12 +270,13 @@ class ResearchOrchestrator:
         async def redis_health() -> bool:
             return bool(self._redis and await self._redis.ping())
 
-        ollama_ok, qdrant_ok, redis_ok, searxng_ok, crawl4ai_ok = await asyncio.gather(
+        ollama_ok, qdrant_ok, redis_ok, searxng_ok, crawl4ai_ok, verifier_ok = await asyncio.gather(
             check("ollama", self.ollama.health),
             check("qdrant", lambda: asyncio.to_thread(self.qdrant.health)),
             check("redis", redis_health),
             check("searxng", self.searxng.health),
             check("crawl4ai", self.crawl4ai.health),
+            check("claim_verifier", self.claim_verifier.health),
         )
         services = {
             "ollama": ollama_ok,
@@ -278,6 +284,7 @@ class ResearchOrchestrator:
             "redis": redis_ok,
             "searxng": searxng_ok,
             "crawl4ai": crawl4ai_ok,
+            "claim_verifier": verifier_ok,
         }
         return {**services, "all_ok": all(services.values())}
 

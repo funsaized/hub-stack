@@ -6,3 +6,7 @@ redis==5.2.0
 qdrant-client==1.12.1
 tenacity==9.0.0
 prometheus-client==0.21.1
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.8.0+cpu
+transformers==4.55.2
+sentencepiece==0.2.1

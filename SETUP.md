@@ -159,8 +159,10 @@ cd hub-stack
 docker compose up -d
 ```
 
-First run takes 5-10 minutes:
-- Downloads/builds the images for seven required services (size varies with image versions)
+First run takes longer while the verifier image is built:
+- Downloads/builds the images for eight required services (size varies with image versions)
+- Bakes the immutable claim-verifier model revision into the Research Hub image; runtime model
+  access is offline-only
 - Builds the research-hub image locally
 - Research Hub pulls `nomic-embed-text` (~300 MB) on first run
 - Pull `qwen3.5:9b` separately before selecting the default generation path
@@ -174,11 +176,11 @@ docker compose ps
 # Required services with healthchecks should become healthy
 ```
 
-The Research Worker has no host port. It consumes the durable Redis queue and
+The Research Worker and Claim Verifier have no host ports. The worker consumes the durable Redis queue and
 shares the Research-Hub image. After application changes, rebuild both processes:
 
 ```bash
-docker compose up -d --build research-hub research-worker
+docker compose up -d --build claim-verifier research-hub research-worker
 docker compose logs --tail=100 research-worker
 ```
 
@@ -187,6 +189,9 @@ Worker behavior can be tuned in `.env` with `WORKER_LEASE_SECONDS`,
 Embedding batches are bounded by `EMBEDDING_BATCH_SIZE` and
 `EMBEDDING_BATCH_CHARS`; completed Qdrant writes are checkpointed in the retained
 document store. See `docs/DOCUMENT_STORE.md` for inspection and rebuilds.
+`CLAIM_VERIFIER_TIMEOUT_SECONDS` controls only the fail-closed request timeout. The model,
+revision, CPU device, batch size eight, 512-token limit, and `0.97` threshold are frozen in
+code and require a new untouched evaluation before change.
 The heartbeat must remain shorter than the lease. On shutdown, the worker drains
 its current task or releases it; after an unclean stop, lease expiry and periodic
 reconciliation requeue the job.

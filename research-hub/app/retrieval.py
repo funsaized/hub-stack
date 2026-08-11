@@ -155,6 +155,7 @@ def pack_evidence(
     context_limit: int,
     answer_reserve: int,
     source_ids: dict[str, str] | None = None,
+    packed_ids: bool = False,
 ) -> tuple[list[EvidenceCandidate], str]:
     """Pack complete sanitized evidence entries within a conservative budget."""
     budget = context_limit - answer_reserve - token_count(system) - token_count(
@@ -163,11 +164,11 @@ def pack_evidence(
     return pack_complete_entries(
         candidates,
         lambda index, value: render_entry(
-            source_ids[value.document_id] if source_ids else index,
+            f"E{index}" if packed_ids else source_ids[value.document_id] if source_ids else index,
             value.source_title,
             value.canonical_url,
             value.text,
-            value.document_id if source_ids else None,
+            value.document_id if source_ids or packed_ids else None,
         ),
         budget,
     )

@@ -1,0 +1,251 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "support": "The cited evidence set, read together and without outside knowledge, entails the entire claim.",
+    "accept_label": "entailment"
+  },
+  "cases": [
+    {
+      "id": "live-spirit-tripod-unsupported-relation",
+      "gold": "neutral",
+      "category": "multi_source_composition",
+      "critical": true,
+      "evidence": [
+        "SPIRIT-AI and CONSORT-AI Working Group Reporting guidelines for clinical trial reports for interventions involving artificial intelligence: the CONSORT-AI Extension.",
+        "Investigators seeking to report studies developing and validating the diagnostic and predictive properties of AI models should refer to TRIPOD-ML and STARD-AI, both of which are currently under development."
+      ],
+      "claim": "SPIRIT-AI works with TRIPOD-ML before full clinical trials."
+    },
+    {
+      "id": "direct-supported-definition",
+      "gold": "entailment",
+      "category": "supported",
+      "critical": false,
+      "evidence": ["DECIDE-AI is focused on the evaluation stage and does not prescribe a fixed study design."],
+      "claim": "DECIDE-AI focuses on the evaluation stage without prescribing a fixed study design."
+    },
+    {
+      "id": "supported-numeric-paraphrase",
+      "gold": "entailment",
+      "category": "supported",
+      "critical": false,
+      "evidence": ["Protocol alpha reduced review errors by 37 percent."],
+      "claim": "Review errors fell by 37% under protocol alpha."
+    },
+    {
+      "id": "supported-negation",
+      "gold": "entailment",
+      "category": "negated",
+      "critical": true,
+      "evidence": ["The intervention did not increase the rate of serious adverse events."],
+      "claim": "Serious adverse-event rates were not increased by the intervention."
+    },
+    {
+      "id": "supported-two-sentence-single-source",
+      "gold": "entailment",
+      "category": "fragmented",
+      "critical": false,
+      "evidence": [
+        "The trial enrolled 240 adults.",
+        "Participants were randomly assigned in equal numbers to intervention and control groups."
+      ],
+      "claim": "The trial randomly assigned 120 adults to each group."
+    },
+    {
+      "id": "supported-genuine-multi-source",
+      "gold": "entailment",
+      "category": "multi_source",
+      "critical": true,
+      "evidence": [
+        "In cohort A, the intervention reduced review errors by 37 percent.",
+        "In cohort B, the intervention reduced review errors by 22 percent."
+      ],
+      "claim": "The intervention reduced review errors in both cohorts."
+    },
+    {
+      "id": "supported-clinical-abbreviation",
+      "gold": "entailment",
+      "category": "healthcare",
+      "critical": false,
+      "evidence": ["Labs were notable for creatinine (Cr) 1.7, compared with a baseline creatinine of 0.5."],
+      "claim": "The patient's creatinine was elevated above baseline."
+    },
+    {
+      "id": "supported-guideline-scope",
+      "gold": "entailment",
+      "category": "scientific",
+      "critical": false,
+      "evidence": ["CONSORT-AI is intended for reports of randomized clinical trials evaluating interventions with an artificial intelligence component."],
+      "claim": "CONSORT-AI applies to reports of randomized trials evaluating AI interventions."
+    },
+    {
+      "id": "supported-comparison-explicit",
+      "gold": "entailment",
+      "category": "comparison",
+      "critical": false,
+      "evidence": ["Model A had sensitivity of 0.91, whereas Model B had sensitivity of 0.84 on the same test set."],
+      "claim": "Model A was more sensitive than Model B on that test set."
+    },
+    {
+      "id": "supported-exact-extractive",
+      "gold": "entailment",
+      "category": "extractive",
+      "critical": false,
+      "evidence": ["No material source disagreements were identified."],
+      "claim": "No material source disagreements were identified."
+    },
+    {
+      "id": "supported-adjacent-fragments",
+      "gold": "entailment",
+      "category": "fragmented",
+      "critical": false,
+      "evidence": [
+        "The prespecified primary endpoint was diagnostic accuracy at 30 days.",
+        "Diagnostic accuracy at 30 days was 88 percent in the external validation cohort."
+      ],
+      "claim": "The external validation cohort achieved 88% on the prespecified primary endpoint."
+    },
+    {
+      "id": "contradicted-direction",
+      "gold": "contradiction",
+      "category": "contradicted",
+      "critical": true,
+      "evidence": ["Protocol alpha reduced review errors by 37 percent."],
+      "claim": "Protocol alpha increased review errors by 37 percent."
+    },
+    {
+      "id": "contradicted-number",
+      "gold": "contradiction",
+      "category": "contradicted",
+      "critical": true,
+      "evidence": ["The study enrolled 240 adults."],
+      "claim": "The study enrolled 420 adults."
+    },
+    {
+      "id": "contradicted-negation",
+      "gold": "contradiction",
+      "category": "negated",
+      "critical": true,
+      "evidence": ["The intervention did not reduce mortality."],
+      "claim": "The intervention reduced mortality."
+    },
+    {
+      "id": "contradicted-time-status",
+      "gold": "contradiction",
+      "category": "contradicted",
+      "critical": false,
+      "evidence": ["TRIPOD-ML and STARD-AI were under development when the article was published."],
+      "claim": "The article reported that TRIPOD-ML and STARD-AI were already finalized."
+    },
+    {
+      "id": "neutral-related-entities",
+      "gold": "neutral",
+      "category": "neutral",
+      "critical": true,
+      "evidence": ["SPIRIT-AI covers clinical trial protocols. CONSORT-AI covers clinical trial reports."],
+      "claim": "SPIRIT-AI was derived from CONSORT-AI."
+    },
+    {
+      "id": "neutral-causal-overreach",
+      "gold": "neutral",
+      "category": "neutral",
+      "critical": true,
+      "evidence": ["Use of the tool was associated with lower review-error rates in an observational cohort."],
+      "claim": "The tool caused the reduction in review errors."
+    },
+    {
+      "id": "neutral-unsupported-comparison",
+      "gold": "neutral",
+      "category": "comparison",
+      "critical": true,
+      "evidence": ["Model A had sensitivity of 0.91. Model B had specificity of 0.94."],
+      "claim": "Model A performed better overall than Model B."
+    },
+    {
+      "id": "neutral-quantifier-overreach",
+      "gold": "contradiction",
+      "category": "quantifier",
+      "critical": true,
+      "evidence": ["Three of four evaluated hospitals reported improved workflow."],
+      "claim": "All evaluated hospitals reported improved workflow."
+    },
+    {
+      "id": "neutral-fragmented-subject-missing",
+      "gold": "neutral",
+      "category": "fragmented",
+      "critical": true,
+      "evidence": ["...was associated with a 12 percent improvement at follow-up."],
+      "claim": "The AI intervention improved diagnostic accuracy by 12 percent."
+    },
+    {
+      "id": "neutral-fragmented-object-missing",
+      "gold": "neutral",
+      "category": "fragmented",
+      "critical": false,
+      "evidence": ["The primary analysis showed a statistically significant reduction."],
+      "claim": "The primary analysis showed a statistically significant reduction in mortality."
+    },
+    {
+      "id": "neutral-bibliography-only-topic",
+      "gold": "neutral",
+      "category": "bibliography_only",
+      "critical": true,
+      "evidence": ["Liu X, Rivera SC, Moher D, Calvert MJ, Denniston AK. Reporting guidelines for clinical trial reports for interventions involving artificial intelligence: the CONSORT-AI Extension. BMJ. 2020;370:m3164."],
+      "claim": "CONSORT-AI improves the quality of AI clinical trials."
+    },
+    {
+      "id": "neutral-bibliography-only-relationship",
+      "gold": "neutral",
+      "category": "bibliography_only",
+      "critical": true,
+      "evidence": [
+        "Rivera SC et al. Guidelines for clinical trial protocols for interventions involving artificial intelligence: the SPIRIT-AI Extension. 2020.",
+        "Collins GS et al. Reporting of studies developing and validating prediction models using machine learning: TRIPOD-ML. 2020."
+      ],
+      "claim": "SPIRIT-AI and TRIPOD-ML are designed to be used together."
+    },
+    {
+      "id": "neutral-multi-source-false-link",
+      "gold": "neutral",
+      "category": "multi_source_composition",
+      "critical": true,
+      "evidence": [
+        "DECIDE-AI addresses early-stage clinical evaluation.",
+        "STARD-AI addresses diagnostic accuracy reporting."
+      ],
+      "claim": "DECIDE-AI requires compliance with STARD-AI."
+    },
+    {
+      "id": "neutral-mixed-compound",
+      "gold": "neutral",
+      "category": "compound",
+      "critical": true,
+      "evidence": ["DECIDE-AI addresses early-stage clinical evaluation."],
+      "claim": "DECIDE-AI addresses early-stage clinical evaluation and mandates a fixed study design."
+    },
+    {
+      "id": "neutral-wrong-entity",
+      "gold": "neutral",
+      "category": "neutral",
+      "critical": false,
+      "evidence": ["CONSORT-AI was developed for clinical trial reports."],
+      "claim": "TRIPOD-AI was developed for clinical trial reports."
+    },
+    {
+      "id": "neutral-scope-overreach",
+      "gold": "neutral",
+      "category": "neutral",
+      "critical": false,
+      "evidence": ["The model was externally validated in one tertiary hospital."],
+      "claim": "The model is validated for use in all hospitals."
+    },
+    {
+      "id": "neutral-statistical-significance",
+      "gold": "neutral",
+      "category": "scientific",
+      "critical": true,
+      "evidence": ["Accuracy was 0.88 for Model A and 0.86 for Model B."],
+      "claim": "Model A was significantly more accurate than Model B."
+    }
+  ]
+}

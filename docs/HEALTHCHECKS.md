@@ -26,13 +26,17 @@ Both mounted via `./healthcheck:/healthcheck:ro` into the container.
 | crawl4ai | bash `/healthcheck/healthcheck.sh 11235` | has bash |
 | research-hub | Dockerfile `curl -f http://localhost:8000/livez` | process liveness; has curl, IPv6-safe |
 | research-worker | Docker restart policy + logs | no HTTP port; Redis leases expire and orphan reconciliation requeues work |
+| claim-verifier | curl `/health` on port 8001 | becomes healthy only after the pinned offline model loads |
 | open-webui | sh `echo > /dev/tcp/localhost/8080` | has bash actually, but compose uses sh-style |
 | dozzle | (none) | no healthcheck section |
 | uptime-kuma | (none) | relies on its own UI |
 
-Research Hub also exposes `/readyz?capability=query|rag|research|all` fo
+Research Hub also exposes `/readyz?capability=query|rag|research|all` for
 capability-specific dependency readiness. `/health/full` is a diagnostic view
 and remains HTTP 200 when dependencies are degraded.
+
+`research` and `all` readiness require `claim_verifier`; `query` and `rag` do not. The API
+and worker also validate the model ID and immutable revision returned by verifier health.
 
 These probes run inside their containers and do not require host-published ports.
 Optional Uptime Kuma should likewise use Compose service names (`qdrant:6333`,

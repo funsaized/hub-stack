@@ -113,10 +113,10 @@ async def livez():
 
 
 READINESS_REQUIREMENTS = {
-    "all": {"ollama", "qdrant", "redis", "searxng", "crawl4ai"},
+    "all": {"ollama", "qdrant", "redis", "searxng", "crawl4ai", "claim_verifier"},
     "query": {"ollama", "qdrant"},
     "rag": {"ollama", "qdrant"},
-    "research": {"ollama", "qdrant", "redis", "searxng", "crawl4ai"},
+    "research": {"ollama", "qdrant", "redis", "searxng", "crawl4ai", "claim_verifier"},
 }
 
 

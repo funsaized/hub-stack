@@ -4,9 +4,9 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
+import re
 
 from app.retrieval import ScopedRetrievalService, pack_evidence
-from app.synthesis import ClaimValidationError, _retain_cited_claims, _validate_claims
 
 
 DEFAULT_MANIFEST = Path(__file__).parent / "fixtures" / "report_retrieval_cases.json"
@@ -38,6 +38,11 @@ class FixtureQdrant:
 
 def ratio(numerator: int, denominator: int) -> float:
     return round(numerator / denominator, 6) if denominator else 1.0
+
+
+def valid_legacy_citations(claim: str, represented: set[int]) -> bool:
+    refs = [int(value) for value in re.findall(r"\[S(\d+)\]", claim)]
+    return bool(refs) and all(ref in represented for ref in refs)
 
 
 async def evaluate_case(manifest: dict, case: dict) -> tuple[dict, dict]:
@@ -88,15 +93,12 @@ async def evaluate_case(manifest: dict, case: dict) -> tuple[dict, dict]:
         source_ids=source_ids,
     )
     represented = {int(source_ids[item.document_id][1:]) for item in packed}
-    valid_citations = 0
-    for claim in case["valid_claims"]:
-        try:
-            _validate_claims([claim], represented, "evaluation")
-            valid_citations += 1
-        except ClaimValidationError:
-            pass
-    _kept, rejected = _retain_cited_claims(
-        case["unsupported_claims"], represented, "evaluation"
+    valid_citations = sum(
+        valid_legacy_citations(claim, represented) for claim in case["valid_claims"]
+    )
+    unsupported_rejections = sum(
+        not valid_legacy_citations(claim, represented)
+        for claim in case["unsupported_claims"]
     )
 
     counts = {
@@ -109,7 +111,7 @@ async def evaluate_case(manifest: dict, case: dict) -> tuple[dict, dict]:
         "sentinel_hits": sentinel_hits,
         "sentinel_total": len(expected),
         "sources_hit": len(represented_expected_sources),
-        "unsupported_rejections": sum(rejected.values()),
+        "unsupported_rejections": unsupported_rejections,
     }
     metrics = {
         "citation_validity": ratio(valid_citations, counts["citation_total"]),

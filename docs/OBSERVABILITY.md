@@ -31,6 +31,11 @@ counts, crawl outcomes, chunks per source, embedding/upsert latency, retrieval
 scores, generation latency, and estimated generation tokens. Labels are bounded;
 URLs and domains appear only in logs, preventing unbounded metric cardinality.
 
+Report synthesis additionally exposes bounded verifier outcomes and latency plus correction
+outcomes. Outcome labels contain only fixed reason codes such as `entailment`, `neutral`,
+`contradiction`, `low_confidence`, `over_budget`, `timeout`, and `revision_mismatch`; claim
+text, topics, URLs, job IDs, and evidence IDs are never metric labels.
+
 Provisioned warning thresholds are:
 
 - any terminal job failure in 15 minutes;
