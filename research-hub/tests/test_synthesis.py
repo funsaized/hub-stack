@@ -243,6 +243,54 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
             self.orchestrator.ollama.generate.await_args.args[0],
         )
 
+    async def test_correction_names_only_represented_citation_ids(self):
+        for index in range(2, 5):
+            self.store.save({
+                "document_id": f"doc-{index}",
+                "canonical_url": f"https://example.com/source-{index}",
+                "source_url": f"https://example.com/source-{index}",
+                "title": f"Evidence {index}", "markdown": "Retained evidence.",
+                "content_hash": f"hash-{index}",
+                "fetched_at": f"2026-08-09T0{index}:00:00+00:00",
+                "http_metadata": {}, "extraction_version": "v1",
+                "job_id": "job-1", "research_metadata": {"topic": "topic"},
+                "created_at": f"2026-08-09T0{index}:00:00+00:00",
+            })
+            self.store.observe_job_source(
+                "job-1", f"doc-{index}", f"2026-08-09T0{index}:00:00+00:00",
+                {"topic": "topic"},
+            )
+        self.qdrant.search_evidence.return_value = [{
+            "text": "Supported authoritative evidence.",
+            "canonical_url": "https://example.com/source-4",
+            "source_title": "Evidence 4", "document_id": "doc-4",
+            "chunk_index": 0, "score": 0.9, "metadata": {},
+        }]
+
+        async def citation_sensitive_generation(prompt, **_kwargs):
+            if "Allowed citations: [S4]." in prompt:
+                return (
+                    '{"key_findings":["Corrected finding [S4]"],'
+                    '"disagreements":[],"unknowns":[]}'
+                )
+            return (
+                '{"key_findings":["Uncited finding"],'
+                '"disagreements":[],"unknowns":[]}'
+            )
+
+        self.orchestrator.ollama.generate.side_effect = citation_sensitive_generation
+
+        report = await generate_report(self.orchestrator, "job-1")
+
+        self.assertIn("Corrected finding [S4]", report["report_markdown"])
+        self.assertEqual(self.orchestrator.ollama.generate.await_count, 2)
+        first_prompt, corrected_prompt = [
+            call.args[0] for call in self.orchestrator.ollama.generate.await_args_list
+        ]
+        self.assertNotIn("[S1]", first_prompt)
+        self.assertIn("Allowed citations: [S4].", corrected_prompt)
+        self.assertNotIn("[S1]", corrected_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

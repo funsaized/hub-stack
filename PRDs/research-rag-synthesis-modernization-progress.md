@@ -611,3 +611,109 @@ Files changed:
 Next action: stop at the Phase 4 review gate. Diagnose or change authoritative generation
 only with a new, explicit instruction; do not retry the retained jobs again implicitly and
 do not begin Phase 5.
+
+## 2026-08-10 - Phase 4 authoritative citation-correction diagnosis
+
+Status: a deterministic repository defect in authoritative correction was reproduced and
+fixed with one focused test. The deployed authoritative report was not retried because the
+new approval field was not explicitly completed `YES`. Phase 4 remains unaccepted and
+Phase 5 was not started.
+
+Pre-edit checks and reproduced baseline:
+
+- The entire PRD and this progress log were read before editing. No repository-local
+  `AGENTS.md` was present.
+- `git status --short --branch` reported `## main...origin/main` with no changes. Local
+  `HEAD` and its configured upstream both resolved to
+  `835e38edf6ad1875f8e053102f60eaac3c529d66` on `main`.
+- `docker compose run --rm --no-deps -v "${PWD}\research-hub:/app" research-hub
+  python -m tests.benchmark_report_retrieval` exited 0. Critical Recall@4 was `1.0`,
+  citation validity was `1.0`, and `passed` was `true`.
+- `docker compose run --rm --no-deps -v "${PWD}\research-hub:/app" research-hub
+  python -m unittest tests.test_report_retrieval_benchmark -v` passed both tests in
+  1.470 seconds.
+- All callers of report generation, shared packing, validation, and Ollama generation were
+  traced before editing. Report generation is called only by the retry endpoint and the
+  post-ingestion report step; this change touches only their shared synthesis prompt.
+
+Deterministic diagnosis:
+
+- The authoritative retry supplied only `[S4]`, `[S5]`, and `[S6]`, but the initial prompt
+  instructed the model with examples `[S1]` and `[S1][S2]`. After the first uncited claim
+  was rejected, the corrective prompt again used unavailable `[S1]` as its only literal
+  example. Strict validation correctly rejected every source outside the represented set.
+  The correction instruction and validator were therefore internally contradictory for
+  this retained-evidence selection.
+- Existing Ollama logs for the two authoritative attempts showed 1,987 and 2,038 prompt
+  tokens, 174 and 239 generated tokens, `n_ctx_slot = 4096`, and `truncated = 0` for both
+  calls. The configured 8,192/allocated 4,096 mismatch did not truncate this retry and was
+  not its cause, though it remains a deployment risk.
+- The deployed Ollama version is `0.32.6`. A synthetic, non-report probe sent the same
+  `think: false` request option with an anchored JSON-schema pattern requiring `[S4]`.
+  Qwen 3.5 ignored the schema, returned the requested uncited value plus extra prose, and
+  consumed the 128-token output limit. The `/api/chat` endpoint behaved the same way.
+  Omitting `think` or requesting low thinking consumed the entire 1,024-token production
+  budget in 5,322 characters of thinking and returned an empty response with
+  `done_reason: length`. This matches the open Ollama qwen3.5 structured-output defect
+  documented at https://github.com/ollama/ollama/issues/14645. Toggling thinking or relying
+  on a stronger schema was therefore not a safe repository correction.
+
+TDD and files changed:
+
+- `research-hub/tests/test_synthesis.py`: added
+  `test_correction_names_only_represented_citation_ids`. Its fixture represents only
+  `[S4]`, makes the first generation uncited, and corrects only when the retry names the
+  actual allowed citation. Before the production edit it failed because the final report
+  contained no supported finding and omitted the uncited claim. After the edit it passes
+  and also proves neither attempt advertises unavailable `[S1]`.
+- `research-hub/app/synthesis.py`: removed hard-coded source-number examples from the
+  initial prompt and made the existing one correction attempt list only the sorted source
+  IDs represented in packed evidence. Citation validation, sanitization, packing, two-call
+  limit, omission behavior, persistence, and public APIs are unchanged.
+- `PRDs/research-rag-synthesis-modernization-progress.md`: records this diagnosis, tests,
+  verification, acceptance disposition, and remaining risks.
+- The first focused command, `docker compose run --rm --no-deps
+  -v "${PWD}\research-hub:/app" research-hub python -m unittest
+  tests.test_synthesis.SynthesisTests.test_correction_names_only_represented_citation_ids
+  -v`, failed for the intended reason. The same command passed after the two-line prompt
+  behavior change. The complete focused synthesis module then passed 11 tests in 0.623
+  seconds.
+
+Final automated verification:
+
+- The deterministic benchmark remained byte-stable with critical Recall@4 `1.0`, citation
+  validity `1.0`, and `passed: true` after the fix. Its two focused tests passed in 1.681
+  seconds.
+- `docker compose build research-hub research-worker`: exit code 0; both images built.
+- `docker compose run --rm --no-deps
+  -e TEST_REDIS_URL=redis://hub-redis:6379/15
+  -v "${PWD}\research-hub:/app" research-hub
+  python -m unittest discover -s tests -v`: 80 tests passed in 2.639 seconds with no
+  failures or skips; all four Compose Redis worker integration tests ran and passed.
+- `docker compose run --rm --no-deps research-hub python -m pip check` reported
+  `No broken requirements found.`
+- The exact `hermes verify --json` command was attempted twice and its wrapper timed out
+  after 304 seconds both times without output. The isolated Hermes build phase returned
+  `ok: true`; direct `/` and `/readyz` checks both returned HTTP 200 with Ollama, Qdrant,
+  Redis, SearXNG, and Crawl4AI healthy. The saved ignored Hermes recipe has `port: null`.
+  `hermes verify --json --port 8000 --timeout 120 --ready-timeout 60` completed in 1.6
+  seconds with `"ok": true`, a successful Compose build, and readiness HTTP 200. A
+  temporary attempt to supply port 8000 through the ignored manifest was restored; no
+  local manifest change remains. The requirement is satisfied with the explicit discovered
+  port, while the exact no-port wrapper hang remains a Hermes tooling risk.
+
+Acceptance and gate disposition:
+
+- The deterministic failure mechanism and smallest correction are test-covered. Strict
+  citation validation still requires every material finding or disagreement to cite exact
+  represented evidence; no finding was injected, fabricated, or hard-coded.
+- No crawl, research job, retained-document embedding, Qdrant upsert, corpus mutation,
+  binary/fact/confidence retry, or authoritative retry occurred. The synthetic Ollama
+  probes used no retained evidence and persisted no report.
+- The new deployment approval field was blank, so it was treated as not approved. Live
+  acceptance remains deferred: only job `4b8acd0f-088f-4b97-92fc-f52b69b8a3ee` may be
+  retried after an explicit `YES`.
+- Phase 4 remains unaccepted until an approved authoritative retry produces supported cited
+  findings from at least two supplied retained sources and every displayed citation resolves
+  to the exact selected evidence. Dense retrieval already found the specialized evidence,
+  so Phase 5 remains both unapproved and unjustified.
