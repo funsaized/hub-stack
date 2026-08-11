@@ -1,7 +1,9 @@
 # Claim-level support verification research spike
 
-Status: final blind evaluation remains sealed; stakeholder gates are approved and the minimal
-production verifier is implemented for owner review. No live report retry has been run.
+Status: final blind evaluation remains sealed and the minimal production verifier is deployed.
+The one approved final live retry advanced the authoritative report to attempt 5 but failed
+closed on malformed generation JSON before NLI. Phase 4 remains unaccepted; no further retry
+or Phase 5 work is approved.
 
 Date: 2026-08-11
 
@@ -722,6 +724,119 @@ The larger sealed evaluation and approved stakeholder budgets support owner revi
 implemented gate. Phase 4 acceptance still requires a separately approved live report retry
 whose every displayed material claim passes exact evidence resolution and the semantic gate.
 Phase 5 retrieval work remains unrelated and unapproved.
+
+## Final controlled live acceptance gate (2026-08-11)
+
+Commit `fb6366fd1a17f4c3aa5daa24e668420d8ce12588` was deployed only to
+`claim-verifier`, `research-hub`, and `research-worker`. All three processes were stable with
+zero restarts; research readiness was `ok`, `/health/full` reported
+`claim_verifier=true`, verifier health returned the exact frozen model and revision, and
+`HF_HUB_OFFLINE=1` plus `TRANSFORMERS_OFFLINE=1` confirmed offline runtime access.
+
+Exactly one authorized retry was issued for authoritative job
+`4b8acd0f-088f-4b97-92fc-f52b69b8a3ee` at `2026-08-11T11:12:23.6262358Z`.
+It returned HTTP 502 after 32.292422 seconds. Report attempt 4 advanced to attempt 5 with
+status `failed`, update time `2026-08-11T11:12:55.192164Z`, and error
+`Expecting ',' delimiter: line 57 column 6 (char 3647)`. Both the first generation and the
+single bounded correction consumed the full 1,024-token output allowance and produced the
+same JSON parse failure. Ollama reported `truncated=0` with 2,057 and 2,159 prompt tokens in
+its 4,096-token slot. No claim reached exact-span resolution or the verifier; verifier logs
+contain health probes only. There was no citation-only fallback.
+
+The failed-attempt lifecycle preserved the complete attempt-4 Markdown and six-source registry.
+That preserved report still displays the five previously audited supported findings and the
+unsupported SPIRIT-AI/TRIPOD-ML-before-full-clinical-trials composite. All nine inline citation
+references resolve to the prior represented `[S4]`, `[S5]`, and `[S6]` evidence, but citation
+resolution does not make the sixth composite semantically supported. Attempt 5 produced no new
+displayed finding or disagreement and therefore cannot satisfy the production NLI acceptance
+gate.
+
+The mutation audit remained clean apart from the expected report attempt/status/error and job
+timestamp updates: Redis pending/processing queues stayed `0/0`; SQLite stayed at 67 documents,
+67 job/source observations, six authoritative observations, and 13 reports; Qdrant stayed at
+24,465 points, 23,369 indexed vectors, and six segments. Worker logs contained no crawl,
+ingestion, retained-document embedding, or upsert activity. The sealed corpus, seal, and result
+SHA-256 values remained
+`1675d9ede5425dad37e6b8168886b91234b56896171882b704fb3bd6f9e490dc`,
+`6c94272b771843325684bee9b6afb22e66c2c4fa42f849f88568fc3ee081f2f2`, and
+`5c65544cf381335174e5ee4f00aca28941a3c5134568a4ecc0388a2353a129b5`.
+
+Phase 4 and the initial Phases 0-4 modernization remain incomplete. Do not tune the frozen
+model or threshold, issue another retry, rerun the sealed evaluation, or begin Phase 5 without
+new explicit owner approval.
+
+## Structured-output boundary follow-up (2026-08-11)
+
+New authorization allowed one deterministic output-boundary fix and one attempt-6 retry. The
+shared Ollama client now inspects the native response before returning generated text: it raises
+an explicit error for `done_reason=length` and fails closed for `truncated=true`. The deployed
+completion allowance increased from 1,024 to 1,536 tokens without changing the verifier,
+revision, threshold, claim contract, strict parser, or correction limit.
+
+The single retry began at `2026-08-11T11:39:02.8712367Z` and returned HTTP 409 after
+28.068818 seconds. Its only generation used 1,846 prompt tokens and all 1,536 completion tokens
+inside the 4,096-token slot (3,382 total), with `truncated=0` and `done_reason=length`. The new
+boundary therefore failed clearly as designed, before JSON parsing, exact-span resolution, or
+NLI. No correction or verifier request occurred, and no second retry was issued.
+
+Attempt 6 is failed with `Ollama generation stopped at the 1536-token output limit
+(done_reason=length)`. The prior Markdown and six sources remain byte-identical with SHA-256
+`cd92f77159fc3369bd51b95e5658f98f0c1b5534e2d078b2d45367c7828decb7` and
+`d6748d76ba27f783c709d54d73e617273e43a04399d7b42901a37f588d00aefe`.
+Consequently, the preserved unsupported SPIRIT-AI/TRIPOD-ML composite is still not verifier-
+approved. Queue, SQLite, Qdrant, worker, and sealed-evaluation audits remained clean.
+
+Phase 4 remains incomplete. The condition for the Phase 5 design spike was not met; no hybrid-
+retrieval work was started.
+
+## 8,192-token context follow-up (2026-08-11)
+
+New authorization raised Ollama's native runtime context from 4,096 to 8,192 and the existing
+completion allowance from 1,536 to 2,048 tokens. No verifier, threshold, evidence contract,
+parser, correction, or retrieval behavior changed.
+
+The single attempt-7 retry returned HTTP 200. Its first and correction generations used
+1,779+872 and 1,865+1,073 prompt/completion tokens respectively in an 8,192-token slot, both
+with `truncated=0`. This resolves the prior output-length failure.
+
+Phase 4 nevertheless remains incomplete. Exact-span resolution rejected one first-pass claim
+and all seven corrected material claims (`unresolved_span=8` total), leaving zero claims for
+substantive NLI evaluation. The report correctly omitted all seven claims, contains no material
+finding or disagreement, and excludes the unsupported SPIRIT-AI/TRIPOD-ML composite. The source
+registry is unchanged; Redis, SQLite, Qdrant, worker, and sealed-hash audits remained clean.
+The conditional Phase 5 authorization was therefore not activated.
+
+## Deterministic exact-span selector follow-up (2026-08-11)
+
+The next RCA confirmed that retrieval and structured JSON completion succeeded, but free-form
+span copying remained outside the JSON schema's guarantees. The validator also compared the
+raw model span before trimming it, and the single `unresolved_span` metric combined multiple
+failure classes.
+
+Research synthesis now assigns exact prompt-time span IDs to sentence/line substrings. The
+private generation schema constrains the model to an enumerated `span_id`; the resolver trims
+that ID, maps it to the original exact sanitized substring, and sends the unchanged resolved
+`span` plus atomic `supports` proposition to the frozen verifier. Invalid IDs and mappings fail
+closed with precise bounded reasons. No fuzzy matching, permissive parser, dependency, corpus
+rebuild, retrieval change, verifier change, or public API change was introduced.
+
+The focused suite passed 19 tests and the complete isolated suite passed 103. Research Hub and
+Research Worker were rebuilt and deployed healthy; the running verifier remained untouched.
+No acceptance retry was run. Attempt 7 remains preserved, so Phase 4 still awaits a separately
+authorized single retry and Phase 5 remains unstarted.
+
+## Attempt-8 acceptance result (2026-08-11)
+
+The one authorized retry confirmed that deterministic span IDs fixed the previous validation
+barrier. The first generation completed normally, eight material claims resolved to exact
+source substrings, and all eight reached the frozen production verifier. Seven were neutral
+and one was below the `0.97` entailment threshold, so none qualified for display.
+
+The existing single correction then exhausted the 2,048-token completion allowance and failed
+explicitly with `done_reason=length`. No partial output was parsed, no claim or citation was
+persisted, and no second retry was issued. Attempt 8 is failed while the attempt-7 Markdown and
+source registry remain byte-preserved. Corpus, queue, SQLite, Qdrant, worker, and sealed-hash
+audits remained clean. Phase 4 therefore remains incomplete and Phase 5 remains unstarted.
 
 ## Sources
 

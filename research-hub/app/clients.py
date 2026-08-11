@@ -1,6 +1,7 @@
 """HTTP clients for external services."""
 
 import json
+import hashlib
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
@@ -12,6 +13,14 @@ logger = logging.getLogger(__name__)
 
 class CollectionConfigurationError(RuntimeError):
     """Raised when an existing Qdrant collection needs migration."""
+
+
+class OllamaOutputLimitError(RuntimeError):
+    """Raised when Ollama stops before completing a bounded generation."""
+
+    def __init__(self, message: str, diagnostic: dict[str, Any]):
+        super().__init__(message)
+        self.diagnostic = diagnostic
 
 
 class OllamaClient:
@@ -36,6 +45,7 @@ class OllamaClient:
     async def generate(
         self, prompt: str, system: str | None = None, max_tokens: int = 1024,
         json_mode: bool = False, json_schema: dict[str, Any] | None = None,
+        diagnostic_stage: str | None = None,
     ) -> str:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -52,7 +62,29 @@ class OllamaClient:
             payload["format"] = "json"
         r = await self._client.post(f"{self.base_url}/api/generate", json=payload)
         r.raise_for_status()
-        return r.json().get("response", "")
+        data = r.json()
+        body = data.get("response", "")
+        diagnostic = {
+            "stage": diagnostic_stage or "unspecified",
+            "prompt_tokens": data.get("prompt_eval_count"),
+            "completion_tokens": data.get("eval_count"),
+            "done_reason": data.get("done_reason"),
+            "truncated": bool(data.get("truncated")),
+            "response_chars": len(body),
+            "response_sha256": hashlib.sha256(body.encode()).hexdigest(),
+            "response_preview": body[:16384],
+            "response_preview_truncated": len(body) > 16384,
+        }
+        if diagnostic_stage:
+            logger.info("ollama_generation_diagnostic", extra={"diagnostic": diagnostic})
+        if data.get("truncated"):
+            raise RuntimeError("Ollama truncated the input prompt to fit its context window")
+        if data.get("done_reason") == "length":
+            raise OllamaOutputLimitError(
+                f"Ollama generation stopped at the {max_tokens}-token output limit "
+                "(done_reason=length)", diagnostic,
+            )
+        return body
 
     async def chat_stream(
         self, messages: list[dict[str, str]], *, max_tokens: int = 1024,

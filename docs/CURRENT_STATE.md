@@ -1,6 +1,6 @@
 # Current deployed state
 
-Last verified: 2026-08-10 on the local Windows 11 workstation.
+Last verified: 2026-08-11 on the local Windows 11 workstation.
 
 ## Deployment model
 
@@ -37,8 +37,9 @@ lost in Ollama's separate `thinking` field.
 
 ## Running services
 
-The seven-container default Compose topology is deployed locally. At the latest
-runtime check, Research-Hub was healthy and the dedicated worker was stable.
+The eight-container default Compose topology is deployed locally. At the latest
+runtime check, Research-Hub and the claim verifier were healthy and the dedicated
+worker was stable.
 
 Research-Hub currently uses Ollama, Qdrant, Redis, SearXNG, and Crawl4AI.
 The API only enqueues ingestion; the dedicated Research Worker claims and executes
@@ -62,7 +63,7 @@ hardening remains unfinished.
 | `/health` | Backward-compatible alias of `/livez` | 200 while the process is live |
 | `/readyz?capability=query` | Ollama and Qdrant can query the retained corpus | 200 ready; 503 degraded |
 | `/readyz?capability=rag` | Ollama and Qdrant can retrieve and generate | 200 ready; 503 degraded |
-| `/readyz?capability=research` | Redis, Ollama, Qdrant, SearXNG, and Crawl4AI can ingest research | 200 ready; 503 degraded |
+| `/readyz?capability=research` | Redis, Ollama, Qdrant, SearXNG, Crawl4AI, and the claim verifier can support research | 200 ready; 503 degraded |
 | `/readyz` | All Research-Hub dependencies | 200 ready; 503 degraded |
 | `/health/full` | Diagnostic status for every dependency | 200 with `ok`, `degraded`, or `starting` in JSON |
 
@@ -164,7 +165,7 @@ Failed synthesis is stored separately from completed ingestion and can be retrie
 `POST /research/{job_id}/report/retry` or `research report JOB_ID --retry`; that path does
 not invoke search, crawling, embedding, or Qdrant writes.
 
-## Claim-support gate ready for owner review
+## Claim-support deployment and failed live gate
 
 Material findings and disagreements now use private unique packed evidence IDs, exact spans,
 and atomic support propositions. One shared CPU service verifies every required span link and
@@ -177,4 +178,40 @@ and exact revision; query/RAG readiness remains independent. Any neutral, contra
 low-confidence, unresolved, malformed, timeout, unavailable, over-budget, or revision-mismatch
 outcome fails closed. A failed retry preserves the prior persisted report and source registry.
 
-The sealed evaluation was not rerun or changed, and no live report retry has been performed.
+Commit `fb6366f` plus the reviewed uncommitted output-boundary fix is deployed to the verifier,
+API, and worker. The verifier reports the exact frozen model/revision, runs with Hugging Face
+and Transformers offline flags enabled, and is required by research/all readiness. The shared
+Ollama client now fails explicitly on `done_reason=length` or prompt truncation, and API/worker
+report completion is bounded at 2,048 tokens.
+
+Ollama now runs with an explicit 8,192-token context. API and worker report generation use a
+2,048-token completion allowance. One authorized retry advanced the authoritative report from
+attempt 6 to attempt 7 and returned HTTP 200. Both the first generation and its one correction
+completed without output-limit or context truncation.
+
+Attempt 7 is completed but displays no material finding or disagreement: exact-span resolution
+rejected all seven corrected claims before substantive NLI evaluation. The unsupported
+SPIRIT-AI/TRIPOD-ML composite is absent, and the report explicitly records the omissions. Redis
+queues, retained document/observation counts, Qdrant counts, and all three sealed evaluation
+hashes stayed unchanged; worker logs show no ingestion activity. Phase 4 and the initial
+Phases 0-4 modernization remain incomplete because at least one supported finding is required.
+The conditional Phase 5 authorization was not activated, so Phase 5 is unstarted.
+
+The next exact-span fix is deployed to Research Hub and Research Worker. Generated material
+claims now select enumerated prompt-time span IDs instead of copying free-form evidence text;
+the resolver maps each ID back to its original exact sanitized substring before the unchanged
+NLI contract. Span IDs are trimmed before lookup, and validation exposes precise bounded
+failure reasons rather than collapsing them into `unresolved_span`. Focused tests passed 19/19,
+the complete Redis-15 suite passed 103 tests, the retrieval benchmark passed, and bounded
+Hermes verification returned `ok=true`. No live retry followed this deployment: attempt 7 and
+its six-source registry remain preserved, Phase 4 still requires one separately authorized
+acceptance retry, and Phase 5 remains unstarted.
+
+That single retry was subsequently authorized and consumed. Attempt 8 proved the span-ID path:
+eight first-pass material claims resolved exactly and reached the frozen production NLI
+verifier. Seven were neutral and one was low-confidence, so the one allowed correction ran.
+The correction exhausted the 2,048-token output allowance and failed explicitly with
+`done_reason=length`; no partial output was accepted. Attempt 8 is `failed`, while the attempt-7
+Markdown and six-source registry remain byte-preserved. Queues, SQLite, Qdrant, worker activity,
+and sealed hashes remain clean. Phase 4 still lacks a supported material finding, and no retry,
+tuning, or Phase 5 work is authorized after this failure.

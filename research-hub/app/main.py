@@ -194,6 +194,7 @@ async def retry_research_report(job_id: str):
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except RuntimeError as exc:
+        await orchestrator._update_job(job_id, report_status="failed")
         raise HTTPException(409, str(exc)) from exc
     except Exception as exc:
         await orchestrator._update_job(job_id, report_status="failed")

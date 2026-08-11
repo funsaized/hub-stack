@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import logging
 import math
 import os
 from contextlib import asynccontextmanager
@@ -20,6 +22,17 @@ BATCH_SIZE = 8
 MAX_EVIDENCE_REFS = 8
 LABELS = ("entailment", "neutral", "contradiction")
 REJECTION_REASONS = {"neutral", "contradiction", "low_confidence", "over_budget", "malformed_claim"}
+
+logger = logging.getLogger(__name__)
+
+
+def _bounded_text(value: Any) -> dict[str, Any]:
+    text = value if isinstance(value, str) else ""
+    return {
+        "text": text[:512], "chars": len(text),
+        "sha256": hashlib.sha256(text.encode()).hexdigest(),
+        "truncated": len(text) > 512,
+    }
 
 
 class VerifierUnavailable(RuntimeError):
@@ -77,6 +90,18 @@ class ClaimVerifierClient:
                 reasons.append(reason)
             else:
                 raise VerifierUnavailable("malformed_output")
+        logger.info("claim_verification_diagnostic", extra={"diagnostic": {
+            "claims": [{
+                "text": _bounded_text(claim.get("text")),
+                "evidence_refs": [{
+                    "span_id": ref.get("span_id"),
+                    "span": _bounded_text(ref.get("span")),
+                    "supports": _bounded_text(ref.get("supports")),
+                } for ref in claim.get("evidence_refs", [])[:MAX_EVIDENCE_REFS]
+                if isinstance(ref, dict)],
+            } for claim in claims[:10]],
+            "results": results[:10],
+        }})
         return reasons
 
 
@@ -103,6 +128,7 @@ class LocalClaimVerifier:
     def verify(self, claims: list[dict[str, Any]]) -> list[dict[str, Any]]:
         pairs: list[tuple[str, str]] = []
         owners: list[int] = []
+        roles: list[str] = []
         rejected: dict[int, str] = {}
         for owner, claim in enumerate(claims):
             text = claim.get("text")
@@ -125,18 +151,27 @@ class LocalClaimVerifier:
                 spans.append(span.strip())
                 pairs.extend(((span.strip(), supports.strip()), (text.strip(), supports.strip())))
                 owners.extend((owner, owner))
+                roles.extend(("span_support", "claim_support"))
             if owner not in rejected:
                 premise = " ".join(
                     f"Evidence {index}: {span}" for index, span in enumerate(spans, 1)
                 )
                 pairs.append((premise, text.strip()))
                 owners.append(owner)
+                roles.append("evidence_union")
 
         runnable: list[tuple[int, str, str]] = []
+        checks: dict[int, dict[str, Any]] = {}
+        lengths: dict[int, int] = {}
         for index, (premise, hypothesis) in enumerate(pairs):
             length = len(self.tokenizer(premise, hypothesis, truncation=False)["input_ids"])
+            lengths[index] = length
             if length > MAX_TOKENS:
                 rejected.setdefault(owners[index], "over_budget")
+                checks[index] = {
+                    "role": roles[index], "tokens": length,
+                    "label": "over_budget", "entailment": None,
+                }
             else:
                 runnable.append((index, premise, hypothesis))
 
@@ -160,14 +195,24 @@ class LocalClaimVerifier:
                     reason = None if predicted == "entailment" and scores["entailment"] >= THRESHOLD else (
                         predicted if predicted != "entailment" else "low_confidence"
                     )
+                    checks[item[0]] = {
+                        "role": roles[item[0]],
+                        "tokens": lengths[item[0]],
+                        "label": predicted,
+                        "entailment": round(scores["entailment"], 6),
+                    }
                     owner = owners[item[0]]
                     if reason:
                         decisions.setdefault(owner, reason)
 
         return [
-            {"accepted": False, "reason": rejected.get(index) or decisions.get(index)}
+            {"accepted": False, "reason": rejected.get(index) or decisions.get(index),
+             "checks": [checks[pair] for pair, owner in enumerate(owners)
+                        if owner == index and pair in checks]}
             if rejected.get(index) or decisions.get(index)
-            else {"accepted": True, "reason": None}
+            else {"accepted": True, "reason": None,
+                  "checks": [checks[pair] for pair, owner in enumerate(owners)
+                             if owner == index and pair in checks]}
             for index in range(len(claims))
         ]
 

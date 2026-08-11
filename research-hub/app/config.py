@@ -30,7 +30,7 @@ class Config:
     embedding_batch_chars: int = 12000
     dependency_max_attempts: int = 3
     model_context_tokens: int = 8192
-    answer_reserve_tokens: int = 1024
+    answer_reserve_tokens: int = 2048
     allow_custom_system_prompts: bool = False
     respect_robots_txt: bool = True
     report_retrieval_candidates: int = 40
@@ -75,7 +75,7 @@ def load_config() -> Config:
         embedding_batch_chars=int(os.environ.get("EMBEDDING_BATCH_CHARS", "12000")),
         dependency_max_attempts=int(os.environ.get("DEPENDENCY_MAX_ATTEMPTS", "3")),
         model_context_tokens=int(os.environ.get("MODEL_CONTEXT_TOKENS", "8192")),
-        answer_reserve_tokens=int(os.environ.get("ANSWER_RESERVE_TOKENS", "1024")),
+        answer_reserve_tokens=int(os.environ.get("ANSWER_RESERVE_TOKENS", "2048")),
         allow_custom_system_prompts=os.environ.get(
             "ALLOW_CUSTOM_SYSTEM_PROMPTS", "false"
         ).lower() in {"1", "true", "yes"},

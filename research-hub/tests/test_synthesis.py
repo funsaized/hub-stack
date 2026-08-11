@@ -7,20 +7,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from fastapi import HTTPException
+
+from app import main
 from app.document_store import DocumentStore
 from app.claim_support import VerifierUnavailable
 from app.retrieval import ScopedRetrievalService
-from app.synthesis import generate_report
+from app.synthesis import ClaimValidationError, _resolve_claim, generate_report
 
 
-def claim(text, span="Supported retained evidence.", evidence_id="E1", supports=None):
+def claim(text, span_id="P1"):
     return {
         "text": text,
-        "evidence_refs": [{
-            "evidence_id": evidence_id,
-            "span": span,
-            "supports": supports or text,
-        }],
+        "evidence_refs": [{"span_id": span_id}],
     }
 
 
@@ -105,9 +104,26 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
             self.orchestrator.ollama.generate.await_args.kwargs["json_schema"]["required"],
             ["key_findings", "disagreements", "unknowns"],
         )
+        ref_schema = self.orchestrator.ollama.generate.await_args.kwargs[
+            "json_schema"
+        ]["properties"]["key_findings"]["items"]["properties"]["evidence_refs"]["items"]
+        self.assertEqual(ref_schema["required"], ["span_id"])
+        self.assertEqual(ref_schema["properties"]["span_id"]["enum"], ["P1"])
+        self.assertEqual(
+            self.orchestrator.ollama.generate.await_args.kwargs["json_schema"]
+            ["properties"]["key_findings"]["items"]["properties"]
+            ["evidence_refs"]["maxItems"],
+            1,
+        )
         prompt = self.orchestrator.ollama.generate.await_args.args[0]
         self.assertIn('<UNTRUSTED_EVIDENCE id="E1">', prompt)
+        self.assertIn("[P1] Supported retained evidence.", prompt)
         self.assertIn("Document ID: doc-1", prompt)
+        verified = self.orchestrator.claim_verifier.verify.await_args.args[0][0]
+        self.assertEqual(
+            verified["evidence_refs"][0]["span"], "Supported retained evidence."
+        )
+        self.assertEqual(verified["evidence_refs"][0]["supports"], "Finding")
 
     async def test_relevant_evidence_after_long_prefix_is_used(self):
         sentinel = "LATE_EVIDENCE_SENTINEL: the intervention reduced errors by 37 percent."
@@ -193,7 +209,7 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         )
         self.orchestrator.ollama.generate.side_effect = [
             json.dumps({"key_findings": [claim(
-                "Unrepresented claim", evidence_id="E2"
+                "Unrepresented claim", span_id="P2"
             )], "disagreements": [], "unknowns": []}),
             json.dumps({"key_findings": [claim(
                 "Corrected claim"
@@ -251,18 +267,31 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("No relevant evidence was selected", report["report_markdown"])
         self.orchestrator.ollama.generate.assert_not_awaited()
 
-    async def test_invalid_disagreement_citation_is_omitted_after_correction(self):
+    async def test_link_dominated_reference_spans_are_not_offered_as_evidence(self):
+        self.qdrant.search_evidence.return_value[0]["text"] = (
+            "Useful clinical evidence. STARD-AI reference https://example.com/paper."
+        )
+
+        await generate_report(self.orchestrator, "job-1")
+
+        prompt = self.orchestrator.ollama.generate.await_args.args[0]
+        self.assertIn("[P1] Useful clinical evidence.", prompt)
+        self.assertNotIn("https://example.com/paper", prompt)
+
+    async def test_invalid_disagreement_citation_fails_after_correction(self):
         self.orchestrator.ollama.generate.return_value = (
             json.dumps({"key_findings": [], "disagreements": [claim(
-                "Conflict", evidence_id="E999"
+                "Conflict", span_id="P999"
             )], "unknowns": []})
         )
 
-        report = await generate_report(self.orchestrator, "job-1")
+        with self.assertRaisesRegex(RuntimeError, "no verified material claims"):
+            await generate_report(self.orchestrator, "job-1")
 
         self.assertEqual(self.orchestrator.ollama.generate.await_count, 2)
-        self.assertNotIn("Conflict [S999]", report["report_markdown"])
-        self.assertIn("1 generated material claim(s) were omitted", report["report_markdown"])
+        failed = self.store.get_report("job-1")
+        self.assertEqual(failed["status"], "failed")
+        self.assertIn("unknown_span_id=2", failed["error"])
 
     async def test_failed_retry_preserves_previous_report_and_attempt_count(self):
         first = await generate_report(self.orchestrator, "job-1")
@@ -277,21 +306,37 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(failed["report_markdown"], first["report_markdown"])
         self.assertEqual(failed["sources"], first["sources"])
 
-    async def test_uncited_material_claim_is_omitted_after_correction(self):
+    async def test_truncated_json_gets_one_correction_and_preserves_previous_report(self):
+        first = await generate_report(self.orchestrator, "job-1")
+        self.orchestrator.ollama.generate.reset_mock()
+        self.orchestrator.ollama.generate.side_effect = [
+            '{"key_findings":[', '{"key_findings":[',
+        ]
+
+        with self.assertRaisesRegex(ValueError, "did not return a JSON object"):
+            await generate_report(self.orchestrator, "job-1")
+
+        failed = self.store.get_report("job-1")
+        self.assertEqual(self.orchestrator.ollama.generate.await_count, 2)
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["attempts"], 2)
+        self.assertEqual(failed["report_markdown"], first["report_markdown"])
+        self.assertEqual(failed["sources"], first["sources"])
+
+    async def test_uncited_material_claim_fails_after_correction(self):
         self.orchestrator.ollama.generate.return_value = (
             '{"key_findings":["Unsupported"],"disagreements":[],"unknowns":[]}'
         )
-        report = await generate_report(self.orchestrator, "job-1")
-        self.assertEqual(report["status"], "completed")
-        self.assertNotIn("Unsupported", report["report_markdown"])
-        self.assertIn("omitted because", report["report_markdown"])
+        with self.assertRaisesRegex(RuntimeError, "no verified material claims"):
+            await generate_report(self.orchestrator, "job-1")
+        self.assertEqual(self.store.get_report("job-1")["status"], "failed")
         self.assertEqual(self.orchestrator.ollama.generate.await_count, 2)
         self.assertIn(
             "previous response was rejected",
             self.orchestrator.ollama.generate.await_args.args[0],
         )
 
-    async def test_correction_names_only_represented_citation_ids(self):
+    async def test_correction_names_only_represented_span_ids(self):
         for index in range(2, 5):
             self.store.save({
                 "document_id": f"doc-{index}",
@@ -316,9 +361,9 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         }]
 
         async def citation_sensitive_generation(prompt, **_kwargs):
-            if "Allowed evidence IDs: E1." in prompt:
+            if "Allowed span IDs: P1." in prompt:
                 return json.dumps({"key_findings": [claim(
-                    "Corrected finding", span="Supported authoritative evidence."
+                    "Corrected finding"
                 )], "disagreements": [], "unknowns": []})
             return json.dumps({
                 "key_findings": ["Uncited finding"],
@@ -335,14 +380,14 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
             call.args[0] for call in self.orchestrator.ollama.generate.await_args_list
         ]
         self.assertNotIn("[S1]", first_prompt)
-        self.assertIn("Allowed evidence IDs: E1.", corrected_prompt)
+        self.assertIn("Allowed span IDs: P1.", corrected_prompt)
         self.assertNotIn("[S1]", corrected_prompt)
 
     async def test_exact_spans_keep_only_resolved_claims(self):
         async def citation_format_limited_generation(_prompt, **_kwargs):
             return json.dumps({"key_findings": [
                 claim("Supported retained evidence."),
-                claim("Unresolvable claim.", span="not in the packed entry"),
+                claim("Unresolvable claim.", span_id="P999"),
             ], "disagreements": [], "unknowns": []})
 
         self.orchestrator.ollama.generate.side_effect = citation_format_limited_generation
@@ -353,26 +398,39 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Unresolvable claim.", report["report_markdown"])
         self.assertEqual(self.orchestrator.ollama.generate.await_count, 2)
 
-    async def test_supported_single_multi_span_and_multi_source_claims_remain(self):
-        self.add_second_source()
-        payload = {"key_findings": [
-            claim("Single-span claim"),
-            {"text": "Multi-span claim", "evidence_refs": [
-                {"evidence_id": "E1", "span": "Supported", "supports": "first part"},
-                {"evidence_id": "E1", "span": "retained evidence.", "supports": "second part"},
-            ]},
-            {"text": "Genuine multi-source claim", "evidence_refs": [
-                {"evidence_id": "E1", "span": "Supported retained evidence.", "supports": "first source"},
-                {"evidence_id": "E2", "span": "Independent second-source evidence.", "supports": "second source"},
-            ]},
-        ], "disagreements": [], "unknowns": []}
-        self.orchestrator.ollama.generate.return_value = json.dumps(payload)
+    async def test_multi_span_claim_is_rejected_by_the_single_span_contract(self):
+        invalid = {"text": "Multi-span claim", "evidence_refs": [
+            {"span_id": "P1"}, {"span_id": "P1"},
+        ]}
+        self.orchestrator.ollama.generate.side_effect = [json.dumps({
+            "key_findings": [invalid], "disagreements": [], "unknowns": [],
+        }), json.dumps({"key_findings": [], "disagreements": [], "unknowns": []})]
 
-        report = await generate_report(self.orchestrator, "job-1")
+        with self.assertRaisesRegex(RuntimeError, "no verified material claims"):
+            await generate_report(self.orchestrator, "job-1")
 
-        self.assertIn("Single-span claim [S1]", report["report_markdown"])
-        self.assertIn("Multi-span claim [S1]", report["report_markdown"])
-        self.assertIn("Genuine multi-source claim [S1][S2]", report["report_markdown"])
+    def test_span_id_validation_is_trimmed_and_reports_precise_reasons(self):
+        candidate = SimpleNamespace(metadata={"source_text": "Exact evidence."})
+        spans = {"P1": (candidate, "S1", "E1", "Exact evidence.")}
+        resolved = _resolve_claim(claim("Finding", span_id=" P1 "), spans, "finding")
+        self.assertEqual(resolved["evidence_refs"][0]["span"], "Exact evidence.")
+
+        cases = [
+            ({"text": "Finding", "evidence_refs": []}, "missing_evidence_refs"),
+            ({"text": "Finding", "evidence_refs": [
+                {"span_id": "P1"}, {"span_id": "P1"},
+            ]}, "invalid_evidence_ref_count"),
+            ({"text": "Finding", "evidence_refs": [{}]}, "malformed_evidence_ref"),
+            (claim("Finding", span_id=" "), "invalid_span_id"),
+            (claim("Finding", span_id="P999"), "unknown_span_id"),
+            ({"text": "Finding", "evidence_refs": [{"span_id": "P1", "extra": "x"}]},
+             "malformed_evidence_ref"),
+        ]
+        for item, reason in cases:
+            with self.subTest(reason=reason):
+                with self.assertRaises(ClaimValidationError) as raised:
+                    _resolve_claim(item, spans, "finding")
+                self.assertEqual(raised.exception.reason, reason)
 
     async def test_unsupported_regression_classes_are_rejected(self):
         texts = [
@@ -381,10 +439,11 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
             "Bibliography-only evidence", "Fragmented support", "Wrong entity",
             "Partial compound claim",
         ]
-        self.orchestrator.ollama.generate.return_value = json.dumps({
-            "key_findings": [claim(text) for text in texts],
+        first_batch = texts[:6]
+        self.orchestrator.ollama.generate.side_effect = [json.dumps({
+            "key_findings": [claim(text) for text in first_batch],
             "disagreements": [], "unknowns": [],
-        })
+        }), json.dumps({"key_findings": [], "disagreements": [], "unknowns": []})]
         reasons = {
             texts[0]: "neutral", texts[1]: "contradiction", texts[2]: "contradiction",
             texts[3]: "neutral", texts[4]: "neutral", texts[5]: "neutral",
@@ -394,25 +453,93 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
             reasons[value["text"]] for value in claims
         ]
 
-        report = await generate_report(self.orchestrator, "job-1")
+        with self.assertRaisesRegex(RuntimeError, "no verified material claims"):
+            await generate_report(self.orchestrator, "job-1")
 
-        for text in texts:
-            self.assertNotIn(text, report["report_markdown"])
-        self.assertIn("9 generated material claim(s) were omitted", report["report_markdown"])
+        failed = self.store.get_report("job-1")
+        self.assertEqual(failed["status"], "failed")
+        self.assertIn("contradiction=2, neutral=4", failed["error"])
+        self.assertIn(texts[0], failed["error"])
+
+    async def test_attempt_nine_rejects_all_claims_and_preserves_previous_report(self):
+        previous_markdown = "# Previous successful report\n\n- Verified finding [S1]"
+        previous_sources = [{"evidence_id": "S1", "document_id": "doc-1"}]
+        self.store.save_report({
+            "job_id": "job-1", "status": "completed", "topic": "topic",
+            "report_markdown": previous_markdown, "sources": previous_sources,
+            "error": None, "attempts": 8,
+            "created_at": "2026-08-09T00:00:00+00:00",
+            "updated_at": "2026-08-09T00:00:00+00:00",
+        })
+        first_claims = [f"Rejected first-generation claim {index}." for index in range(1, 7)]
+        replacements = ["Rejected replacement one.", "Rejected replacement two."]
+        self.orchestrator.ollama.generate.side_effect = [
+            json.dumps({
+                "key_findings": [claim(text) for text in first_claims],
+                "disagreements": [], "unknowns": [],
+            }),
+            json.dumps({
+                "key_findings": [claim(text) for text in replacements],
+                "disagreements": [], "unknowns": [],
+            }),
+        ]
+        self.orchestrator.claim_verifier.verify.side_effect = (
+            lambda claims: ["neutral"] * len(claims)
+        )
+        job = self.orchestrator.get_job.return_value
+        job["report_status"] = "completed"
+
+        async def update_job(_job_id, **fields):
+            job.update(fields)
+
+        self.orchestrator.generate_report = (
+            lambda job_id: generate_report(self.orchestrator, job_id)
+        )
+        self.orchestrator._update_job = AsyncMock(side_effect=update_job)
+        previous_orchestrator = main.orchestrator
+        main.orchestrator = self.orchestrator
+        self.addCleanup(setattr, main, "orchestrator", previous_orchestrator)
+
+        with self.assertRaises(HTTPException) as raised:
+            await main.retry_research_report("job-1")
+
+        failed = self.store.get_report("job-1")
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["attempts"], 9)
+        self.assertIn("neutral=8", failed["error"])
+        self.assertEqual(failed["error"].count("neutral:"), 8)
+        for text in first_claims + replacements:
+            self.assertIn(text, failed["error"])
+            self.assertNotIn(text, failed["report_markdown"])
+        self.assertEqual(failed["report_markdown"], previous_markdown)
+        self.assertEqual(failed["sources"], previous_sources)
+        self.assertEqual(job["report_status"], "failed")
+        self.assertEqual(self.orchestrator.ollama.generate.await_count, 2)
+        correction_schema = self.orchestrator.ollama.generate.await_args.kwargs["json_schema"]
+        self.assertEqual(
+            correction_schema["properties"]["key_findings"]["maxItems"], 2
+        )
 
     async def test_only_passing_claims_render_citations(self):
-        self.orchestrator.ollama.generate.return_value = json.dumps({
+        self.orchestrator.ollama.generate.side_effect = [json.dumps({
             "key_findings": [claim("Passing"), claim("Rejected")],
             "disagreements": [], "unknowns": [],
-        })
+        }), json.dumps({"key_findings": [], "disagreements": [], "unknowns": []})]
         self.orchestrator.claim_verifier.verify.side_effect = lambda claims: [
             None if value["text"] == "Passing" else "neutral" for value in claims
         ]
 
         report = await generate_report(self.orchestrator, "job-1")
 
+        self.assertEqual(report["status"], "completed")
         self.assertIn("Passing [S1]", report["report_markdown"])
         self.assertNotIn("Rejected [S1]", report["report_markdown"])
+        self.assertIn(
+            "1 generated material claim(s) failed verification and were excluded "
+            "(neutral=1).",
+            report["report_markdown"],
+        )
 
     async def test_correction_is_independently_reverified(self):
         self.orchestrator.ollama.generate.side_effect = [
@@ -426,6 +553,15 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.orchestrator.claim_verifier.verify.await_count, 2)
         self.assertNotIn("Rejected first", report["report_markdown"])
         self.assertIn("Corrected [S1]", report["report_markdown"])
+        corrected_call = self.orchestrator.ollama.generate.await_args
+        self.assertNotIn("Regenerate the complete object", corrected_call.args[0])
+        self.assertIn("Rewrite only the rejected claims", corrected_call.args[0])
+        self.assertEqual(
+            corrected_call.kwargs["json_schema"]["properties"]["unknowns"]["maxItems"], 0
+        )
+        self.assertEqual(
+            corrected_call.kwargs["json_schema"]["properties"]["key_findings"]["maxItems"], 2
+        )
 
     async def test_verifier_failure_preserves_previous_report_and_sources(self):
         first = await generate_report(self.orchestrator, "job-1")

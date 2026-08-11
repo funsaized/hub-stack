@@ -1411,3 +1411,351 @@ performed.
 
 Next action: owner review. A live report retry remains a separate explicit acceptance action
 and was not run.
+
+## 2026-08-11 - Phase 4 final controlled live acceptance gate
+
+Status: the one authorized final retry failed closed before claim verification. The prior
+attempt-4 Markdown and source registry were preserved, but the attempt-5 live gate did not
+complete. Phase 4 and the initial Phases 0-4 modernization remain incomplete. Phase 5 remains
+unstarted and unapproved.
+
+Pre-deployment gate:
+
+- `main` was clean. Local `HEAD` and configured upstream `origin/main` both resolved to
+  `fb6366fd1a17f4c3aa5daa24e668420d8ce12588`, subject
+  `feat(research): enforce claim support verification`.
+- The authoritative report was completed at attempt 4, created at
+  `2026-08-10T21:33:37.538362Z` and updated at `2026-08-11T07:44:15.903600Z`. Its complete
+  Markdown and six-entry source registry were captured before deployment.
+- Redis pending and processing queue lengths were both zero, with no queued IDs.
+- SQLite contained 67 documents, 67 job/source observations, six authoritative-job
+  observations, and 13 report rows. The job retained six sources and 870 chunks. Qdrant
+  collection `research_corpus__nomic_embed_text_768` was green with 24,465 points, 23,369
+  indexed vectors, and six segments.
+- SHA-256 values for `claim_support_final_v2.json`, `claim_support_final_seal_v2.json`, and
+  `claim_support_final_results_v2.json` were respectively
+  `1675d9ede5425dad37e6b8168886b91234b56896171882b704fb3bd6f9e490dc`,
+  `6c94272b771843325684bee9b6afb22e66c2c4fa42f849f88568fc3ee081f2f2`, and
+  `5c65544cf381335174e5ee4f00aca28941a3c5134568a4ecc0388a2353a129b5`.
+
+Deployment and health:
+
+- Only `docker compose up -d --build claim-verifier research-hub research-worker` was run.
+  The three rebuilt services reached running state with zero restarts; the verifier and API
+  were Docker healthy and the worker remained stable.
+- `/readyz?capability=research` returned `status=ok` with every required service true.
+  `/health/full` returned `status=ok`, `all_ok=true`, and `claim_verifier=true`.
+- Verifier `/health` returned `ready=true`, model
+  `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli`, and revision
+  `6f5cf0a2b59cabb106aca4c287eed12e357e90eb`. Runtime environment values were
+  `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`.
+- Redis pending and processing queues remained `0/0` after deployment; no ingestion was
+  triggered.
+
+Single authorized retry:
+
+- At `2026-08-11T11:12:23.6262358Z`, exactly one POST was issued to
+  `http://127.0.0.1:8000/research/4b8acd0f-088f-4b97-92fc-f52b69b8a3ee/report/retry`.
+  It returned HTTP 502 after 32.292422 host-observed seconds. No second POST was issued.
+- Logs for correlation ID `6c54e116-5782-416c-b817-5183a20110a2` show one topic query
+  embedding, one Qdrant search, and two Ollama generation calls: the initial request and the
+  existing single correction. Both returned HTTP 200 from Ollama but failed JSON decoding at
+  `line 57 column 6 (char 3647)`. Application synthesis recorded `JSONDecodeError`, outcome
+  `failed`, and 34.2734 seconds; the retry endpoint returned 502 after 34.2847 middleware
+  seconds.
+- The first generation used 2,057 prompt tokens and generated the full 1,024-token allowance.
+  The correction used 2,159 prompt tokens and again generated 1,024 tokens. Both used a
+  4,096-token slot and reported `truncated=0`. Exhausting the output allowance while emitting
+  malformed JSON is the observed operational failure; it is not evidence of context
+  truncation.
+- No claim reached exact-span resolution or NLI. The claim-verifier log contains health GETs
+  only and no verification request. Citation-only fallback did not occur.
+
+Persistence and displayed-claim audit:
+
+- The report advanced from attempt 4 to attempt 5, status `failed`, updated at
+  `2026-08-11T11:12:55.192164Z`, with the exact JSON error above. The research job itself
+  remains `completed`; its `report_status` is `failed` and its update time is
+  `2026-08-11T11:12:55.198191Z`.
+- The failure lifecycle preserved the complete attempt-4 Markdown and all six source objects.
+  Attempt 5 produced no new displayed finding or disagreement, so none passed the production
+  exact-span/NLI path.
+- The preserved attempt-4 findings remain: DECIDE-AI early-stage/live evaluation `[S5]`;
+  TRIPOD-AI with PROBAST-AI `[S6][S4]`; STARD-AI `[S6][S4]`; PRISMA-AI `[S6]`; and
+  CONSORT-AI planning, limitations, and generalizability `[S4]` are supported by the prior
+  represented evidence. The sixth preserved finding, stating that SPIRIT-AI works with
+  TRIPOD-ML before full clinical trials `[S6][S4]`, remains unsupported and was not accepted
+  by the new verifier path because that path was never reached.
+- All nine preserved inline citation references resolve to the same prior represented
+  `[S4]`, `[S5]`, and `[S6]` retained evidence and all six source-registry entries remain
+  unchanged. Resolution is provenance only; it does not repair the unsupported sixth claim.
+
+Mutation audit:
+
+- Post-failure Redis queues remained `0/0`. SQLite remained at 67 documents, 67 job/source
+  observations, six authoritative observations, and 13 report rows. The job remained at six
+  sources and 870 chunks. Qdrant remained green at 24,465 points, 23,369 indexed vectors,
+  and six segments.
+- Worker logs for the retry window were empty. API logs show only the one query embedding and
+  read-only Qdrant search before generation; no crawl, ingestion, source/retained-document
+  embedding, Qdrant upsert, document mutation, or evaluation-corpus mutation occurred.
+- All three sealed hashes exactly matched their pre-deployment values listed above.
+
+Verification:
+
+- All 16 Python files changed by `fb6366f` compiled in the rebuilt image, with bytecode
+  directed to a container temporary directory.
+- The deterministic retrieval benchmark passed with critical Recall@4 `1.0`, citation
+  validity `1.0`, duplicate rate `0.0`, unsupported-claim rejection count `4`, and
+  `passed=true`.
+- Focused verifier, synthesis, retrieval-benchmark, health, and API-contract coverage passed
+  40 tests in 1.638 seconds.
+- The exact required containerized suite against Compose Redis database 15 passed 98 tests in
+  2.341 seconds with no failures or skips; all four Redis worker integration tests ran.
+- Rebuilt-image `python -m pip check` reported `No broken requirements found.` Compose
+  configuration validation exited 0.
+- The bounded Hermes command was run exactly once and returned `ok=true`: its Compose build
+  passed and readiness returned HTTP 200 in 0.015 seconds.
+- The final CRLF-aware `git diff --check` passed. Final status contains only the reviewed
+  documentation changes named below; no commit or push was performed.
+
+Files changed:
+
+- `PRDs/research-rag-synthesis-modernization-progress.md`
+- `PRDs/research-claim-support-verification.md`
+- `docs/CURRENT_STATE.md`
+
+Next action: stop. The live gate failed, so do not retry again, tune the frozen model or
+threshold, rerun the sealed evaluation, mark Phase 4 complete, update the planning PRD to an
+execution-complete state, or begin Phase 5 without new explicit owner approval.
+
+## 2026-08-11 - Phase 4 structured-output boundary fix and single acceptance retry
+
+Status: the authorized boundary fix is deployed and correctly identified output-limit
+termination, but the single attempt-6 retry still exhausted its larger bounded completion.
+Phase 4 remains incomplete. Per the retry gate, no second retry, further tuning, or Phase 5
+design spike was performed.
+
+Root cause and reviewed fix:
+
+- `OllamaClient.generate()` previously discarded `done_reason` and `truncated`, returning only
+  `response`. Both attempt-5 generations ended with `done_reason=length`, so synthesis tried to
+  parse partial output and surfaced an ambiguous `JSONDecodeError`.
+- The shared client now raises `OllamaOutputLimitError` when `done_reason=length` and rejects
+  `truncated=true` before parsing. Strict JSON parsing and the one-correction ceiling are
+  unchanged; no repair parser or dependency was added.
+- `ANSWER_RESERVE_TOKENS` increased from 1,024 to 1,536 for the API and worker. Against the
+  previous worst observed 2,159-token prompt, the bound was 3,695 tokens, below the live
+  4,096-token slot. The retry itself used 1,846 prompt plus 1,536 completion tokens, 3,382
+  total, and Ollama reported `truncated=0`.
+
+Deterministic verification:
+
+- The new tests first failed on the absent output-limit exception, then passed after the client
+  change. They cover `done_reason=length`, prompt truncation, successful structured output
+  longer than the old allowance, malformed/truncated JSON, exactly one correction, and
+  previous-report/source preservation.
+- Focused generation and synthesis coverage passed 31 tests. The required verifier, synthesis,
+  retrieval-benchmark, health, and API-contract slice passed 54 tests in 1.788 seconds.
+- The deterministic benchmark passed with critical Recall@4 `1.0`, citation validity `1.0`,
+  duplicate rate `0.0`, unsupported-claim rejection count `4`, and `passed=true`.
+- The complete containerized suite against Redis database 15 passed 102 tests in 2.503 seconds,
+  including all four worker integration tests. Changed Python compiled, Compose validation
+  exited 0, and rebuilt-image `pip check` reported no broken requirements.
+- The single bounded Hermes invocation produced no JSON and timed out after 204 seconds. Its
+  verified orphan process was stopped; it was not rerun. The three authorized services it
+  recreated remained healthy/stable.
+
+Pre-deployment and deployment gate:
+
+- `HEAD` remained `fb6366fd1a17f4c3aa5daa24e668420d8ce12588`. Git contained only the
+  three preserved documentation edits plus the reviewed fix; no commit or push was made.
+- Attempt 5 was still failed with the exact prior JSON error. Its preserved Markdown and six
+  sources hashed to `cd92f77159fc3369bd51b95e5658f98f0c1b5534e2d078b2d45367c7828decb7`
+  and `d6748d76ba27f783c709d54d73e617273e43a04399d7b42901a37f588d00aefe`.
+- Redis queues were empty. SQLite was unchanged at 67 documents, 67 job/source observations,
+  six authoritative observations, 13 reports, and 870 authoritative chunks. Qdrant was green
+  at 24,465 points, 23,369 indexed vectors, and six segments.
+- Only `claim-verifier`, `research-hub`, and `research-worker` were rebuilt/recreated. Research
+  readiness and full health were `ok`; verifier health returned the frozen model/revision and
+  offline flags remained enabled. API and worker both exposed the 1,536-token reserve.
+
+Single retry and final audit:
+
+- Exactly one POST began at `2026-08-11T11:39:02.8712367Z`. It returned HTTP 409 after
+  28.068818 seconds. Correlation ID `77bc03bc-820c-4d57-b551-b9da1c4b8066` shows one topic
+  embedding, one read-only Qdrant search, and one generation call; no correction call occurred.
+- Ollama evaluated 1,846 prompt tokens, generated the full 1,536-token allowance, and stopped
+  with `done_reason=length`, `truncated=0`. The client raised the explicit output-limit error
+  before JSON parsing, exact-span resolution, or NLI. Verifier logs contain no retry-window
+  POST. No malformed-output recovery or citation-only fallback ran.
+- The report advanced from attempt 5 to 6, status `failed`, updated at
+  `2026-08-11T11:39:29.877137Z`, with error `Ollama generation stopped at the 1536-token output
+  limit (done_reason=length)`. The attempt-4 Markdown and all six sources remained byte-identical
+  at the two hashes above.
+- Attempt 6 produced no displayed claim. The preserved attempt-4 artifact still shows the five
+  previously audited supported findings and the unsupported SPIRIT-AI/TRIPOD-ML-before-full-
+  clinical-trials composite `[S6][S4]`; it was not accepted by exact-span/NLI verification.
+  All nine preserved inline references resolve to the prior `[S4]`, `[S5]`, and `[S6]`
+  represented evidence, but provenance does not make the unsupported composite valid.
+- Redis, SQLite, Qdrant, queues, report count, retained documents, job/source observations,
+  and all three sealed hashes remained unchanged. Worker logs show no crawl, ingestion,
+  retained-document embedding, upsert, or document mutation.
+
+Gate disposition: stop. Phase 4 failed because attempt 6 did not complete and retained no newly
+verified material finding. Phase 5 remains unstarted despite its conditional authorization.
+Any further output-shaping change or live retry requires new explicit authorization.
+
+## 2026-08-11 - Phase 4 8,192-token context retry
+
+Status: the authorized configuration-only context increase removed the generation-length
+failure, and attempt 7 completed without malformed output. Phase 4 still failed because exact-
+span resolution rejected every generated material claim, leaving no supported finding. No
+additional retry or Phase 5 work was performed.
+
+Change and verification:
+
+- Ollama now uses its native `OLLAMA_CONTEXT_LENGTH=8192` setting. The existing application
+  packing limit remains 8,192, and the API/worker completion allowance increased from 1,536 to
+  2,048 tokens. No generation, parser, retrieval, correction, verifier, or public-contract code
+  changed for this retry.
+- Focused generation/synthesis tests passed 31/31. The complete containerized Redis-15 suite
+  passed 102 tests in 2.522 seconds. Changed Python compiled, Compose validation passed, and
+  rebuilt-image `pip check` reported no broken requirements.
+- Before deployment, attempt 6 and its preserved report/source hashes were unchanged; Redis
+  queues were empty; SQLite remained at 67 documents, 67 observations, six authoritative
+  observations, 13 reports, and 870 authoritative chunks; Qdrant remained green at 24,465
+  points, 23,369 indexed vectors, and six segments; all sealed hashes matched.
+- Only Ollama, Research Hub, and Research Worker were recreated. The verifier was not rebuilt
+  or changed. All four services were healthy/stable with zero restarts, research/full readiness
+  were `ok`, and runtime environments exposed context `8192` and completion `2048`.
+
+Single authorized retry:
+
+- Exactly one POST began at `2026-08-11T11:53:22.6160267Z` and returned HTTP 200 after
+  93.015494 seconds. The report advanced from attempt 6 to attempt 7, status `completed`, update
+  time `2026-08-11T11:54:56.392326Z`, and no persisted error.
+- Correlation ID `dcef6ba5-0703-41c7-b0d1-4b802e5676a6` shows one topic embedding, one read-only
+  Qdrant search, and two bounded generations. Ollama used an 8,192-token slot: the first call
+  used 1,779 prompt and 872 generated tokens; the correction used 1,865 prompt and 1,073
+  generated tokens. Both reported `truncated=0` and stopped before the 2,048-token allowance.
+- Retrieval considered 40 candidates, selected five chunks, and represented three of six
+  sources. The first generated object triggered the one allowed correction on an unresolved
+  exact span. After correction, seven material claims still had unresolved spans. Metrics
+  recorded eight `unresolved_span` rejections total, one correction request, and
+  `correction=no_claims`.
+- The production verifier endpoint received the final request, but exact-span filtering left
+  zero resolved claims to evaluate; consequently no entailment/neutral/contradiction outcome
+  was recorded. Seven generated material claims were omitted. No citation-only fallback or
+  permissive recovery ran.
+
+Displayed artifact and mutation audit:
+
+- The completed report displays no material finding and no disagreement. It contains two
+  uncited unknowns plus the explicit seven-claim omission notice. The known unsupported
+  SPIRIT-AI/TRIPOD-ML-before-full-clinical-trials composite is absent.
+- There are no inline finding/disagreement citations to audit. The unchanged six-entry source
+  registry remains provenance only and hashes to
+  `d6748d76ba27f783c709d54d73e617273e43a04399d7b42901a37f588d00aefe`.
+  The new report Markdown hashes to
+  `e6b2b9dd30597a0d6b86419d7f5267f2ce0fefc4321de346899bc1e064c7e256`.
+- Redis queues remained empty. SQLite and Qdrant retained every pre-retry count above. Worker
+  logs contained no ingestion activity. No crawl, retained-document embedding, Qdrant upsert,
+  document/evaluation mutation, or sealed-hash change occurred.
+
+Gate disposition: Phase 4 remains incomplete because acceptance requires at least one supported
+material finding. Phase 5 remains unstarted. The next root issue is exact-span generation
+fidelity, not retrieval recall, output length, context capacity, or NLI threshold behavior.
+
+## 2026-08-11 - Deterministic exact-span selector deployment
+
+Status: the attempt-7 RCA was fixed and deployed to Research Hub and Research Worker. No live
+report retry was issued; attempt 7 and its source registry remain byte-preserved. Phase 4 is
+ready for review and separate authorization of exactly one new acceptance retry.
+
+Implementation:
+
+- Packed evidence is divided at prompt time into exact sentence/line spans labeled `P1`, `P2`,
+  and so on. The private generation schema now requires an enumerated `span_id` plus the atomic
+  `supports` proposition. Resolution maps the selected ID back to the original sanitized exact
+  substring before the unchanged production NLI request.
+- Span IDs are trimmed before lookup. Fail-closed rejection reasons are now separated into
+  `malformed_claim`, `missing_evidence_refs`, `malformed_evidence_ref`, `invalid_span_id`,
+  `unknown_span_id`, `empty_supports`, and `invalid_span_mapping`; permissive or fuzzy matching
+  was not added.
+- The one-correction ceiling, previous-report preservation, frozen verifier model/revision and
+  threshold, public API schemas, retrieval behavior, and citation rendering are unchanged.
+
+Verification and deployment:
+
+- Focused synthesis tests passed 19/19. The complete containerized Redis-15 suite passed
+  103 tests. Every changed Python file compiled, the deterministic retrieval benchmark passed
+  with critical Recall@4 and citation validity both `1.0`, Compose validation passed, and the
+  rebuilt image reported no broken requirements.
+- A read-only authoritative prompt-pack reconstruction considered 40 candidates and packed
+  four chunks across the same three relevant sources with 41 exact span choices. It performed
+  no generation and no data mutation.
+- Before deployment, queues were empty; attempt 7 remained completed with six sources and
+  hashes `e6b2b9dd30597a0d6b86419d7f5267f2ce0fefc4321de346899bc1e064c7e256`
+  and `d6748d76ba27f783c709d54d73e617273e43a04399d7b42901a37f588d00aefe`;
+  SQLite remained at 67 documents, 67 observations, six authoritative observations, and
+  13 reports; Qdrant remained green at 24,465 points, 23,369 indexed vectors, and six segments;
+  all three sealed hashes matched.
+- Only Research Hub and Research Worker were recreated. Both started with zero restarts;
+  Research Hub is healthy, the worker is stable, and research/full readiness is `ok`. The
+  running claim verifier was not recreated or changed. The single bounded Hermes verification
+  returned `ok=true`; its build phase rebuilt unchanged images but did not recreate the live
+  verifier.
+
+Gate disposition: implementation and deployment are complete. Phase 4 remains incomplete until
+one separately authorized live retry completes with at least one supported material finding.
+Phase 5 remains unstarted.
+
+## 2026-08-11 - Attempt-8 controlled acceptance retry
+
+Status: the single authorized retry failed closed after substantive exact-span and NLI
+verification. No second request was issued. Phase 4 remains incomplete and Phase 5 remains
+unstarted.
+
+Pre-retry gate:
+
+- Attempt 7 was completed with six sources. Its Markdown and source-registry hashes remained
+  `e6b2b9dd30597a0d6b86419d7f5267f2ce0fefc4321de346899bc1e064c7e256` and
+  `d6748d76ba27f783c709d54d73e617273e43a04399d7b42901a37f588d00aefe`.
+- Redis pending and processing queues were empty. Research readiness was `ok` with the frozen
+  verifier healthy. SQLite remained at 67 documents, 67 observations, six authoritative
+  observations, and 13 reports. Qdrant was green at 24,465 points, 23,369 indexed vectors,
+  and six segments. All three sealed hashes matched.
+
+Single retry:
+
+- Exactly one POST began at `2026-08-11T14:41:14.7302407Z`. It returned HTTP 409 after
+  41.9029 host-observed seconds. Correlation ID
+  `4d86d392-b5ea-429d-9cc4-efae6d13d908` recorded one topic embedding, one read-only Qdrant
+  search, two bounded generations, and one production verifier request.
+- Retrieval considered 40 candidates and packed four chunks across three of six sources.
+- The first generation used an 8,192-token slot with 1,751 prompt tokens and 860 completion
+  tokens, stopped normally, and reported `truncated=0`. Deterministic span IDs resolved eight
+  material claims, all of which reached production NLI. The frozen verifier rejected seven as
+  neutral and one as low-confidence, so the existing single correction was requested.
+- The correction used 1,977 prompt tokens and emitted the full 2,048-token allowance with
+  `truncated=0`. The client detected `done_reason=length` and raised
+  `OllamaOutputLimitError`; no partial JSON was parsed or persisted. The retry route mapped
+  that fail-closed runtime error to HTTP 409.
+
+Artifact and mutation audit:
+
+- The report advanced from attempt 7 to attempt 8, status `failed`, updated at
+  `2026-08-11T14:41:57.210321Z`, with error
+  `Ollama generation stopped at the 2048-token output limit (done_reason=length)`.
+- Attempt-7 Markdown and all six source objects remained byte-identical at the hashes above.
+  Consequently attempt 8 added no displayed finding, disagreement, or citation. The preserved
+  artifact still shows no supported material finding; its six `[S#]` references occur only in
+  the source registry, and the unsupported SPIRIT-AI/TRIPOD-ML composite remains absent.
+- Redis queues remained empty. SQLite and Qdrant counts remained unchanged. Worker logs show
+  no crawl, ingestion, embedding, or upsert activity. All sealed hashes remained unchanged.
+
+Gate disposition: stop. The span-ID root fix succeeded in delivering all first-pass claims to
+the frozen verifier, but none passed NLI and the one correction hit its output boundary. Phase
+4 fails the required supported-finding gate. Per authorization, no retry, tuning, or Phase 5
+work follows this failure.

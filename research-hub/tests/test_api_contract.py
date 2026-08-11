@@ -1,8 +1,10 @@
 """Deterministic API request/response contract coverage for HUB-011."""
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -83,6 +85,25 @@ class QueryConstructionTests(unittest.IsolatedAsyncioTestCase):
             query="valid question", tags_filter=["tag"]
         ))
         qdrant.search.assert_called_once_with([1.0], 5, {"tags": ["tag"]})
+
+
+class RetryLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_runtime_failure_updates_job_projection_before_409(self):
+        previous = main.orchestrator
+        subject = SimpleNamespace(
+            generate_report=AsyncMock(side_effect=RuntimeError("output limit")),
+            _update_job=AsyncMock(),
+        )
+        main.orchestrator = subject
+        self.addCleanup(setattr, main, "orchestrator", previous)
+
+        with self.assertRaises(HTTPException) as raised:
+            await main.retry_research_report("job-1")
+
+        self.assertEqual(raised.exception.status_code, 409)
+        subject._update_job.assert_awaited_once_with(
+            "job-1", report_status="failed"
+        )
 
 
 class DocumentContractTests(unittest.TestCase):

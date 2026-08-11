@@ -5,7 +5,7 @@ import unittest
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.clients import OllamaClient, QdrantClient
+from app.clients import OllamaClient, OllamaOutputLimitError, QdrantClient
 from app.config import load_config
 from app.openai_compat import sse_chunk
 from app.models import ChatCompletionRequest, ChatMessage, QueryChunk
@@ -161,7 +161,10 @@ class ProtocolTests(unittest.TestCase):
 class ConfigurationTests(unittest.TestCase):
     def test_generation_model_default_matches_deployment_default(self):
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(load_config().llm_model, "qwen3.5:9b")
+            config = load_config()
+
+        self.assertEqual(config.llm_model, "qwen3.5:9b")
+        self.assertEqual(config.answer_reserve_tokens, 2048)
 
 
 class OllamaThinkingModeTests(unittest.IsolatedAsyncioTestCase):
@@ -178,6 +181,62 @@ class OllamaThinkingModeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer, "ANSWER=42")
         payload = client._client.post.await_args.kwargs["json"]
         self.assertIs(payload["think"], False)
+
+    async def test_generate_reports_output_limit_instead_of_returning_partial_json(self):
+        response = MagicMock()
+        response.json.return_value = {
+            "response": '{"key_findings":[',
+            "done_reason": "length",
+            "eval_count": 1024,
+            "truncated": False,
+        }
+        client = object.__new__(OllamaClient)
+        client.base_url = "http://ollama:11434"
+        client.model = "qwen3.5:9b"
+        client._client = MagicMock(post=AsyncMock(return_value=response))
+
+        with self.assertRaisesRegex(
+            OllamaOutputLimitError, "1024-token output limit.*done_reason=length"
+        ) as raised:
+            await client.generate("Return JSON", max_tokens=1024, json_mode=True)
+        self.assertEqual(raised.exception.diagnostic["completion_tokens"], 1024)
+        self.assertEqual(raised.exception.diagnostic["response_preview"], '{"key_findings":[')
+        self.assertEqual(len(raised.exception.diagnostic["response_sha256"]), 64)
+
+    async def test_generate_rejects_prompt_truncation(self):
+        response = MagicMock()
+        response.json.return_value = {
+            "response": "{}", "done_reason": "stop", "truncated": True,
+        }
+        client = object.__new__(OllamaClient)
+        client.base_url = "http://ollama:11434"
+        client.model = "qwen3.5:9b"
+        client._client = MagicMock(post=AsyncMock(return_value=response))
+
+        with self.assertRaisesRegex(RuntimeError, "truncated the input prompt"):
+            await client.generate("Return JSON", json_mode=True)
+
+    async def test_generate_returns_longer_completed_structured_output(self):
+        body = '{"value":"' + "x" * 5000 + '"}'
+        response = MagicMock()
+        response.json.return_value = {
+            "response": body,
+            "done_reason": "stop",
+            "eval_count": 1300,
+            "truncated": False,
+        }
+        client = object.__new__(OllamaClient)
+        client.base_url = "http://ollama:11434"
+        client.model = "qwen3.5:9b"
+        client._client = MagicMock(post=AsyncMock(return_value=response))
+
+        self.assertEqual(
+            await client.generate("Return JSON", max_tokens=2048, json_mode=True), body
+        )
+        self.assertEqual(
+            client._client.post.await_args.kwargs["json"]["options"]["num_predict"],
+            2048,
+        )
 
     async def test_chat_stream_disables_thinking_so_content_is_streamed(self):
         response = MagicMock()

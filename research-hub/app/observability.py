@@ -58,7 +58,8 @@ class JsonFormatter(logging.Formatter):
                     "retry_count", "failure_category", "outcome",
                     "retrieval_candidates", "selected_chunks", "sources_available",
                     "sources_represented", "rejected_uncited_claims",
-                    "rejected_invalid_citations", "no_supported_findings"):
+                    "rejected_invalid_citations", "no_supported_findings",
+                    "diagnostic"):
             value = getattr(record, key, None)
             if value is not None:
                 data[key] = value

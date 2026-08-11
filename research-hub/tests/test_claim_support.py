@@ -58,7 +58,14 @@ def material(text="claim", refs=None):
 class LocalVerifierTests(unittest.TestCase):
     def test_entailment_threshold_and_no_truncation(self):
         subject = verifier([[[.98, .01, .01]] * 3])
-        self.assertEqual(subject.verify([material()]), [{"accepted": True, "reason": None}])
+        result = subject.verify([material()])[0]
+        self.assertTrue(result["accepted"])
+        self.assertIsNone(result["reason"])
+        self.assertEqual(
+            [check["role"] for check in result["checks"]],
+            ["span_support", "claim_support", "evidence_union"],
+        )
+        self.assertTrue(all(check["entailment"] == .98 for check in result["checks"]))
         self.assertTrue(all(call.get("truncation") is False for call in subject.tokenizer.calls))
 
         subject = verifier([[[.96, .03, .01]] * 3])
