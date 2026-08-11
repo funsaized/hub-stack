@@ -291,6 +291,29 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Allowed citations: [S4].", corrected_prompt)
         self.assertNotIn("[S1]", corrected_prompt)
 
+    async def test_structured_source_ids_keep_only_represented_claims(self):
+        async def citation_format_limited_generation(_prompt, **kwargs):
+            item_schema = kwargs["json_schema"]["properties"]["key_findings"]["items"]
+            if item_schema.get("type") == "object":
+                return (
+                    '{"key_findings":['
+                    '{"text":"Supported retained evidence.","source_ids":["S1"]},'
+                    '{"text":"Unresolvable claim.","source_ids":["S2"]}],'
+                    '"disagreements":[],"unknowns":[]}'
+                )
+            return (
+                '{"key_findings":["Supported retained evidence.",'
+                '"Unresolvable claim."],"disagreements":[],"unknowns":[]}'
+            )
+
+        self.orchestrator.ollama.generate.side_effect = citation_format_limited_generation
+
+        report = await generate_report(self.orchestrator, "job-1")
+
+        self.assertIn("Supported retained evidence. [S1]", report["report_markdown"])
+        self.assertNotIn("Unresolvable claim.", report["report_markdown"])
+        self.assertEqual(self.orchestrator.ollama.generate.await_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

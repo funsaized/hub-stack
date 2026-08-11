@@ -970,3 +970,157 @@ Files changed:
 
 Next action: stop at the Phase 4 review gate. Do not retry this or any other report again
 without new explicit approval, and do not begin Phase 5.
+
+## 2026-08-11 - Phase 4 authoritative generation RCA and structured citation fix
+
+Status: the deepest deterministic failure boundary available without another model call was
+reproduced and corrected with one focused test. No report was retried, the authoritative
+report remains at attempt 3, Phase 4 remains unaccepted, and Phase 5 was not started.
+
+Approval and baseline:
+
+- The non-persisting diagnostic generation approval field was not completed and was treated
+  as `NO`. The separate additional authoritative report retry approval was explicitly `NO`.
+  No Ollama generation probe, `generate_report`, report retry endpoint, ingestion, crawl,
+  retained-document embedding, or Qdrant upsert was invoked.
+- The entire PRD and this progress log were read before repository work. No repository-local
+  `AGENTS.md` was present.
+- `git status --short --branch` reported `## main...origin/main` with no changes. The branch
+  was `main`; local `HEAD` and `origin/main` both resolved to
+  `dc55ccdb12f79a9d21555035e9bad8f86d913547`, whose subject was
+  `docs(research): record corrected authoritative retry`.
+- The Hermes-managed Git executable was used because `git` was not on the sandboxed
+  PowerShell `PATH`. Correction commit
+  `551f672638ace9ea3076e17d53db10d6a52fa174` remained in the recorded history.
+- Before edits, `docker compose run --rm --no-deps -v "${PWD}\research-hub:/app"
+  research-hub python -m tests.benchmark_report_retrieval` exited 0 with critical Recall@4
+  `1.0`, citation validity `1.0`, and `passed: true`.
+- Before edits, the paired benchmark/synthesis command ran 13 tests in 2.058 seconds with
+  no failures or skips.
+- The running API and worker were healthy. Local, API, and worker `synthesis.py` bytes all
+  had SHA-256 `0b3ab7189b8b49eda5ebff7c9538ae5b7d9dc41286cae4d2e446f5d53869b4ea`,
+  confirming the previously corrected synthesis code was deployed before diagnosis.
+
+Complete deterministic trace and failure classification:
+
+- Every production caller was inspected. `OllamaClient.generate()` is used by report
+  synthesis, `/rag`, and conversational query rewriting. Shared report generation is called
+  only by the post-ingestion synthesis step and `POST /research/{job_id}/report/retry`.
+  `_parse_json()`, `_validate_claims()`, and `_retain_cited_claims()` are used only by the
+  shared synthesis path; the deterministic benchmark calls the two validators directly.
+- The report flow is: stable SQLite source registry; one topic embedding; retained-identity
+  Qdrant search; deterministic selection, sanitization, and complete-entry packing; stable
+  represented-source calculation; `/api/generate` with `think: false`, `num_predict: 1024`,
+  and a JSON schema in `format`; greedy outer-object extraction and JSON decoding; strict
+  material-claim citation validation; one correction; then final per-claim retention or
+  omission and normal report persistence.
+- Malformed JSON or parser failure is ruled out for the observed retry with high confidence.
+  An initial parse failure would not produce an `uncited` validation counter, and a final
+  parse failure would be raised again rather than return HTTP 200 and persist four per-claim
+  omissions. Both observed calls therefore reached parsed list fields.
+- Missing literal citation syntax is the demonstrated proximate failure with high confidence.
+  The first call stopped at the first material string with no `[S#]`; the second call parsed
+  again and all four material strings were individually classified `uncited`. Zero strings
+  contained a validator-recognized but unrepresented source ID. The unavailable raw strings
+  mean alternate malformed citation notation and semantic support of those exact hidden
+  claims cannot be distinguished and are not asserted.
+- Truncation remains ruled out: the recorded calls used 1,982/2,043 prompt tokens and
+  192/243 generated tokens in a 4,096-token slot with `truncated = 0`.
+- A read-only Qdrant inspection retrieved the immediate neighbors of the exact six selected
+  chunks without embedding or generation. It confirmed mixed context quality: DECIDE-AI
+  chunks 45-47 and CONSORT-AI chunks 94-98 contain coherent reportable statements, while
+  systematic-review chunk 110 is bibliography-only and several overlap prefixes begin
+  mid-word. Context fragmentation is therefore a real moderate-confidence quality risk, but
+  it cannot deterministically explain the complete absence of literal citations and was not
+  changed.
+- The previously recorded synthetic probe showed the deployed Qwen/Ollama combination could
+  ignore a schema citation pattern with `think: false`. No new probe repeated it. Current
+  Ollama documentation describes JSON schema through `format` and recommends also grounding
+  the prompt with the schema
+  (https://docs.ollama.com/capabilities/structured-outputs); upstream PR #15901, merged July
+  7, 2026, addresses the known `think=false` format-constraint defect for qwen3.5
+  (https://github.com/ollama/ollama/pull/15901). The authoritative raw bodies are still
+  unavailable, so no claim is made that this upstream defect alone caused the live result.
+
+TDD and smallest production correction:
+
+- `research-hub/tests/test_synthesis.py` adds
+  `test_structured_source_ids_keep_only_represented_claims`. It deterministically models the
+  demonstrated boundary: without a requested structured representation, a supportable claim
+  and an unresolvable claim both arrive without inline citation syntax. When requested, they
+  provide explicit `source_ids` instead.
+- Before the production edit, the focused test failed because the report contained no
+  supported finding and omitted both uncited strings. After the edit, the same command passed
+  in 0.058 seconds.
+- `research-hub/app/synthesis.py` now requests internal material-claim objects containing
+  `text` plus a non-empty `source_ids` array whose schema enum contains only represented
+  evidence IDs. Application validation independently requires exact represented IDs, rejects
+  citation markup embedded in structured text, deduplicates explicit IDs, and only then
+  renders `[S#]` in the unchanged public Markdown report.
+- The application never infers or appends an unselected ID: the ID must be explicitly emitted
+  by the model and pass the represented-evidence allowlist. Legacy string claims remain
+  accepted only when they already contain strict valid inline citations. Unsupported,
+  missing-ID, malformed-ID, and unrepresented-ID claims still enter the single bounded
+  correction and are omitted if unresolved.
+- The regression includes one valid explicit `S1` claim and one unrepresented explicit `S2`
+  claim. After the correction attempt, only the validated `[S1]` claim is rendered and the
+  `S2` claim remains omitted. This covers validated retention, unresolvable omission, and the
+  unchanged two-call ceiling in one test.
+- No dependency, public schema, retrieval selection, sanitization, packing, persistence,
+  retry, ingestion, corpus, `/query`, `/rag`, or OpenAI-compatible behavior was changed.
+
+Verification and mutation audit:
+
+- The final focused benchmark/synthesis command ran 14 tests in 2.043 seconds with no
+  failures or skips.
+- The post-fix deterministic benchmark remained byte-stable: critical Recall@4 `1.0`,
+  citation validity `1.0`, unsupported-claim rejection count `4`, and `passed: true`.
+- `docker compose build research-hub research-worker` exited 0 and rebuilt both images.
+- `docker compose run --rm --no-deps
+  -e TEST_REDIS_URL=redis://hub-redis:6379/15
+  -v "${PWD}\research-hub:/app" research-hub
+  python -m unittest discover -s tests -v` ran 81 tests in 2.787 seconds with no failures or
+  skips. All four Compose Redis worker integration tests ran and passed.
+- `docker compose run --rm --no-deps research-hub python -m pip check` reported
+  `No broken requirements found.`
+- The exact required command
+  `hermes verify --json --port 8000 --timeout 120 --ready-timeout 60` was run twice through
+  the Hermes-managed executable. Each outer process timed out after 184 seconds without
+  emitting JSON. The first attempt exposed four stale verifier trees from the prior Phase 4
+  sessions plus its own orphan; only those verified dead-parent/stale trees were terminated.
+  A clean second attempt reproduced the same silent timeout and its exact three-process
+  orphan tree was terminated. No third identical attempt was made. This is the sole deferred
+  release-tool check; the running API remained healthy on port 8000.
+- The failed Hermes attempts recreated the local Compose API and worker from the rebuilt
+  images. Both remained healthy/running and their `synthesis.py` SHA-256 matched local bytes
+  at `524fdb6c908a6a24be780be3ceb8b5508c043de68cc933fe180ef32637eeb254`.
+- A read-only report GET confirmed authoritative attempt count `3` and unchanged completion
+  timestamp `2026-08-11T07:13:54.050475Z`. SQLite remained at 67 documents, 67 job/source
+  associations, and six authoritative associations. Qdrant remained at 24,465 points and
+  23,369 indexed vectors. No report or corpus mutation occurred.
+- `git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff
+  --check` exited 0 with no whitespace errors and only the expected LF-to-CRLF warnings.
+
+Acceptance, confidence, and remaining risks:
+
+- The deterministic regression failed for the diagnosed citation-format boundary before the
+  production edit and passed afterward. Strict citation provenance, one correction, omission,
+  sanitization, complete-entry packing, persistence, public contracts, and corpus isolation
+  remain covered by the focused and complete suites.
+- RCA confidence is high for the proximate failure (parseable material strings lacked literal
+  validator-recognized citations), moderate that explicit structured IDs will improve the
+  deployed model's behavior, and intentionally unresolved for semantic support of the four
+  hidden final claims because raw responses were not retained and no diagnostic call was
+  approved.
+- Phase 4 is not accepted. A mocked deterministic regression cannot replace the live gate,
+  and Hermes verification is currently deferred by its repeatable wrapper timeout.
+- No additional authoritative retry is approved. After review of this deterministic fix,
+  the owner must separately and explicitly approve exactly one future retry. Acceptance still
+  requires supported cited findings from at least two supplied retained sources and exact
+  selected-evidence resolution for every displayed material citation.
+- The configured 8,192-token versus allocated 4,096-token context mismatch and fragmented or
+  bibliography-heavy selected chunks remain risks. Dense retrieval still found specialized
+  evidence, so Phase 5 remains unapproved and unjustified.
+
+Next action: review this deterministic fix and the deferred Hermes result at the Phase 4 gate.
+Do not retry any report and do not begin Phase 5 without separate explicit owner approval.
