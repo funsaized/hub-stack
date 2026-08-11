@@ -1759,3 +1759,178 @@ Gate disposition: stop. The span-ID root fix succeeded in delivering all first-p
 the frozen verifier, but none passed NLI and the one correction hit its output boundary. Phase
 4 fails the required supported-finding gate. Per authorization, no retry, tuning, or Phase 5
 work follows this failure.
+
+## 2026-08-11 - Attempt-10 root cause and the span-first Phase 4 iteration
+
+Status: attempt 10 was diagnosed from its retained diagnostics rather than repeated. The
+root causes were span construction and generation order, not retrieval, not the NLI
+threshold, and not the sealed model. Span selection, the production verifier aggregation
+rule, and the generation contract were changed. No live report retry was issued. Attempt
+10 and its preserved artifacts remain byte-identical. Phase 5 remains unstarted.
+
+### Attempt-10 diagnostics
+
+The two `claim_verification_diagnostic` records for correlation
+`0b3374cf-1a8c-4929-8538-694d51049f37` carry the per-check role, label and entailment
+score for all ten rejected claims. Reading them replaced the standing hypothesis that the
+rejections were borderline verifier conservatism.
+
+Rejection causes, by claim:
+
+- Unresolved demonstrative subject (2 claims). `P18` began "This extension is aimed
+  particularly at investigators ...". The referent, CONSORT-AI, is in a neighbouring
+  chunk, so the premise never named it. The two claims that resolved the referent scored
+  `0.031933` and `0.445999` entailment. The verifier was correct.
+- Added qualifier (2 claims). The DECIDE-AI claims appended "of AI-based decision support
+  systems", which `P2` does not state. Entailment `0.031179` and `0.023001`.
+- Wrong span selected (2 claims). A SPIRIT-AI claim cited a span about CONSORT-AI
+  discussion sections; a "CONSORT-AI must be updated" claim cited `P43` about
+  generalizability while the sentence that actually states it, `P44`, was available and
+  unused. Entailment `0.004967` and `0.003609`.
+- Materially wrong claim (2 claims). TRIPOD-AI was described as both reporting guideline
+  and risk-of-bias tool; the evidence assigns the latter to PROBAST-AI. Correct rejection
+  that must stay rejected.
+- Invented hedge (1 claim). "STARD-AI is not explicitly restricted solely to ..." is not
+  in the evidence.
+- Genuine near-miss (1 claim). The STARD-AI diagnostic-accuracy claim scored `0.957583`
+  on the union check against the frozen `0.97` threshold.
+
+### The deployed gate was not the sealed gate
+
+`benchmark_claim_support.py:78` builds exactly one NLI pair per sealed case: premise
+`"Evidence 1: <text> ..."` against the claim. The sealed final result - zero of 325
+unsupported accepted, 79 of 80 supported retained - measured that pair alone.
+
+`LocalClaimVerifier.verify` ran three checks per single-evidence claim and rejected if any
+fell below `0.97`:
+
+- `span_support`: the span against `supports`.
+- `claim_support`: `text` against `supports`. Because synthesis always sets `supports`
+  equal to the claim text, this compared a string with itself. Across all ten attempt-10
+  claims it scored `0.987841`-`0.995008` and never rejected anything.
+- `evidence_union`: the sealed pair.
+
+So production ran `min(three draws) >= 0.97` where the seal certified `one draw >= 0.97`.
+The measured supported-retention rate did not describe the running gate.
+
+This did not cause the attempt-10 failures. `span_support` and `evidence_union` agreed on
+the outcome for all ten claims, and no claim passed the union check while failing another.
+Aligning the gate changes zero attempt-10 outcomes. It was corrected because running an
+uncalibrated operating point while citing sealed numbers for it is a governance defect,
+and because two thirds of verifier inference was redundant.
+
+### Changes
+
+Verifier (`app/claim_support.py`):
+
+- `supports` must now restate the claim verbatim; the assertion is checked as string
+  equality, which is strictly stronger than the NLI self-check it replaces and costs no
+  inference. A mismatch is `malformed_claim`.
+- Single-evidence claims are judged by `evidence_union` alone - exactly the sealed pair,
+  premise format unchanged, now covered by a test that asserts the literal
+  `"Evidence 1: <span>"` premise reaches the model.
+- Multi-evidence claims keep the per-span conjunct so an irrelevant padding ref cannot
+  ride along on a union that entails the claim. Extra conjuncts can only reject more, so
+  the sealed zero-unsupported-acceptance guarantee still holds a fortiori.
+- Model, revision, threshold, batch size, token budget, offline loading and fail-closed
+  behaviour are unchanged. All three sealed hashes are unchanged.
+
+Span construction (`app/spans.py`, new):
+
+- Abbreviation-aware sentence bounds, so "S.", "et al." and journal abbreviations no
+  longer end a sentence and no longer produce one-token spans.
+- Non-propositional spans are dropped before generation: fewer than eight words, no
+  terminal punctuation, lowercase or non-letter initial character, headings, table rows,
+  reference debris, year citations, page ranges, links, and over-budget length.
+- A sentence whose subject is an unresolved demonstrative is merged with its predecessor
+  into a contiguous window. Merged windows remain exact substrings, so the resolution
+  invariant is unchanged. A chunk-initial demonstrative is dropped, because resolving it
+  would mean mixing unsanitized neighbouring text into the premise.
+
+On the six real attempt-10 chunks this reduces 46 offered spans to 8, and the 8 survivors
+are exactly the self-contained statements. The whole reference-list chunk and the chunk
+carrying `P18` now contribute nothing.
+
+Generation (`app/synthesis.py`):
+
+- Span-first. One bounded 256-token call drafts one claim from one exact span, replacing
+  one 2048-token call that drafted six claims and then chose spans for them. Wrong-span
+  pairing is structurally impossible, and the output-limit failure class that ended
+  attempts 5, 6 and 8 is gone.
+- The contract is deletion-compression: use only wording present in the span, delete and
+  repair grammar, never add a fact, subject, qualifier, quantity, comparison, population
+  or scope.
+- A malformed or declined draft is counted and skipped instead of failing the report. An
+  empty claim is treated as a decline whichever way the model set `usable`, which was
+  observed live.
+- Exactly one correction round, bounded to at most four rejected spans, each redrafted
+  from the same span with its rejection reason and independently reverified.
+- Findings and disagreements beyond the display limits are disclosed rather than silently
+  truncated. The model no longer receives a span-ID enum, so the correction-schema enum
+  that constrained `key_findings` but not `disagreements` no longer exists.
+
+Known limitation, disclosed in every report: cross-source disagreement is not assessed,
+because each displayed claim must be entailed by one exact span from one source. Tracked
+as HUB-032.
+
+### Offline drafting harness
+
+`tests/benchmark_claim_drafting.py` replays frozen evidence instead of spending a live
+retry per design iteration.
+
+- Offline mode is deterministic and needs no service: junk rejection, exact-substring
+  fidelity, source coverage, critical-span recall, premise budget.
+- Live mode adds real generation and real verification for N samples and reports verified
+  yield. It talks only to Ollama `/api/generate` and the verifier `/verify`; it never
+  reads or writes Redis, SQLite, Qdrant, a report or the corpus, and never issues a retry.
+
+`tests/fixtures/claim_drafting_cases.json` freezes the four documents and six chunks that
+attempt 10 actually packed.
+
+### Measurements
+
+Offline gate:
+
+- candidate sentences 31, propositional spans 8, junk rejection `0.741935`
+- exact substring rate `1.0`, critical span recall `1.0`, over-budget spans 0
+
+Live, five samples over the frozen attempt-10 evidence, eight spans per run:
+
+- verified claims per run: 4, 8, 8, 6, 6
+- runs producing at least one verified claim: 5 of 5
+- verifier rejections across all runs: one `neutral`, one `low_confidence`
+- remaining non-verified outcomes are model declines
+
+Attempt 10 produced zero verified claims from ten drafts. The same evidence and the same
+frozen verifier now produce four to eight. The gate is not rubber-stamping: two runs still
+had claims rejected, which is the expected behaviour when a draft drifts from compression.
+
+Automated gate:
+
+- 118 tests passed, zero skipped, Redis integration against DB 15
+- retrieval benchmark: critical Recall@4 `1.0`, citation validity `1.0`, duplicate rate
+  `0.0`, unsupported fixture claims rejected 4
+- `pip check` clean, `docker compose config` clean
+- sealed corpus, seal and result hashes unchanged at
+  `1675d9ede5425dad37e6b8168886b91234b56896171882b704fb3bd6f9e490dc`,
+  `6c94272b771843325684bee9b6afb22e66c2c4fa42f849f88568fc3ee081f2f2`,
+  `5c65544cf381335174e5ee4f00aca28941a3c5134568a4ecc0388a2353a129b5`
+
+### Deployment and mutation audit
+
+- The research-hub image was rebuilt. The Dockerfile now bakes the pinned verifier
+  snapshot above the app copy, so editing application code no longer invalidates the
+  model-download layer.
+- Ollama, the claim verifier and Redis were started to run the harness and the integration
+  tests. The claim verifier was recreated because its aggregation rule changed; its model,
+  revision and threshold did not.
+- No crawl, ingestion, embedding, upsert, corpus mutation, report write, report retry or
+  sealed-evaluation mutation occurred. Attempt 10 remains at attempts 10, status failed,
+  with Markdown `107bdacbdc1b6501564b9f2f6f9ffe38c5e9f3fb86b27784d011fb7aea7a7ffb` and
+  sources `d6748d76ba27f783c709d54d73e617273e43a04399d7b42901a37f588d00aefe`.
+- The previously uncommitted deployed source was committed before any new change, closing
+  the reproducibility gap the handoff flagged.
+
+Gate disposition: Phase 4 implementation is complete and measured offline. Phase 4
+acceptance still requires one separately authorized live retry producing at least one
+verified cited material finding in a persisted report. Phase 5 remains unstarted.

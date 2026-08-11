@@ -838,6 +838,76 @@ persisted, and no second retry was issued. Attempt 8 is failed while the attempt
 source registry remain byte-preserved. Corpus, queue, SQLite, Qdrant, worker, and sealed-hash
 audits remained clean. Phase 4 therefore remains incomplete and Phase 5 remains unstarted.
 
+## Gate alignment with the sealed evaluation (2026-08-11)
+
+The sealed final evaluation and the deployed gate were not the same rule. This section
+records the discrepancy, the correction, and why the seal survives it.
+
+### What the seal measured
+
+`tests/benchmark_claim_support.py:78` constructs one NLI pair per sealed case:
+
+    premise    = "Evidence 1: <text> Evidence 2: <text> ..."
+    hypothesis = <claim>
+
+Every number in the frozen run above - zero of 325 unsupported accepted, 79 of 80
+supported retained, the `0.97` argmax-entailment operating point - describes that single
+pair.
+
+### What production ran
+
+`LocalClaimVerifier.verify` emitted three pairs for a single-evidence claim and rejected
+the claim if any one of them fell below `0.97`:
+
+| role | premise | hypothesis | sealed |
+| --- | --- | --- | --- |
+| `span_support` | `span` | `supports` | no |
+| `claim_support` | `text` | `supports` | no |
+| `evidence_union` | `"Evidence 1: <span>"` | `text` | yes |
+
+Synthesis always sets `supports` to the claim text, so `claim_support` compared a string
+with itself. On all ten attempt-10 claims it returned entailment between `0.987841` and
+`0.995008` and rejected nothing. `span_support` is `evidence_union` without the
+`"Evidence 1: "` prefix - the same proposition drawn a second time.
+
+The deployed acceptance rule was therefore `min(three draws) >= 0.97` against a seal that
+certified `one draw >= 0.97`. The retention rate the project quoted for the running gate
+had never been measured on it.
+
+### Correction
+
+- `supports` must restate the claim verbatim. This is now a string-equality assertion,
+  which is strictly stronger than the NLI self-check it replaces and costs no inference.
+  A mismatch fails closed as `malformed_claim`.
+- A single-evidence claim is judged by `evidence_union` alone: the sealed pair, with the
+  sealed premise format. `test_sealed_union_premise_format_is_preserved` asserts the
+  literal `"Evidence 1: <span>"` premise reaches the model, so the linkage between the
+  benchmark and the production path is now enforced by a test rather than by inspection.
+- A multi-evidence claim keeps a per-span conjunct alongside the union, so an irrelevant
+  padding ref cannot ride along on a union that entails the claim.
+
+### Why the seal still holds
+
+Only entailment is ever accepted, and adding conjuncts can only reject more. The
+multi-evidence path is therefore strictly stricter than the sealed rule, and the
+single-evidence path is the sealed rule exactly. Nothing the sealed final set rejected can
+now be accepted, so the zero-unsupported-acceptance result carries over without a new
+blind set.
+
+The model, revision, threshold, batch size, 512-token no-truncation budget, offline
+loading and fail-closed reasons are unchanged. The sealed corpus, seal and result hashes
+are unchanged at
+`1675d9ede5425dad37e6b8168886b91234b56896171882b704fb3bd6f9e490dc`,
+`6c94272b771843325684bee9b6afb22e66c2c4fa42f849f88568fc3ee081f2f2` and
+`5c65544cf381335174e5ee4f00aca28941a3c5134568a4ecc0388a2353a129b5`.
+
+### Standing constraint
+
+Changing the model, the revision, the threshold, or the `evidence_union` premise format
+still invalidates the seal and still requires a new untouched final set. Removing the
+multi-evidence per-span conjunct would also require one, because that path would then
+become more permissive than what was measured. See HUB-032.
+
 ## Sources
 
 [1] https://aclanthology.org/2020.emnlp-main.609 — Fact or Fiction: Verifying Scientific Claims

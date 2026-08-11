@@ -1,4 +1,11 @@
-"""Pinned, fail-closed claim-support verification."""
+"""Pinned, fail-closed claim-support verification.
+
+The sealed final evaluation measured one NLI pair per case: premise
+``"Evidence 1: <span> ..."`` against the claim, at argmax entailment >= 0.97.
+`verify` reproduces exactly that pair for single-evidence claims so the sealed
+result describes the deployed gate. Changing the model, revision, threshold or
+the union premise format invalidates the seal and requires a new blind set.
+"""
 
 from __future__ import annotations
 
@@ -139,26 +146,39 @@ class LocalClaimVerifier:
             ):
                 rejected[owner] = "malformed_claim"
                 continue
+            hypothesis = text.strip()
             spans: list[str] = []
             for ref in refs:
                 if not isinstance(ref, dict):
                     rejected[owner] = "malformed_claim"
                     break
                 span, supports = ref.get("span"), ref.get("supports")
-                if not isinstance(span, str) or not span.strip() or not isinstance(supports, str) or not supports.strip():
+                # `supports` must restate the claim verbatim. Asserting equality is strictly
+                # stronger than the NLI self-check it replaces, and costs no inference.
+                if (
+                    not isinstance(span, str) or not span.strip()
+                    or not isinstance(supports, str) or supports.strip() != hypothesis
+                ):
                     rejected[owner] = "malformed_claim"
                     break
                 spans.append(span.strip())
-                pairs.extend(((span.strip(), supports.strip()), (text.strip(), supports.strip())))
-                owners.extend((owner, owner))
-                roles.extend(("span_support", "claim_support"))
-            if owner not in rejected:
-                premise = " ".join(
-                    f"Evidence {index}: {span}" for index, span in enumerate(spans, 1)
-                )
-                pairs.append((premise, text.strip()))
-                owners.append(owner)
-                roles.append("evidence_union")
+            if owner in rejected:
+                continue
+            # Only `evidence_union` was measured by the sealed final evaluation, so a
+            # single-evidence claim is judged by exactly the sealed rule. Multi-evidence
+            # claims additionally hold against each span alone, which can only reject
+            # more, so the sealed zero-unsupported-acceptance guarantee still holds.
+            if len(spans) > 1:
+                for span in spans:
+                    pairs.append((span, hypothesis))
+                    owners.append(owner)
+                    roles.append("span_support")
+            premise = " ".join(
+                f"Evidence {index}: {span}" for index, span in enumerate(spans, 1)
+            )
+            pairs.append((premise, hypothesis))
+            owners.append(owner)
+            roles.append("evidence_union")
 
         runnable: list[tuple[int, str, str]] = []
         checks: dict[int, dict[str, Any]] = {}

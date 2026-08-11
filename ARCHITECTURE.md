@@ -233,6 +233,20 @@ API and worker. Ollama remains the only GPU consumer.
 - **Fail-closed claim support**: research/all readiness includes the verifier. Timeout,
   unavailability, revision mismatch, malformed output, unresolved spans, non-entailment, and
   inputs over 512 tokens reject persistence; no input is truncated.
+- **Span-first report claims**: report synthesis drafts one claim per exact evidence
+  sentence rather than drafting claims and then choosing evidence for them, so a claim can
+  never be paired with a span that does not support it. Claims are compressions of their
+  span - deletion only, never addition - which is what keeps them inside the entailment
+  gate. `app/spans.py` decides what counts as a self-contained sentence; every offered span
+  stays an exact substring of its sanitized chunk.
+- **Verification matches its evaluation**: a single-evidence claim is judged by exactly the
+  premise/hypothesis pair the sealed final set measured. Any change to the model, revision,
+  threshold, or union premise format requires a new blind final set. See
+  `PRDs/research-claim-support-verification.md`.
+- **Design iterations are measured offline**: `tests/benchmark_claim_drafting.py` replays
+  frozen evidence through generation and verification without touching Redis, SQLite,
+  Qdrant, the corpus, or the report lifecycle, so a claim-drafting change is evaluated
+  before a live retry is spent on it.
 
 ## Boundaries
 

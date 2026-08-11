@@ -13,11 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Bake the immutable verifier snapshot into the image; runtime is offline-only.
+# Kept above the app copy so editing application code cannot invalidate the
+# pinned-revision download layer.
+RUN python -c "from transformers import AutoModelForSequenceClassification, AutoTokenizer; m='MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli'; r='6f5cf0a2b59cabb106aca4c287eed12e357e90eb'; AutoTokenizer.from_pretrained(m, revision=r); AutoModelForSequenceClassification.from_pretrained(m, revision=r)"
+
 # Copy app
 COPY app/ ./app/
-
-# Bake the immutable verifier snapshot into the image; runtime is offline-only.
-RUN python -c "from transformers import AutoModelForSequenceClassification, AutoTokenizer; m='MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli'; r='6f5cf0a2b59cabb106aca4c287eed12e357e90eb'; AutoTokenizer.from_pretrained(m, revision=r); AutoModelForSequenceClassification.from_pretrained(m, revision=r)"
 
 ENV HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \

@@ -73,6 +73,10 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-004 — Restrict Dozzle's Docker control-plane access
 
+**Status:** ✅ Done — Dozzle sits behind the optional `logs` profile, publishes only
+`127.0.0.1:8888`, and sets `DOZZLE_ENABLE_ACTIONS: "false"`. The read-only socket proxy
+remains unimplemented and is not required at the current single-user exposure.
+
 **Problem:** Dozzle has the Docker socket mounted and container actions enabled while its port is published broadly.
 
 **Work:**
@@ -344,6 +348,12 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-017 — Replace dense-only retrieval with hybrid retrieval
 
+**Status:** 🚫 Blocked by design — deliberately not started. Attempts 8-10 confirmed
+dense retrieval already surfaces the relevant authoritative passages; every claim
+failure was in generation or span construction, not recall. Starting hybrid retrieval
+before Phase 4 closes would be scope drift. Revisit only if a measured recall gap
+appears in the retrieval benchmark.
+
 **Problem:** `QueryEngine` is described as hybrid but currently performs dense-vector search only.
 
 **Work:**
@@ -382,6 +392,13 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 - Boundary cases have automated tests.
 
 ### HUB-019 — Validate citations and ground generated claims
+
+**Status:** 🟡 Implemented, live acceptance outstanding — structured evidence references,
+exact-span binding, and the frozen offline NLI verifier are deployed and covered by
+tests. The generation contract is now span-first deletion-compression, and the offline
+drafting benchmark measures 4-8 verified claims per run on the frozen attempt-10
+evidence. What remains is one authorized live report retry producing at least one
+verified cited finding in a persisted report.
 
 **Problem:** The prompt requests citations, but the system does not verify that citations exist or support the associated claims.
 
@@ -460,6 +477,10 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-023 — Wire Open WebUI to the research corpus
 
+**Status:** ✅ Done — Open WebUI reaches the corpus through the OpenAI-compatible
+`research-corpus` route in `research-hub/app/openai_compat.py`, and remains optional
+in Compose.
+
 **Problem:** Open WebUI currently chats with Ollama but does not use research-hub, making it adjacent infrastructure rather than part of the research experience.
 
 **Work:**
@@ -475,6 +496,53 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 - Corpus-backed responses display the same sources as the research-hub API.
 - Plain chat and RAG chat remain distinguishable.
 - Integration survives an Open WebUI restart without manual reconfiguration, or setup is fully scripted.
+
+---
+
+### HUB-031 — Reconcile the Redis report-status projection with SQLite
+
+**Status:** 🔴 Open — known non-atomic write, not currently a live defect.
+
+**Problem:** SQLite is authoritative for persisted reports, but `report_status` is
+projected separately into the Redis job record. The two writes are not atomic, so a
+crash between them can leave a stale projection. Normal and failure paths are tested;
+crash reconciliation is not.
+
+**Work:**
+
+- Derive `report_status` from the persisted SQLite report when a job is read, or
+  reconcile the projection from the report on read.
+- Cover the crash window with a test that persists a report and drops the projection.
+
+**Acceptance criteria:**
+
+- A job read after a lost projection write reports the persisted report status.
+- No code path can display a report status that contradicts SQLite.
+
+### HUB-032 — Support verified cross-source disagreement
+
+**Status:** 🔴 Open — deliberate current limitation, disclosed in every report.
+
+**Problem:** Every displayed claim must be entailed by one exact span from one source,
+so a disagreement that only exists *between* two sources cannot be verified and is
+never generated. The verifier accepts up to eight refs and computes a union premise,
+but it also requires each span to entail the claim alone, which forbids genuine
+multi-evidence claims. Reports state this limitation explicitly rather than implying
+that no disagreements exist.
+
+**Work:**
+
+- Distinguish padding refs from genuine joint evidence, so a union-entailed claim is
+  not rejected merely because no single span entails it alone.
+- Any change to the multi-ref rule needs a fresh blind final set; the sealed final
+  measured the union premise only and cannot be reused for tuning.
+- Draft cross-source disagreement claims from a bounded pair of spans.
+
+**Acceptance criteria:**
+
+- A claim entailed only by two spans read together can be displayed with both citations.
+- A claim with one relevant and one irrelevant ref is still rejected.
+- The report stops disclaiming cross-source disagreement only once it is assessed.
 
 ---
 
@@ -611,7 +679,7 @@ HUB-012, HUB-013, HUB-014, HUB-015, HUB-016
 
 ### Milestone 4 — Better answers
 
-HUB-017, HUB-018, HUB-019, HUB-020, HUB-021, HUB-022, HUB-023
+HUB-017, HUB-018, HUB-019, HUB-020, HUB-021, HUB-022, HUB-023, HUB-031, HUB-032
 
 **Exit condition:** retrieval quality is evaluated, prompts and citations are hardened, and each research job produces a useful evidence-backed artifact.
 

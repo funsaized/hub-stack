@@ -215,3 +215,52 @@ The correction exhausted the 2,048-token output allowance and failed explicitly 
 Markdown and six-source registry remain byte-preserved. Queues, SQLite, Qdrant, worker activity,
 and sealed hashes remain clean. Phase 4 still lacks a supported material finding, and no retry,
 tuning, or Phase 5 work is authorized after this failure.
+
+## Span-first claim drafting and gate alignment
+
+Attempts 9 and 10 both produced zero verified claims. Attempt 10 was diagnosed from its
+retained per-check diagnostics rather than repeated, and the causes were span
+construction and generation order rather than retrieval or the NLI operating point.
+
+Deployed changes:
+
+- Span selection moved into `research-hub/app/spans.py`. Sentence bounds are
+  abbreviation-aware, non-propositional spans are dropped before generation, and a
+  sentence whose subject is an unresolved demonstrative is merged with its predecessor
+  into a contiguous window or dropped when it is chunk-initial. Every offered span is
+  still an exact substring of its sanitized chunk. On the six real attempt-10 chunks this
+  cuts 46 offered spans to 8, removing the reference-list debris and the unresolvable
+  demonstrative that caused four of the ten rejections.
+- Generation is span-first. One bounded 256-token call drafts one claim from one exact
+  span under a deletion-compression contract, replacing one 2,048-token call that drafted
+  six claims and then chose spans for them. Wrong-span pairing is structurally impossible
+  and the output-limit failure class that ended attempts 5, 6 and 8 is gone. A malformed
+  or declined draft is isolated to its span instead of failing the report.
+- The production verifier now judges a single-evidence claim with exactly the pair the
+  sealed final evaluation measured. The redundant self-check was replaced by a string
+  equality assertion and the duplicate span check was removed for single-evidence claims.
+  Multi-evidence claims keep the per-span conjunct. Model, revision and threshold are
+  unchanged, and all three sealed hashes still match.
+- The research-hub Dockerfile bakes the pinned verifier snapshot above the app copy, so
+  editing application code no longer invalidates the model-download layer.
+
+Measured on the frozen attempt-10 evidence with the deterministic offline benchmark and
+five live samples: junk rejection `0.741935`, exact substring rate `1.0`, critical span
+recall `1.0`, and four to eight verified claims per run with at least one verified claim
+in 5 of 5 runs. Two runs still had claims rejected by the verifier, so the gate is not
+rubber-stamping. Attempt 10 produced zero verified claims from ten drafts on the same
+evidence.
+
+The automated gate is green: 118 tests with zero skips including Redis integration against
+DB 15, critical Recall@4 `1.0`, citation validity `1.0`, duplicate rate `0.0`, clean
+`pip check` and clean Compose validation.
+
+No live report retry was issued. Attempt 10 remains at attempts 10, status `failed`, with
+its Markdown and source registry byte-preserved. Redis, SQLite, Qdrant and the corpus were
+not mutated. Phase 4 acceptance still requires one separately authorized live retry that
+produces at least one verified cited material finding in a persisted report. Phase 5
+remains unstarted.
+
+Known limitation now disclosed in every report: cross-source disagreement is not assessed,
+because each displayed claim must be entailed by one exact span from one source
+(HUB-032).

@@ -41,6 +41,17 @@ class FakeTokenizer:
         return {"input_ids": [[0]] * len(premises)}
 
 
+class RecordingTokenizer(FakeTokenizer):
+    def __init__(self):
+        super().__init__()
+        self.batches = []
+
+    def __call__(self, premises, hypotheses, **kwargs):
+        if not isinstance(premises, str):
+            self.batches.append((premises, hypotheses))
+        return super().__call__(premises, hypotheses, **kwargs)
+
+
 def verifier(probabilities):
     subject = LocalClaimVerifier()
     subject.tokenizer = FakeTokenizer()
@@ -56,23 +67,28 @@ def material(text="claim", refs=None):
 
 
 class LocalVerifierTests(unittest.TestCase):
-    def test_entailment_threshold_and_no_truncation(self):
-        subject = verifier([[[.98, .01, .01]] * 3])
+    def test_single_evidence_claim_uses_only_the_sealed_check(self):
+        subject = verifier([[[.98, .01, .01]]])
         result = subject.verify([material()])[0]
         self.assertTrue(result["accepted"])
         self.assertIsNone(result["reason"])
-        self.assertEqual(
-            [check["role"] for check in result["checks"]],
-            ["span_support", "claim_support", "evidence_union"],
-        )
-        self.assertTrue(all(check["entailment"] == .98 for check in result["checks"]))
+        self.assertEqual([check["role"] for check in result["checks"]], ["evidence_union"])
+        self.assertEqual(result["checks"][0]["entailment"], .98)
         self.assertTrue(all(call.get("truncation") is False for call in subject.tokenizer.calls))
 
-        subject = verifier([[[.96, .03, .01]] * 3])
+        subject = verifier([[[.96, .03, .01]]])
         self.assertEqual(subject.verify([material()])[0]["reason"], "low_confidence")
 
+    def test_sealed_union_premise_format_is_preserved(self):
+        subject = verifier([[[.98, .01, .01]]])
+        subject.tokenizer = RecordingTokenizer()
+        subject.verify([material(text="claim", refs=[
+            {"evidence_id": "E1", "span": "evidence", "supports": "claim"},
+        ])])
+        self.assertIn((["Evidence 1: evidence"], ["claim"]), subject.tokenizer.batches)
+
     def test_neutral_and_over_budget_fail_closed(self):
-        subject = verifier([[[.01, .98, .01]] * 3])
+        subject = verifier([[[.01, .98, .01]]])
         self.assertEqual(subject.verify([material()])[0]["reason"], "neutral")
 
         subject = verifier([[[.98, .01, .01]]])
@@ -84,17 +100,29 @@ class LocalVerifierTests(unittest.TestCase):
         )
 
     def test_unrelated_padding_fails_a_required_link(self):
-        scores = [[.98, .01, .01]] * 5
-        scores[2] = [.01, .98, .01]
+        scores = [[.98, .01, .01]] * 3
+        scores[1] = [.01, .98, .01]
         subject = verifier([scores])
         result = subject.verify([material(refs=[
             {"evidence_id": "E1", "span": "needed", "supports": "claim"},
-            {"evidence_id": "E2", "span": "padding", "supports": "unrelated"},
+            {"evidence_id": "E2", "span": "padding", "supports": "claim"},
         ])])
         self.assertEqual(result[0]["reason"], "neutral")
+        self.assertEqual(
+            [check["role"] for check in result[0]["checks"]],
+            ["span_support", "span_support", "evidence_union"],
+        )
+
+    def test_supports_must_restate_the_claim_verbatim(self):
+        subject = verifier([[[.98, .01, .01]]])
+        result = subject.verify([material(refs=[
+            {"evidence_id": "E1", "span": "evidence", "supports": "a different proposition"},
+        ])])
+        self.assertEqual(result[0]["reason"], "malformed_claim")
+        self.assertEqual(result[0]["checks"], [])
 
     def test_malformed_scores_fail_closed(self):
-        subject = verifier([[[.5, .5]] * 3])
+        subject = verifier([[[.5, .5]]])
         with self.assertRaisesRegex(RuntimeError, "malformed"):
             subject.verify([material()])
 
