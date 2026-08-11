@@ -360,7 +360,15 @@ class ResearchOrchestrator:
         data = await self._redis.get(self._job_key(job_id))
         if not data:
             return None
-        return json.loads(data)
+        job = json.loads(data)
+        # SQLite is authoritative for persisted reports. The Redis projection
+        # is a separate later write, so a crash between the two can strand a
+        # stale value; deriving from the persisted row here means no reader
+        # can see a report status that contradicts SQLite.
+        report_status = await asyncio.to_thread(self.documents.report_status, job_id)
+        if report_status is not None:
+            job["report_status"] = report_status
+        return job
 
     async def list_jobs(self, limit: int = 50) -> list[dict]:
         if not self._redis:

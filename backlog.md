@@ -576,7 +576,12 @@ in Compose.
 
 ### HUB-031 — Reconcile the Redis report-status projection with SQLite
 
-**Status:** 🔴 Open — known non-atomic write, not currently a live defect.
+**Status:** ✅ Done — `report_status` is now derived from the persisted SQLite
+report at job-read time (`ResearchOrchestrator.get_job` overrides the Redis
+projection with `DocumentStore.report_status`), so a crash between the SQLite
+and Redis writes can no longer surface a contradicting status. Crash-window
+covered by `tests/test_report_status_reconciliation.py` for completed, failed,
+and stale-contradicting projections.
 
 **Problem:** SQLite is authoritative for persisted reports, but `report_status` is
 projected separately into the Redis job record. The two writes are not atomic, so a
@@ -752,9 +757,9 @@ HUB-012 ✅, HUB-013 ✅, HUB-014 ✅, HUB-015 ✅, HUB-016 ✅
 
 **Exit condition:** builds are reproducible, recovery is tested, contracts are enforced, and failures are diagnosable.
 
-### Milestone 4 — Better answers (open: HUB-031, HUB-032)
+### Milestone 4 — Better answers (open: HUB-032)
 
-HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HUB-023 ✅, HUB-031 🔴, HUB-032 🔴
+HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HUB-023 ✅, HUB-031 ✅, HUB-032 🔴
 
 **Exit condition:** retrieval quality is evaluated, prompts and citations are hardened, and each research job produces a useful evidence-backed artifact.
 
@@ -768,7 +773,7 @@ HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none 
 2. **HUB-006** — ✅ done 2026-08-11 (see status above).
 3. **HUB-013** — ✅ done 2026-08-11 (see status above; `docs/BACKUP.md`).
 4. **HUB-012** — ✅ done 2026-08-11 (see status above).
-5. **HUB-031** — small correctness fix with a clear test plan.
+5. **HUB-031** — ✅ done 2026-08-11 (see status above).
 6. **HUB-032** — the only remaining quality item; requires a new blind evaluation set before any verifier-rule change, so schedule it deliberately, not incidentally.
 
 **Exit condition:** each expansion is justified by measured usage or a documented limitation, not by architectural possibility.
