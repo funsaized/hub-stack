@@ -233,6 +233,13 @@ class DocumentStore:
             ).fetchall()
         return [self._decode(row) for row in rows]
 
+    def report_status(self, job_id: str) -> str | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT status FROM research_reports WHERE job_id = ?", (job_id,)
+            ).fetchone()
+        return row["status"] if row else None
+
     def get_report(self, job_id: str) -> dict | None:
         with self._connect() as db:
             row = db.execute(

@@ -422,3 +422,27 @@ Deployed 2026-08-11; Milestones 1 and 3 are now complete:
 - Post-deploy: 175 tests green in the lockfile-built image, `/readyz`
   all-true, sealed attempt-11 artifacts byte-identical at 67 documents /
   13 reports.
+
+## Report-status projection reconciled with SQLite (HUB-031)
+
+Deployed 2026-08-11. Milestone 4's known non-atomic write is closed:
+
+- SQLite remains authoritative for persisted reports; the Redis job record's
+  `report_status` field is still projected after synthesis, but every job
+  read now derives the status from the persisted report row
+  (`ResearchOrchestrator.get_job` overrides the projection with
+  `DocumentStore.report_status`), so a crash between the SQLite and Redis
+  writes can no longer surface a status that contradicts SQLite. Jobs with
+  no persisted report pass through unchanged.
+- Crash-window coverage in `tests/test_report_status_reconciliation.py`
+  (real Redis DB 15 + temp document store): lost projection after a
+  completed report, lost projection after a failed report, a stale
+  projection contradicting a later persisted status, and the no-report
+  passthrough — each asserted at both the orchestrator read and the public
+  API projection.
+- Post-deploy: 179 tests green in-container against the rebuilt image;
+  deployed `research.py` and `document_store.py` SHA-256-identical to the
+  tree in hub, worker and verifier containers; `/readyz` all-true with
+  capability `all`; attempt-11 report and source registry byte-identical
+  (`068d60b2…`, `d6748d76…`) at 67 documents / 13 reports; all three sealed
+  claim-support hashes unchanged; Redis queues empty.
