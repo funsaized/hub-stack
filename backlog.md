@@ -55,7 +55,17 @@ This backlog turns the architectural review of the 0.1.0 MVP into executable wor
 
 ### HUB-003 — Remove hardcoded credentials and insecure defaults
 
-**Problem:** SearXNG, Crawl4AI, Open WebUI, and Postgres ship with hardcoded or fallback credentials.
+**Status:** 🔴 Open — verified against the tree 2026-08-11. Checked-in secrets:
+`SEARXNG_SECRET=changeme_in_production` (docker-compose.yml:143) duplicated as
+`secret_key: "changeme_in_production"` in `searxng/settings.yml:8`;
+`CRAWL4AI_API_TOKEN`/`CRAWL4AI_TOKEN=hub-crawl4ai-shared-token` hardcoded at three
+compose sites (crawl4ai, research-hub, research-worker); Open WebUI
+`WEBUI_SECRET_KEY` falls back to `changeme_in_production`. `.env.example` exists but
+carries no secret placeholders and nothing refuses to start on default values.
+Postgres is gone from Compose, so the Postgres part of this item is obsolete. This is
+the highest-priority remaining P0.
+
+**Problem:** SearXNG, Crawl4AI, and Open WebUI ship with hardcoded or fallback credentials.
 
 **Work:**
 
@@ -115,6 +125,17 @@ remains unimplemented and is not required at the current single-user exposure.
 - `research health` exits nonzero and prints the failing services when readiness is degraded.
 
 ### HUB-006 — Add crawler SSRF and network-boundary protections
+
+**Status:** 🔴 Open, partially mitigated — verified against the code 2026-08-11.
+Already present: URL canonicalization restricts schemes to http/https and rejects
+non-default ports (`app/research.py:44-58,138`), domain allow/block policy,
+per-domain limits, and robots handling (HUB-021). Missing: no `ipaddress`-based
+rejection of loopback/private/link-local/metadata destinations anywhere in the app,
+no DNS or redirect revalidation, no response-size/redirect-count/duration limits at
+the application layer, and the crawler shares a network with Redis, Qdrant, and
+Ollama. Note the actual fetch runs inside the Crawl4AI container, so app-level URL
+vetting must be paired with checks on what Crawl4AI reports it finally fetched, or
+with network-layer egress isolation.
 
 **Problem:** The crawler processes discovered URLs while sharing a network with databases and control-plane services. Malicious results or redirects could target internal services.
 
@@ -245,6 +266,14 @@ remains unimplemented and is not required at the current single-user exposure.
 
 ### HUB-012 — Add CI and reproducible dependency management
 
+**Status:** 🔴 Open, partially mitigated — verified 2026-08-11. `requirements.txt`
+pins all top-level versions (including the CPU torch index and the frozen
+transformers), but there is no transitive lockfile with hashes. No `.github/workflows`
+exists. Six compose images still track `latest`: ollama, qdrant, dozzle, uptime-kuma,
+searxng, crawl4ai (redis, grafana, prometheus, open-webui are pinned). The full suite
+(141 tests, Redis DB 15 integration) and the three benchmarks are the de facto local
+CI gate.
+
 **Problem:** There is no CI, most container images use `latest` or `main`, and Python dependencies lack a transitive lock with hashes.
 
 **Work:**
@@ -263,6 +292,14 @@ remains unimplemented and is not required at the current single-user exposure.
 - A fresh checkout builds without relying on moving `latest`/`main` tags.
 
 ### HUB-013 — Implement and test backup and restore
+
+**Status:** 🔴 Open — verified 2026-08-11: no backup scripts or scheduled jobs exist
+anywhere in the repo. Redis AOF provides durability, not backup. Everything of value
+lives in Docker named volumes on one machine: `documents.sqlite3` (canonical
+documents, 13 reports including the attempt-11 acceptance artifact, and the new
+`chunk_fts` lexical index), the Qdrant collection (rebuildable from SQLite via
+`python -m app.rebuild`, at embedding cost), and Redis job state. The SQLite document
+store is the irreplaceable core; a backup of that file alone covers most of the risk.
 
 **Problem:** The knowledge base and job state live only in local named volumes, and backup instructions are not automated or restore-tested.
 
@@ -664,32 +701,41 @@ Do not fine-tune from the corpus by default. First establish data quality, licen
 
 ## Recommended delivery sequence
 
-### Milestone 1 — Safe restarts
+### Milestone 1 — Safe restarts (open: HUB-003, HUB-006)
 
-HUB-001, HUB-002, HUB-003, HUB-004, HUB-005, HUB-006
+HUB-001 ✅, HUB-002 ✅, HUB-003 🔴, HUB-004 ✅, HUB-005 ✅, HUB-006 🔴
 
 **Exit condition:** restarting the stack preserves data, health diagnostics work, and the default deployment is not broadly exposed.
 
-### Milestone 2 — Durable ingestion
+### Milestone 2 — Durable ingestion (complete)
 
-HUB-007, HUB-008, HUB-009, HUB-010, HUB-011
+HUB-007 ✅, HUB-008 ✅, HUB-009 ✅, HUB-010 ✅, HUB-011 ✅
 
 **Exit condition:** jobs survive process failure, repeated ingestion is idempotent, and the corpus can be rebuilt from retained documents.
 
-### Milestone 3 — Operable daily service
+### Milestone 3 — Operable daily service (open: HUB-012, HUB-013)
 
-HUB-012, HUB-013, HUB-014, HUB-015, HUB-016
+HUB-012 🔴, HUB-013 🔴, HUB-014 ✅, HUB-015 ✅, HUB-016 ✅
 
 **Exit condition:** builds are reproducible, recovery is tested, contracts are enforced, and failures are diagnosable.
 
-### Milestone 4 — Better answers
+### Milestone 4 — Better answers (open: HUB-031, HUB-032)
 
-HUB-017, HUB-018, HUB-019, HUB-020, HUB-021, HUB-022, HUB-023, HUB-031, HUB-032
+HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HUB-023 ✅, HUB-031 🔴, HUB-032 🔴
 
 **Exit condition:** retrieval quality is evaluated, prompts and citations are hardened, and each research job produces a useful evidence-backed artifact.
 
 ### Milestone 5 — Expansion only when earned
 
-HUB-024 through HUB-030
+HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none tripped.
+
+### Recommended order for the remaining open work (2026-08-11)
+
+1. **HUB-003** — checked-in credentials on a service that crawls untrusted content; smallest item, highest leverage.
+2. **HUB-006** — SSRF guards; builds directly on HUB-003's crawler-token work.
+3. **HUB-013** — backup of `documents.sqlite3` first; it is the only irreplaceable state.
+4. **HUB-012** — CI + pinned images + lockfile, so the gates that exist stop depending on one machine.
+5. **HUB-031** — small correctness fix with a clear test plan.
+6. **HUB-032** — the only remaining quality item; requires a new blind evaluation set before any verifier-rule change, so schedule it deliberately, not incidentally.
 
 **Exit condition:** each expansion is justified by measured usage or a documented limitation, not by architectural possibility.
