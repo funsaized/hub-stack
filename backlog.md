@@ -601,7 +601,49 @@ crash reconciliation is not.
 
 ### HUB-032 — Support verified cross-source disagreement
 
-**Status:** 🔴 Open — deliberate current limitation, disclosed in every report.
+**Status:** 🔴 Open — one full attempt measured and NOT accepted (2026-08-12);
+the deployed system is unchanged and still discloses the limitation.
+
+**Attempt record (2026-08-11/12, branch `hub-032-cross-source-disagreement`):**
+The operator approved the protocol and blind-annotated a new sealed 120-case
+final (content `e32c16d6…`, labels `91c80ede…`). The v3 rule (union premise at
+the sealed 0.97 threshold plus leave-one-out necessity — a removable ref rejects
+as `padding_reference`) and bounded cross-document pair drafting were
+implemented and calibrated only on a separate 60-case labels-by-design set
+(padding rejected 22/22, neutral 16/16, joint 14/22 on adversarial cross-topic
+conjunctions; no tuning applied). The one-time final measurement
+(results `8e6f8665…`, runner refuses re-runs):
+
+- padding rejection **PASS** 30/30 (23 via `padding_reference`);
+- joint acceptance **FAIL** 14/30 (0.47 vs 0.8) — the pinned NLI model scores
+  many genuinely joint two-component claims below threshold on the union;
+- disagreement acceptance **FAIL** 12/20 (0.6 vs 0.8);
+- zero unsupported acceptances **FAIL**: `mrf3-045` (new multi-ref path welded
+  a false guideline attribution at 0.9729) and `mrf3-055` (see HUB-033 — this
+  one is the sealed single-ref path, not the new rule).
+
+**Disposition:** the rule and pair drafting do not ship; nothing was deployed
+(verified: containers byte-identical to main, attempt-11 artifacts and all v2
+seals intact; the v2 seal is NOT retired and remains the deployed gate). The
+v3 blind set is consumed. Any future attempt needs a stronger verifier for
+joint entailment (the frozen DeBERTa model is the bottleneck, not the rule
+shape) and a fresh blind set; the deferred FastAPI/Starlette upgrade rides
+along only with that future rebuild.
+
+### HUB-033 — Sealed verifier accepts metric-name confusion (found by v3 final)
+
+**Status:** 🔴 Open — recorded 2026-08-12; not yet scheduled.
+
+**Problem:** blind case `mrf3-055` showed the deployed sealed single-ref gate
+accepting "specificity was below 50 percent" at 0.9946 entailment from a span
+stating sensitivity 33% and PPV 12% — the pinned model conflates metric names.
+The v2 sealed evaluation (zero unsupported acceptances) did not cover this
+confusion class, so the deployed guarantee is narrower than documented.
+
+**Work (when scheduled):** characterize the confusion class (metric-name swaps
+at high entailment), decide between a targeted lexical guard at drafting time
+and a verifier upgrade, and re-measure under a new seal. Until then, treat
+report claims that name statistical metrics with extra caution.
 
 **Problem:** Every displayed claim must be entailed by one exact span from one source,
 so a disagreement that only exists *between* two sources cannot be verified and is
