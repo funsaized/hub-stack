@@ -51,6 +51,9 @@ jobs:
         working-directory: research-hub
         env:
           TEST_REDIS_URL: redis://localhost:6379/15
+          # Offline placeholder: config requires a key for the judge gate;
+          # no test makes a metered call.
+          MINIMAX_SUBSCRIPTION_KEY: ci-placeholder
         run: python -m pytest tests -q
 
   compose:

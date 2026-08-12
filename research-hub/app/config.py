@@ -39,11 +39,7 @@ class Config:
     report_retrieval_min_score: float | None = None
     report_hybrid_retrieval: bool = True
     report_rrf_k: int = 60
-    claim_verifier_url: str = "http://claim-verifier:8001"
-    claim_verifier_timeout_seconds: float = 30.0
-    # HUB-035: "nli" (sealed v2 default) or "judge" (MiniMax M3, opt-in until
-    # HUB-034 flips the default after the v4 blind final passes).
-    claim_gate: str = "nli"
+    # The claim gate is the MiniMax M3 judge (HUB-034; sealed v4 final passed).
     judge_base_url: str = "https://api.minimax.io/v1"
     judge_model: str = "MiniMax-M3"
     # Subscription Key — excluded from repr so the secret can never reach logs.
@@ -60,12 +56,8 @@ class Config:
         if (self.report_retrieval_min_score is not None and
                 not math.isfinite(self.report_retrieval_min_score)):
             raise ValueError("REPORT_RETRIEVAL_MIN_SCORE must be finite")
-        if not math.isfinite(self.claim_verifier_timeout_seconds) or self.claim_verifier_timeout_seconds <= 0:
-            raise ValueError("CLAIM_VERIFIER_TIMEOUT_SECONDS must be positive and finite")
-        if self.claim_gate not in {"nli", "judge"}:
-            raise ValueError("CLAIM_GATE must be 'nli' or 'judge'")
-        if self.claim_gate == "judge" and not self.judge_api_key:
-            raise ValueError("CLAIM_GATE=judge requires MINIMAX_SUBSCRIPTION_KEY")
+        if not self.judge_api_key:
+            raise ValueError("MINIMAX_SUBSCRIPTION_KEY is required (judge claim gate)")
         if not math.isfinite(self.judge_timeout_seconds) or self.judge_timeout_seconds <= 0:
             raise ValueError("JUDGE_TIMEOUT_SECONDS must be positive and finite")
         if self.crawl_max_markdown_chars < 1:
@@ -116,13 +108,6 @@ def load_config() -> Config:
             "REPORT_HYBRID_RETRIEVAL", "true"
         ).lower() in {"1", "true", "yes"},
         report_rrf_k=int(os.environ.get("REPORT_RRF_K", "60")),
-        claim_verifier_url=os.environ.get(
-            "CLAIM_VERIFIER_URL", "http://claim-verifier:8001"
-        ),
-        claim_verifier_timeout_seconds=float(
-            os.environ.get("CLAIM_VERIFIER_TIMEOUT_SECONDS", "30")
-        ),
-        claim_gate=os.environ.get("CLAIM_GATE", "nli").strip().lower(),
         judge_base_url=os.environ.get("JUDGE_BASE_URL", "https://api.minimax.io/v1"),
         judge_model=os.environ.get("JUDGE_MODEL", "MiniMax-M3"),
         judge_api_key=os.environ.get("MINIMAX_SUBSCRIPTION_KEY", ""),

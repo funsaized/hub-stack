@@ -23,7 +23,7 @@ from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.claim_support import ClaimVerifierClient
+from app.judge_gate import JudgeClaimVerifier
 from app.clients import OllamaClient
 from app.spans import MAX_SPAN_CHARS, propositional_spans, sentence_bounds
 from app.synthesis import _draft_claims
@@ -104,15 +104,20 @@ async def live_metrics(manifest: dict, repeat: int, limit: int) -> dict:
         os.environ.get("LLM_MODEL", "qwen3.5:9b"),
         os.environ.get("EMBEDDING_MODEL", "nomic-embed-text"),
     )
-    verifier = ClaimVerifierClient(
-        os.environ.get("CLAIM_VERIFIER_URL", "http://localhost:8001")
+    # HUB-034: the live gate is the MiniMax judge; this benchmark now spends
+    # metered judge calls (drafted claims per run, subscription windows apply).
+    verifier = JudgeClaimVerifier(
+        base_url=os.environ.get("JUDGE_BASE_URL", "https://api.minimax.io/v1"),
+        api_key=os.environ["MINIMAX_SUBSCRIPTION_KEY"],
+        model=os.environ.get("JUDGE_MODEL", "MiniMax-M3"),
+        timeout=float(os.environ.get("JUDGE_TIMEOUT_SECONDS", "60")),
     )
     orchestrator = SimpleNamespace(ollama=ollama, claim_verifier=verifier)
     sources = span_sources(manifest)[:limit]
     samples = []
     try:
         if not await verifier.health():
-            raise RuntimeError("claim verifier is not healthy at its pinned revision")
+            raise RuntimeError("judge gate is not configured (MINIMAX_SUBSCRIPTION_KEY)")
         for run in range(1, repeat + 1):
             drafted, draft_rejections = await _draft_claims(
                 orchestrator, sources, stage="benchmark_claim_drafting",

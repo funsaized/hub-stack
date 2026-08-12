@@ -26,6 +26,7 @@ request bodies.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -33,9 +34,26 @@ from typing import Any
 
 import httpx
 
-from .claim_support import MAX_EVIDENCE_REFS, VerifierUnavailable, _bounded_text
-
 logger = logging.getLogger(__name__)
+
+MAX_EVIDENCE_REFS = 8
+
+
+class VerifierUnavailable(RuntimeError):
+    """The gate could not produce a trustworthy decision; the report stays retryable."""
+
+    def __init__(self, reason: str):
+        super().__init__(f"claim verifier {reason}")
+        self.reason = reason
+
+
+def _bounded_text(value: Any) -> dict[str, Any]:
+    text = value if isinstance(value, str) else ""
+    return {
+        "text": text[:512], "chars": len(text),
+        "sha256": hashlib.sha256(text.encode()).hexdigest(),
+        "truncated": len(text) > 512,
+    }
 
 JUDGE_REJECTION_REASONS = ("unsupported", "contradiction", "padding_reference")
 MAX_JUDGE_EVIDENCE_CHARS = 8000
@@ -136,7 +154,7 @@ def _extract_json_object(content: str) -> dict[str, Any]:
 
 
 class JudgeClaimVerifier:
-    """Same public surface as ``ClaimVerifierClient``, backed by MiniMax M3."""
+    """The claim gate consumed by synthesis, backed by MiniMax M3."""
 
     def __init__(
         self,

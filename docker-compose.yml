@@ -172,8 +172,8 @@ services:
     restart: unless-stopped
     # Egress isolation (HUB-006): the crawler fetches untrusted content, so it
     # sits on the crawler network only. It can reach Ollama and Redis (its own
-    # config depends on both) and the internet, but not Qdrant, SearXNG,
-    # claim-verifier, or the observability services.
+    # config depends on both) and the internet, but not Qdrant, SearXNG, or
+    # the observability services.
     networks: [crawler]
     volumes:
       - crawl4ai_data:/app/data
@@ -196,20 +196,9 @@ services:
       retries: 5
       start_period: 60s
 
-  claim-verifier:
-    build:
-      context: ./research-hub
-      dockerfile: Dockerfile
-    container_name: hub-claim-verifier
-    restart: unless-stopped
-    command: ["uvicorn", "app.claim_support:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]
-    mem_limit: 2560m
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+  # The claim-verifier NLI service was decommissioned by HUB-034 (2026-08-12)
+  # after the judge gate passed the sealed v4 blind evaluation; the claim gate
+  # now lives inside research-hub/worker (app/judge_gate.py, MiniMax API).
 
   # =====================================================================
   # Research Hub API — FastAPI orchestrator
@@ -246,11 +235,8 @@ services:
       - REPORT_RETRIEVAL_MIN_SCORE=${REPORT_RETRIEVAL_MIN_SCORE:-}
       - REPORT_HYBRID_RETRIEVAL=${REPORT_HYBRID_RETRIEVAL:-true}
       - REPORT_RRF_K=${REPORT_RRF_K:-60}
-      - CLAIM_VERIFIER_URL=http://claim-verifier:8001
-      - CLAIM_VERIFIER_TIMEOUT_SECONDS=${CLAIM_VERIFIER_TIMEOUT_SECONDS:-30}
-      # HUB-035: claim gate selection. "nli" (sealed v2 default) or "judge"
-      # (MiniMax M3 cloud judge — retained corpus spans leave the machine).
-      - CLAIM_GATE=${CLAIM_GATE:-nli}
+      # HUB-034: the claim gate is the MiniMax M3 judge (retained corpus
+      # spans leave the machine for judging — operator-accepted exception).
       # Required secret from .env — the MiniMax Token Plan Subscription Key.
       - MINIMAX_SUBSCRIPTION_KEY=${MINIMAX_SUBSCRIPTION_KEY:?Set MINIMAX_SUBSCRIPTION_KEY in .env — MiniMax Token Plan Subscription Key}
       - JUDGE_BASE_URL=${JUDGE_BASE_URL:-https://api.minimax.io/v1}
@@ -266,8 +252,6 @@ services:
       searxng:
         condition: service_healthy
       crawl4ai:
-        condition: service_healthy
-      claim-verifier:
         condition: service_healthy
     # Healthcheck defined in Dockerfile (uses curl)
 
@@ -316,10 +300,7 @@ services:
       - REPORT_RETRIEVAL_MIN_SCORE=${REPORT_RETRIEVAL_MIN_SCORE:-}
       - REPORT_HYBRID_RETRIEVAL=${REPORT_HYBRID_RETRIEVAL:-true}
       - REPORT_RRF_K=${REPORT_RRF_K:-60}
-      - CLAIM_VERIFIER_URL=http://claim-verifier:8001
-      - CLAIM_VERIFIER_TIMEOUT_SECONDS=${CLAIM_VERIFIER_TIMEOUT_SECONDS:-30}
-      # HUB-035: claim gate selection (see research-hub service).
-      - CLAIM_GATE=${CLAIM_GATE:-nli}
+      # HUB-034: judge claim gate (see research-hub service).
       - MINIMAX_SUBSCRIPTION_KEY=${MINIMAX_SUBSCRIPTION_KEY:?Set MINIMAX_SUBSCRIPTION_KEY in .env — MiniMax Token Plan Subscription Key}
       - JUDGE_BASE_URL=${JUDGE_BASE_URL:-https://api.minimax.io/v1}
       - JUDGE_MODEL=${JUDGE_MODEL:-MiniMax-M3}
@@ -336,8 +317,6 @@ services:
       searxng:
         condition: service_healthy
       crawl4ai:
-        condition: service_healthy
-      claim-verifier:
         condition: service_healthy
 
   # =====================================================================

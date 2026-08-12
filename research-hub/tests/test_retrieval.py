@@ -215,6 +215,7 @@ class RetrievalConfigurationTests(unittest.TestCase):
         with patch.dict(os.environ, {
             "REPORT_RETRIEVAL_CANDIDATES": "25",
             "REPORT_MAX_CHUNKS_PER_SOURCE": "4",
+            "MINIMAX_SUBSCRIPTION_KEY": "test-key",
         }, clear=True):
             config = load_config()
 
@@ -224,7 +225,9 @@ class RetrievalConfigurationTests(unittest.TestCase):
 
     def test_rejects_invalid_retrieval_bounds(self):
         with patch.dict(
-            os.environ, {"REPORT_RETRIEVAL_CANDIDATES": "0"}, clear=True
+            os.environ,
+            {"REPORT_RETRIEVAL_CANDIDATES": "0", "MINIMAX_SUBSCRIPTION_KEY": "test-key"},
+            clear=True,
         ), self.assertRaisesRegex(ValueError, "REPORT_RETRIEVAL_CANDIDATES"):
             load_config()
 

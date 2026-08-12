@@ -1,4 +1,6 @@
-fastapi==0.115.5
+# HUB-034: FastAPI/Starlette upgrade bundled with the verifier decommission
+# (deferred from HUB-012 to ride the next rebuild).
+fastapi==0.141.1
 uvicorn[standard]==0.32.1
 httpx==0.28.0
 pydantic==2.10.2
@@ -6,7 +8,3 @@ redis==5.2.0
 qdrant-client==1.12.1
 tenacity==9.0.0
 prometheus-client==0.21.1
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.8.0+cpu
-transformers==4.55.2
-sentencepiece==0.2.1

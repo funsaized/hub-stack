@@ -1,10 +1,42 @@
 # Current deployed state
 
-Last verified: 2026-08-11 on the local Windows 11 workstation.
-(2026-08-12: HUB-035 merged the MiniMax M3 judge gate into the repo behind
-`CLAIM_GATE` with `nli` as the default; the deployed containers were not
-rebuilt and the sealed v2 NLI verifier remains the live claim gate. See
-"Selectable claim gate" below.)
+Last verified: 2026-08-12 on the local Windows 11 workstation.
+
+## Claim gate: MiniMax M3 judge deployed; NLI stack decommissioned (HUB-034)
+
+Deployed 2026-08-12. The claim gate for report synthesis is the MiniMax M3
+LLM-as-judge faithfulness gate (`app/judge_gate.py`), validated by the sealed
+v4 blind evaluation (content `21465f6e…`, labels `632c30c3…`, results
+`7c9ed9ac…`; all gates passed — see backlog HUB-036). The `claim-verifier`
+service, `LocalClaimVerifier`, and the baked DeBERTa weights are removed; the
+research-hub image no longer carries PyTorch (image ~0.4 GB, previously
+multi-GB). The compose default topology is seven containers.
+
+**The sealed v2 NLI evaluation is hereby RETIRED, explicitly and not
+silently:** its result described the decommissioned
+`MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli` gate at threshold 0.97 and no
+longer describes any deployed behavior. Its fixtures, seal hashes, and
+stdlib validation tests remain in `tests/fixtures/claim_support_*` as the
+audit record. The consumed v3 blind set remains retired on the archived
+branch `hub-032-cross-source-disagreement`. The active seal is v4
+(`tests/fixtures/judge_seal_v4.json`, status `measured`); it records the
+judge configuration fingerprint and the served model version (`MiniMax-M3`),
+and a served-model change requires a fresh blind set before the gate is
+trusted again.
+
+Rider changes deployed with the same rebuild:
+
+- FastAPI 0.115.5 → 0.141.1 (Starlette 1.6.0) — the upgrade deferred at
+  HUB-012 to ride the next verifier rebuild; lockfile regenerated with
+  hashes, `pip check` clean.
+- Cross-source assessment (HUB-032): synthesis drafts bounded cross-document
+  span pairs (ranked by shared vocabulary, at most 8) alongside single-span
+  claims; pair claims are judged with per-ref necessity, verified
+  disagreements display both citations, and the standing disclaimer is
+  emitted only on reports where no cross-document pair was available.
+- Judge configuration is required at startup: `MINIMAX_SUBSCRIPTION_KEY`
+  must be present (compose `${VAR:?}` and config validation); judged
+  evidence spans leave the machine (see `docs/NETWORKING.md`).
 
 ## Deployment model
 
@@ -41,9 +73,9 @@ lost in Ollama's separate `thinking` field.
 
 ## Running services
 
-The eight-container default Compose topology is deployed locally. At the latest
-runtime check, Research-Hub and the claim verifier were healthy and the dedicated
-worker was stable.
+The seven-container default Compose topology is deployed locally (the
+claim-verifier service was decommissioned by HUB-034). At the latest runtime
+check, Research-Hub was healthy and the dedicated worker was stable.
 
 Research-Hub currently uses Ollama, Qdrant, Redis, SearXNG, and Crawl4AI.
 The API only enqueues ingestion; the dedicated Research Worker claims and executes
@@ -67,7 +99,7 @@ hardening remains unfinished.
 | `/health` | Backward-compatible alias of `/livez` | 200 while the process is live |
 | `/readyz?capability=query` | Ollama and Qdrant can query the retained corpus | 200 ready; 503 degraded |
 | `/readyz?capability=rag` | Ollama and Qdrant can retrieve and generate | 200 ready; 503 degraded |
-| `/readyz?capability=research` | Redis, Ollama, Qdrant, SearXNG, Crawl4AI, and the claim verifier can support research | 200 ready; 503 degraded |
+| `/readyz?capability=research` | Redis, Ollama, Qdrant, SearXNG, Crawl4AI, and the judge claim gate (configuration check, no metered call) can support research | 200 ready; 503 degraded |
 | `/readyz` | All Research-Hub dependencies | 200 ready; 503 degraded |
 | `/health/full` | Diagnostic status for every dependency | 200 with `ok`, `degraded`, or `starting` in JSON |
 
@@ -438,10 +470,11 @@ content `21465f6e…`, labels `632c30c3…`, results `7c9ed9ac…`; judge
 configuration frozen before the run; served model `MiniMax-M3` throughout
 (the seal records that MiniMax reports no finer version granularity — any
 served-model change requires a fresh blind set before the gate is trusted).
-The deployed stack is UNCHANGED: the sealed v2 NLI verifier remains the live
-gate and `CLAIM_GATE=nli` remains the default until HUB-034 is authorized.
+(Historical note: at measurement time the deployed gate was still the v2 NLI
+verifier; HUB-034 — see the top of this document — has since deployed the
+judge as the only gate.)
 
-## Selectable claim gate merged, not deployed (HUB-035)
+## Selectable claim gate merged, not deployed (HUB-035) — historical; superseded by HUB-034
 
 Merged 2026-08-12 on `hub-035-minimax-judge-gate`. The repository now contains
 `app/judge_gate.py`, a MiniMax M3 LLM-as-judge claim-faithfulness gate selected

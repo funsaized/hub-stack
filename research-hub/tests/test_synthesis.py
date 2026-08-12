@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from app import main
 from app.document_store import DocumentStore
-from app.claim_support import VerifierUnavailable
+from app.judge_gate import VerifierUnavailable
 from app.retrieval import ScopedRetrievalService
 from app.synthesis import ClaimValidationError, _resolve_claim, generate_report
 
@@ -437,6 +437,96 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             "Cross-source disagreement is not assessed", body,
         )
+
+    def add_conflicting_source(self, text):
+        canonical_url = "https://example.org/conflict"
+        self.store.save({
+            "document_id": "doc-2", "canonical_url": canonical_url,
+            "source_url": canonical_url, "title": "Conflicting Evidence",
+            "markdown": text, "content_hash": "hash-2",
+            "fetched_at": "2026-08-09T00:00:00+00:00", "http_metadata": {},
+            "extraction_version": "v1", "job_id": "job-1",
+            "research_metadata": {"topic": "topic"},
+            "created_at": "2026-08-09T00:00:00+00:00",
+        })
+        self.store.observe_job_source(
+            "job-1", "doc-2", "2026-08-09T00:00:00+00:00", {"topic": "topic"}
+        )
+        self.qdrant.search_evidence.return_value = [
+            {"text": EVIDENCE, "canonical_url": "https://example.com/source",
+             "source_title": "Evidence", "document_id": "doc-1",
+             "chunk_index": 0, "score": 0.9, "metadata": {}},
+            {"text": text, "canonical_url": canonical_url,
+             "source_title": "Conflicting Evidence", "document_id": "doc-2",
+             "chunk_index": 0, "score": 0.8, "metadata": {}},
+        ]
+
+    async def test_cross_source_pair_displays_with_both_citations(self):
+        self.add_conflicting_source(
+            "A conflicting retained guideline sentence reports the reporting "
+            "guideline excludes evaluation."
+        )
+        self.orchestrator.ollama.generate.side_effect = [
+            drafted("First finding"), drafted("Second finding"),
+            drafted("Guideline coverage conflicts", kind="disagreement"),
+        ]
+
+        report = await generate_report(self.orchestrator, "job-1")
+
+        body = report["report_markdown"]
+        self.assertIn("Guideline coverage conflicts [S1][S2]", body)
+        self.assertNotIn("Cross-source disagreement is not assessed", body)
+        pair_prompt = self.orchestrator.ollama.generate.await_args.args[0]
+        self.assertEqual(pair_prompt.count("<UNTRUSTED_EVIDENCE"), 2)
+        self.assertIn("BOTH sentences read together", pair_prompt)
+        pair_claim = self.orchestrator.claim_verifier.verify.await_args.args[0][0]
+        self.assertEqual(len(pair_claim["evidence_refs"]), 2)
+        self.assertNotEqual(
+            pair_claim["evidence_refs"][0]["source_id"],
+            pair_claim["evidence_refs"][1]["source_id"],
+        )
+        for ref in pair_claim["evidence_refs"]:
+            self.assertEqual(ref["supports"], "Guideline coverage conflicts")
+
+    async def test_padding_rejected_pair_claim_is_not_displayed(self):
+        self.add_conflicting_source(
+            "A conflicting retained guideline sentence reports the reporting "
+            "guideline excludes evaluation."
+        )
+        self.orchestrator.ollama.generate.side_effect = [
+            drafted("First finding"), drafted("Second finding"),
+            drafted("Padded pair claim", kind="disagreement"),
+        ]
+        self.orchestrator.claim_verifier.verify.side_effect = [
+            [None, None], ["padding_reference"],
+        ]
+
+        report = await generate_report(self.orchestrator, "job-1")
+
+        body = report["report_markdown"]
+        self.assertNotIn("Padded pair claim", body)
+        self.assertNotIn("Cross-source disagreement is not assessed", body)
+        self.assertIn("padding_reference=1", body)
+
+    async def test_pair_candidates_are_cross_document_and_bounded(self):
+        from app.synthesis import _pair_candidates
+
+        def span(span_id, document_id, text):
+            return {"span_id": span_id, "document_id": document_id, "span": text}
+
+        spans = [
+            span("P1", "doc-1", "shared alpha bravo charlie tokens"),
+            span("P2", "doc-1", "shared alpha bravo charlie tokens again"),
+            span("P3", "doc-2", "shared alpha bravo charlie delta tokens"),
+            span("P4", "doc-3", "completely unrelated wording here"),
+        ]
+        pairs = _pair_candidates(spans, limit=8)
+        ids = [(a["span_id"], b["span_id"]) for a, b in pairs]
+        self.assertIn(("P1", "P3"), ids)
+        self.assertNotIn(("P1", "P2"), ids)  # same document never pairs
+        self.assertNotIn(("P1", "P4"), ids)  # insufficient shared vocabulary
+        self.assertEqual(ids, sorted(ids, key=lambda pair: ids.index(pair)))
+        self.assertEqual(len(_pair_candidates(spans * 6, limit=3)), 3)
 
     async def test_verified_claims_beyond_display_limits_are_disclosed(self):
         bodies = [EVIDENCE] + [

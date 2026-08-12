@@ -160,8 +160,10 @@ later ────────────────────────�
   retained SQLite evidence. Reports have an independent persisted lifecycle and can
   be retrieved or retried without entering search, crawl, or embedding again.
 - Material report claims carry private exact packed-span refs and are accepted only after the
-  shared CPU claim-verifier returns argmax entailment at the frozen `0.97` threshold. The one
-  correction is reverified from scratch; public citations are rendered only from passing refs.
+  MiniMax M3 judge gate (`app/judge_gate.py`) returns a structured accepted verdict with every
+  cited span necessary. The one correction is reverified from scratch; public citations are
+  rendered only from passing refs. Cross-document span pairs are additionally drafted and
+  judged (HUB-032), so verified cross-source disagreements can be displayed with both citations.
 - Canonical URLs and content hashes form stable document IDs; chunk IDs also include
   chunk index and chunker version. Unchanged content is skipped and changed content is
   fully embedded/upserted before stale chunks are removed.
@@ -215,8 +217,14 @@ later ────────────────────────�
 
 **Redis over RabbitMQ/Postgres-MQ**: Overkill for our throughput. Redis is already small and fast.
 
-**CPU claim verifier**: PyTorch is confined to one offline, pinned CPU service shared by the
-API and worker. Ollama remains the only GPU consumer.
+**LLM-as-judge claim gate over local NLI** (HUB-034, 2026-08-12): the frozen DeBERTa NLI
+service could not judge joint multi-span claims (v3 final: 0.47) and conflated metric names,
+so it was replaced by a MiniMax M3 faithfulness judge validated by the sealed v4 blind
+evaluation (all gates passed, including zero unsupported acceptances under adversarial
+injection). The trade-offs were operator-accepted: judged evidence spans leave the machine,
+and the cloud judge is not frozen — the v4 seal records the served model version, and any
+change requires a fresh blind set before the gate is trusted again. Ollama remains the only
+GPU consumer; the API/worker images no longer carry PyTorch.
 
 ## Notable design decisions
 
@@ -230,31 +238,30 @@ API and worker. Ollama remains the only GPU consumer.
 - **Separate liveness and readiness**: Docker probes research-hub `/livez`; capability readiness and dependency diagnostics use `/readyz` and `/health/full`. See `docs/HEALTHCHECKS.md` and `docs/CURRENT_STATE.md`.
 - **API/worker separation**: restarting or scaling the API cannot interrupt claimed work.
   Worker leases and reconciliation resume abandoned jobs after a worker failure.
-- **Fail-closed claim support**: research/all readiness includes the verifier. Timeout,
-  unavailability, revision mismatch, malformed output, unresolved spans, non-entailment, and
-  inputs over 512 tokens reject persistence; no input is truncated.
-- **Selectable claim gate (HUB-035)**: `CLAIM_GATE=nli` (default) keeps the sealed v2
-  DeBERTa NLI verifier; `CLAIM_GATE=judge` selects the MiniMax M3 LLM-as-judge
-  faithfulness gate (`app/judge_gate.py`). The judge shares the verdict contract and
-  fail-closed semantics (timeout, quota exhaustion, malformed or schema-violating
-  output, missing served-model version all leave the report retryable), is conjunctive
-  with the deterministic structural checks (it can only reject more, never admit what
-  structure rejects), fences evidence as untrusted with fence-break neutralization,
-  judges multi-span claims natively with per-ref necessity (padding rejection), and
-  records the served model version in every verdict because a cloud judge is not
-  frozen. Selecting the judge sends retained evidence spans to the MiniMax API — a
-  deliberate privacy exception documented in `docs/NETWORKING.md`. The default must
-  not flip before the v4 blind evaluation passes (HUB-036, then HUB-034).
+- **Fail-closed claim gate (judge)**: research/all readiness includes the gate's
+  configuration. The judge (`app/judge_gate.py`) keeps the verdict contract and
+  fail-closed semantics — timeout, quota exhaustion, malformed or schema-violating
+  output, and a missing served-model version all leave the report retryable. It is
+  conjunctive with the deterministic structural checks (supports-restates-claim
+  verbatim, bounded refs — it can only reject more, never admit what structure
+  rejects), fences evidence as untrusted with fence-break neutralization, judges
+  multi-span claims natively with per-ref necessity (padding rejection), and records
+  the served model version in every verdict because a cloud judge is not frozen.
+  Judged evidence spans go to the MiniMax API — a deliberate privacy exception
+  documented in `docs/NETWORKING.md`. Validated by the sealed v4 blind evaluation
+  (HUB-036); re-baseline on any served-model change.
 - **Span-first report claims**: report synthesis drafts one claim per exact evidence
   sentence rather than drafting claims and then choosing evidence for them, so a claim can
   never be paired with a span that does not support it. Claims are compressions of their
   span - deletion only, never addition - which is what keeps them inside the entailment
   gate. `app/spans.py` decides what counts as a self-contained sentence; every offered span
   stays an exact substring of its sanitized chunk.
-- **Verification matches its evaluation**: a single-evidence claim is judged by exactly the
-  premise/hypothesis pair the sealed final set measured. Any change to the model, revision,
-  threshold, or union premise format requires a new blind final set. See
-  `PRDs/research-claim-support-verification.md`.
+- **Verification matches its evaluation**: the deployed judge configuration (system prompt,
+  requested model, temperature) is exactly what the sealed v4 blind final measured; the seal
+  records its fingerprint and the served model version. Any change to the prompt, schema, or
+  served model requires a fresh blind set before the gate is trusted again. The retired v2
+  NLI evaluation and its PRD (`PRDs/research-claim-support-verification.md`) remain as the
+  historical record.
 - **Design iterations are measured offline**: `tests/benchmark_claim_drafting.py` replays
   frozen evidence through generation and verification without touching Redis, SQLite,
   Qdrant, the corpus, or the report lifecycle, so a claim-drafting change is evaluated
