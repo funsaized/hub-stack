@@ -625,46 +625,124 @@ conjunctions; no tuning applied). The one-time final measurement
 **Disposition:** the rule and pair drafting do not ship; nothing was deployed
 (verified: containers byte-identical to main, attempt-11 artifacts and all v2
 seals intact; the v2 seal is NOT retired and remains the deployed gate). The
-v3 blind set is consumed. Any future attempt needs a stronger verifier for
-joint entailment (the frozen DeBERTa model is the bottleneck, not the rule
-shape) and a fresh blind set; the deferred FastAPI/Starlette upgrade rides
-along only with that future rebuild.
+v3 blind set is consumed.
 
-### HUB-033 — Sealed verifier accepts metric-name confusion (found by v3 final)
+**Pivot (2026-08-12, operator decision):** rather than upgrading the frozen NLI
+model, the operator directed replacing the NLI gate with an LLM-as-judge
+faithfulness gate (a standard modern RAG pattern: RAGAS-style statement-level
+groundedness judging), using MiniMax M3 via the operator's Token Plan
+subscription. The trade-offs were surfaced and accepted: the judge is
+generative (prompt-injection surface moves into the gate and must be handled
+in-design), retained corpus spans will leave the machine to MiniMax's API
+(privacy-model change to document), and a cloud judge is not frozen (sealed
+evaluations must record the served model version and re-baseline on change).
+This item is re-scoped onto the judge gate: multi-span judging is native to an
+LLM judge, which directly removes the joint-entailment bottleneck that failed
+the v3 final. Blocked by HUB-035 and HUB-036; the leave-one-out NLI
+implementation remains archived on `hub-032-cross-source-disagreement`.
 
-**Status:** 🔴 Open — recorded 2026-08-12; not yet scheduled.
+**Original problem:** every displayed claim must be entailed by one exact span
+from one source, so a disagreement that only exists *between* two sources
+cannot be verified and is never generated. Reports state this limitation
+explicitly rather than implying that no disagreements exist.
 
-**Problem:** blind case `mrf3-055` showed the deployed sealed single-ref gate
-accepting "specificity was below 50 percent" at 0.9946 entailment from a span
-stating sensitivity 33% and PPV 12% — the pinned model conflates metric names.
-The v2 sealed evaluation (zero unsupported acceptances) did not cover this
-confusion class, so the deployed guarantee is narrower than documented.
-
-**Work (when scheduled):** characterize the confusion class (metric-name swaps
-at high entailment), decide between a targeted lexical guard at drafting time
-and a verifier upgrade, and re-measure under a new seal. Until then, treat
-report claims that name statistical metrics with extra caution.
-
-**Problem:** Every displayed claim must be entailed by one exact span from one source,
-so a disagreement that only exists *between* two sources cannot be verified and is
-never generated. The verifier accepts up to eight refs and computes a union premise,
-but it also requires each span to entail the claim alone, which forbids genuine
-multi-evidence claims. Reports state this limitation explicitly rather than implying
-that no disagreements exist.
-
-**Work:**
-
-- Distinguish padding refs from genuine joint evidence, so a union-entailed claim is
-  not rejected merely because no single span entails it alone.
-- Any change to the multi-ref rule needs a fresh blind final set; the sealed final
-  measured the union premise only and cannot be reused for tuning.
-- Draft cross-source disagreement claims from a bounded pair of spans.
-
-**Acceptance criteria:**
+**Acceptance criteria (unchanged, measured under the HUB-036 protocol):**
 
 - A claim entailed only by two spans read together can be displayed with both citations.
 - A claim with one relevant and one irrelevant ref is still rejected.
 - The report stops disclaiming cross-source disagreement only once it is assessed.
+
+### HUB-033 — Sealed verifier accepts metric-name confusion (found by v3 final)
+
+**Status:** 🟡 Folded into HUB-036 — the metric-name confusion class
+(`mrf3-055`: "specificity below 50 percent" accepted at 0.9946 from a span
+stating sensitivity 33% and PPV 12%) becomes a mandatory test category in the
+judge-gate evaluation instead of a standalone fix to the outgoing NLI gate.
+Until the judge gate ships, treat report claims naming statistical metrics
+with extra caution.
+
+### HUB-035 — MiniMax M3 LLM-as-judge claim-faithfulness gate
+
+**Status:** 🔴 Open — do first in the pivot sequence.
+
+**Problem:** the frozen DeBERTa NLI gate cannot judge joint multi-span claims
+(measured: v3 final joint acceptance 0.47) and conflates metric names
+(HUB-033). The replacement is an LLM judge following the standard RAG
+faithfulness pattern.
+
+**Work:**
+
+- Judge client for MiniMax M3 (Anthropic-compatible `/v1/messages` or
+  OpenAI-compatible endpoint), Subscription Key injected from the gitignored
+  `.env` with required `${VAR:?}` expansion. FIRST: verify the Token Plan
+  permits programmatic single-user backend use (docs bless interactive tools;
+  automated-backend policy is unstated) — if not, fall back to pay-as-you-go.
+- Verdict contract mirroring the current one (accepted / rejection reason per
+  claim) so synthesis wiring stays small: structured JSON verdict, temperature
+  0, response schema enforced, malformed output fails closed, timeout and
+  quota exhaustion fail closed (Token Plan quotas are 5-hour rolling and
+  weekly windows; a failed report stays retryable, matching existing
+  semantics). Record the served model version string in every verdict.
+- Injection hardening is part of the gate, not an afterthought: evidence
+  fenced as untrusted data, judge instructed to never follow instructions in
+  evidence, and the deterministic structural checks that exist today
+  (supports-restates-claim verbatim, span-exactness binding) stay as
+  conjunctive local guards. The judge can only reject more than the structure
+  allows, never admit a claim the structural checks reject.
+- Multi-span (joint and disagreement) judging with per-ref necessity ("would
+  the claim survive without this ref?") to preserve the padding-rejection
+  property the v3 final proved out.
+- Network/privacy: research-hub and worker gain egress to the MiniMax API;
+  document in `NETWORKING.md` and `ARCHITECTURE.md` that retained corpus spans
+  now leave the machine for judging (deliberate exception to the local-only
+  premise, operator-accepted).
+
+**Acceptance criteria:**
+
+- Judge verdicts are structured, fail closed on every error path, and never
+  bypass the local structural checks.
+- Evidence containing adversarial instructions cannot flip a verdict to
+  accepted (demonstrated by tests with injected spans).
+- The claim-verifier service interface consumed by synthesis is unchanged or
+  simplified — no report-schema change.
+
+### HUB-036 — Judge-gate evaluation protocol and blind set (v4)
+
+**Status:** 🔴 Open — blocked by HUB-035; gates HUB-034 and HUB-032.
+
+**Work:**
+
+- New operator-annotated blind set (v4) drawn from the retained corpus per the
+  established protocol (the v3 set is consumed and stays retired), covering:
+  single-span entailment/neutral/contradiction, joint evidence, padding refs,
+  cross-source disagreement, metric-name confusion (from HUB-033), and an
+  adversarial-injection stratum (evidence containing instructions).
+- Calibration on a labels-by-design set only; the blind final is measured once
+  against a frozen judge configuration (prompt, schema, temperature, recorded
+  served-model version).
+- Because the judge is a cloud model, the seal records the model version and
+  the protocol defines a re-baseline trigger: on a served-model change, re-run
+  the evaluation on a fresh blind set before continuing to trust the gate.
+
+**Acceptance criteria:** zero unsupported acceptances including the injection
+stratum; padding rejection 1.0; joint and disagreement acceptance ≥0.8;
+metric-confusion cases rejected; results sealed with hashes as before.
+
+### HUB-034 — Decommission the NLI claim-support stack
+
+**Status:** 🔴 Open — last in the pivot sequence; blocked by HUB-035 + HUB-036.
+
+**Work (only after the judge gate passes its v4 final):**
+
+- Remove the `claim-verifier` service, `LocalClaimVerifier`, the baked DeBERTa
+  weights (large image-size win), and NLI-specific tests; port the gate tests
+  to the judge interface.
+- Retire the v2 sealed evaluation explicitly in the docs (never silently),
+  alongside the already-consumed v3 artifacts.
+- Bundle the deferred FastAPI/Starlette upgrade into this rebuild (it rides
+  with the next verifier rebuild per the HUB-012 deferral).
+- Standard deploy pattern: rebuild, SHA-verify, `/readyz`, sealed-artifact
+  audit (attempt-11 report and registry stay byte-identical).
 
 ---
 
@@ -799,9 +877,9 @@ HUB-012 ✅, HUB-013 ✅, HUB-014 ✅, HUB-015 ✅, HUB-016 ✅
 
 **Exit condition:** builds are reproducible, recovery is tested, contracts are enforced, and failures are diagnosable.
 
-### Milestone 4 — Better answers (open: HUB-032)
+### Milestone 4 — Better answers (open: HUB-035, HUB-036, HUB-034, HUB-032)
 
-HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HUB-023 ✅, HUB-031 ✅, HUB-032 🔴
+HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HUB-023 ✅, HUB-031 ✅, HUB-032 🔴 (re-scoped), HUB-033 🟡 (folded into HUB-036), HUB-034 🔴, HUB-035 🔴, HUB-036 🔴
 
 **Exit condition:** retrieval quality is evaluated, prompts and citations are hardened, and each research job produces a useful evidence-backed artifact.
 
@@ -809,13 +887,12 @@ HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HU
 
 HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none tripped.
 
-### Recommended order for the remaining open work (2026-08-11)
+### Recommended order for the remaining open work (2026-08-12, post-pivot)
 
-1. **HUB-003** — ✅ done 2026-08-11 (see status above).
-2. **HUB-006** — ✅ done 2026-08-11 (see status above).
-3. **HUB-013** — ✅ done 2026-08-11 (see status above; `docs/BACKUP.md`).
-4. **HUB-012** — ✅ done 2026-08-11 (see status above).
-5. **HUB-031** — ✅ done 2026-08-11 (see status above).
-6. **HUB-032** — the only remaining quality item; requires a new blind evaluation set before any verifier-rule change, so schedule it deliberately, not incidentally.
+1. **HUB-003 / HUB-006 / HUB-013 / HUB-012 / HUB-031** — ✅ done 2026-08-11 (see statuses above).
+2. **HUB-035** — MiniMax M3 judge gate (verify Token Plan backend-use terms first).
+3. **HUB-036** — judge-gate evaluation protocol and v4 blind set (operator annotates).
+4. **HUB-034** — decommission the NLI stack and deploy the swap (bundles the FastAPI/Starlette upgrade).
+5. **HUB-032** — cross-source disagreement on the judge gate, measured under HUB-036.
 
 **Exit condition:** each expansion is justified by measured usage or a documented limitation, not by architectural possibility.
