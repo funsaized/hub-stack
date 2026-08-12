@@ -1,0 +1,21 @@
+{
+ "schema_version": "judge_blind_v4",
+ "status": "draft_frozen",
+ "frozen_at": "2026-08-12",
+ "corpus_id": "judge_blind_v4",
+ "case_count": 130,
+ "strata": {
+  "single_entailment": 15,
+  "single_neutral": 15,
+  "single_contradiction": 10,
+  "joint_evidence": 25,
+  "padding": 20,
+  "cross_source_disagreement": 20,
+  "metric_confusion": 10,
+  "adversarial_injection": 15
+ },
+ "shuffle_seed": 20260812,
+ "case_content_sha256": "21465f6eeddd471422849b80e04123ef902edab9cc912969b51febb204bff754",
+ "draft_file": "judge_final_v4_draft.json",
+ "annotation_package": "judge_annotation_package_v4.json"
+}

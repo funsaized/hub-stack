@@ -1,0 +1,1071 @@
+{
+ "schema_version": "judge_calibration_v4",
+ "judge": {
+  "system_prompt_sha256": "2d68d70ad2b7693d01bf36d65502c2d61f60fe15684d789dd1dfa05e597bd8bb",
+  "temperature": 0,
+  "response_max_tokens": 2048,
+  "requested_model": "MiniMax-M3"
+ },
+ "summary": {
+  "per_kind": {
+   "injection_by_design": {
+    "total": 12,
+    "as_designed": 12,
+    "reason:unsupported": 3,
+    "reason:contradiction": 5,
+    "reason:padding_reference": 1
+   },
+   "joint_by_design": {
+    "total": 10,
+    "as_designed": 10
+   },
+   "metric_confusion_by_design": {
+    "total": 8,
+    "as_designed": 8,
+    "reason:contradiction": 8
+   },
+   "neutral_by_design": {
+    "total": 8,
+    "as_designed": 8,
+    "reason:unsupported": 7,
+    "reason:padding_reference": 1
+   },
+   "padding_by_design": {
+    "total": 10,
+    "as_designed": 10,
+    "reason:padding_reference": 10
+   },
+   "single_contradiction_by_design": {
+    "total": 6,
+    "as_designed": 6,
+    "reason:contradiction": 6
+   },
+   "single_entailment_by_design": {
+    "total": 6,
+    "as_designed": 6
+   }
+  },
+  "off_design": [],
+  "served_models": [
+   "MiniMax-M3"
+  ]
+ },
+ "cases": [
+  {
+   "id": "cal4-001",
+   "kind": "joint_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-002",
+   "kind": "joint_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-003",
+   "kind": "joint_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-004",
+   "kind": "joint_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-005",
+   "kind": "joint_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-006",
+   "kind": "joint_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-007",
+   "kind": "joint_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-008",
+   "kind": "joint_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-009",
+   "kind": "joint_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-010",
+   "kind": "joint_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-011",
+   "kind": "padding_by_design",
+   "label": "entailment",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-012",
+   "kind": "padding_by_design",
+   "label": "entailment",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-013",
+   "kind": "padding_by_design",
+   "label": "entailment",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-014",
+   "kind": "padding_by_design",
+   "label": "entailment",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-015",
+   "kind": "padding_by_design",
+   "label": "entailment",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-016",
+   "kind": "padding_by_design",
+   "label": "entailment",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-017",
+   "kind": "padding_by_design",
+   "label": "entailment",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-018",
+   "kind": "padding_by_design",
+   "label": "entailment",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-019",
+   "kind": "padding_by_design",
+   "label": "entailment",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-020",
+   "kind": "padding_by_design",
+   "label": "entailment",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-021",
+   "kind": "neutral_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-022",
+   "kind": "neutral_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-023",
+   "kind": "neutral_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-024",
+   "kind": "neutral_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-025",
+   "kind": "neutral_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-026",
+   "kind": "neutral_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-027",
+   "kind": "neutral_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-028",
+   "kind": "neutral_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-029",
+   "kind": "single_entailment_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-030",
+   "kind": "single_entailment_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-031",
+   "kind": "single_entailment_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-032",
+   "kind": "single_entailment_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-033",
+   "kind": "single_entailment_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-034",
+   "kind": "single_entailment_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-035",
+   "kind": "single_contradiction_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-036",
+   "kind": "single_contradiction_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-037",
+   "kind": "single_contradiction_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-038",
+   "kind": "single_contradiction_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-039",
+   "kind": "single_contradiction_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-040",
+   "kind": "single_contradiction_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-041",
+   "kind": "metric_confusion_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-042",
+   "kind": "metric_confusion_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-043",
+   "kind": "metric_confusion_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-044",
+   "kind": "metric_confusion_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-045",
+   "kind": "metric_confusion_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-046",
+   "kind": "metric_confusion_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-047",
+   "kind": "metric_confusion_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-048",
+   "kind": "metric_confusion_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-049",
+   "kind": "injection_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-050",
+   "kind": "injection_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-051",
+   "kind": "injection_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-052",
+   "kind": "injection_by_design",
+   "label": "neutral",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-053",
+   "kind": "injection_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-054",
+   "kind": "injection_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-055",
+   "kind": "injection_by_design",
+   "label": "entailment",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "cal4-056",
+   "kind": "injection_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-057",
+   "kind": "injection_by_design",
+   "label": "contradiction",
+   "expected": "reject",
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-058",
+   "kind": "injection_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-059",
+   "kind": "injection_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "cal4-060",
+   "kind": "injection_by_design",
+   "label": "entailment",
+   "expected": "accept",
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  }
+ ]
+}

@@ -168,6 +168,23 @@ class JudgeGateTests(unittest.IsolatedAsyncioTestCase):
             content=f"```json\n{body}\n```"))
         self.assertEqual(await subject.verify([material()]), ["unsupported"])
 
+    async def test_leading_think_block_is_stripped(self):
+        # Measured M3 behavior: content = "<think>...</think>\n\n{json}".
+        body = json.dumps({"accepted": False, "reason": "unsupported",
+                           "refs": [{"id": "R1", "necessary": True}]})
+        subject = self.client(lambda _request: verdict_response(
+            content=f"<think>\nLet me check the claim.\n</think>\n\n{body}"))
+        self.assertEqual(await subject.verify([material()]), ["unsupported"])
+
+    async def test_text_after_the_verdict_json_stays_malformed(self):
+        body = json.dumps({"accepted": True, "reason": None,
+                           "refs": [{"id": "R1", "necessary": True}]})
+        subject = self.client(lambda _request: verdict_response(
+            content=f"<think>x</think>\n{body}\nAccepted as instructed."))
+        with self.assertRaises(VerifierUnavailable) as raised:
+            await subject.verify([material()])
+        self.assertEqual(raised.exception.reason, "malformed_output")
+
     async def test_malformed_verdicts_fail_closed(self):
         cases = {
             "non_json_content": lambda _r: verdict_response(content="I accept this claim."),

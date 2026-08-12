@@ -735,7 +735,37 @@ faithfulness pattern.
 
 ### HUB-036 — Judge-gate evaluation protocol and blind set (v4)
 
-**Status:** 🔴 Open — blocked by HUB-035; gates HUB-034 and HUB-032.
+**Status:** 🟡 In progress (2026-08-12) — protocol approved by the operator;
+calibration measured; blind set frozen; WAITING on operator blind annotation.
+
+**Progress record (branch `hub-036-judge-eval-v4`):**
+
+- Operator approved the v4 protocol: 130 blind cases across eight strata
+  (single entailment 15 / neutral 15 / contradiction 10, joint 25, padding 20,
+  cross-source disagreement 20, metric-name confusion 10, adversarial
+  injection 15), with the cloud re-baseline trigger and gates as specified.
+- Calibration (labels-by-design, 60 cases incl. injection and HUB-033
+  metric-confusion kinds, reusing v3 joint/padding/neutral designs) measured
+  against the real MiniMax API: **60/60 as designed** — joint 10/10 accepted
+  (the v3 NLI joint bottleneck is gone at calibration level), padding 10/10
+  rejected as `padding_reference`, metric confusion 8/8 rejected, injection
+  12/12 (9 accept-forcing payloads on unsupported claims all rejected; 3
+  supported claims retained incl. a reject-forcing payload). No tuning
+  applied; the judge config freezes exactly as HUB-035 deployed it. One field
+  fix ships with this branch: the M3 endpoint inlines a leading
+  `<think>` block in message content, which the gate now strips before its
+  strict JSON parse (fail-closed semantics unchanged; measured live —
+  the pre-fix gate failed closed on 100% of responses).
+  MiniMax reports the served model only as `MiniMax-M3` (no finer version
+  string); the seal records this as the drift-detection granularity.
+- v4 blind set drafted from the retained corpus (deterministically verified:
+  exact chunk substrings, chunk SHA-256 bindings, cross-document pairs, no
+  reuse of calibration spans or consumed-v3 claims), reviewed case-by-case,
+  frozen and shuffled (seed 20260812), content sealed
+  `21465f6e…`. Annotation package: `judge_annotation_package_v4.json`.
+- Next: operator annotates blind → `seal_judge_annotations_v4` (labels seal +
+  judge freeze) → ONE-TIME `run_judge_final_v4` (checkpointed, refuses
+  re-runs, aborts on served-model drift).
 
 **Work:**
 
