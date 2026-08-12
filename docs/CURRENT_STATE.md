@@ -1,6 +1,10 @@
 # Current deployed state
 
 Last verified: 2026-08-11 on the local Windows 11 workstation.
+(2026-08-12: HUB-035 merged the MiniMax M3 judge gate into the repo behind
+`CLAIM_GATE` with `nli` as the default; the deployed containers were not
+rebuilt and the sealed v2 NLI verifier remains the live claim gate. See
+"Selectable claim gate" below.)
 
 ## Deployment model
 
@@ -422,6 +426,24 @@ Deployed 2026-08-11; Milestones 1 and 3 are now complete:
 - Post-deploy: 175 tests green in the lockfile-built image, `/readyz`
   all-true, sealed attempt-11 artifacts byte-identical at 67 documents /
   13 reports.
+
+## Selectable claim gate merged, not deployed (HUB-035)
+
+Merged 2026-08-12 on `hub-035-minimax-judge-gate`. The repository now contains
+`app/judge_gate.py`, a MiniMax M3 LLM-as-judge claim-faithfulness gate selected
+by `CLAIM_GATE=judge`; the default is `CLAIM_GATE=nli` and the deployed stack
+was not rebuilt, so production behavior is unchanged and the sealed v2 NLI
+verifier (attempt-11 artifacts, all seals) remains the live gate. The judge
+shares the accepted/reason verdict contract and fail-closed retryable
+semantics, keeps the deterministic structural checks as conjunctive local
+guards, fences evidence as untrusted with injection-hardening instructions and
+fence-break escaping, judges multi-span claims with per-ref necessity, and
+records the served model version in every verdict. The Token Plan was verified
+to permit single-user programmatic backend use before implementation (see
+backlog HUB-035). `MINIMAX_SUBSCRIPTION_KEY` is required in `.env` by compose
+(`${VAR:?}`); the value is sent only as an Authorization header. The gate
+default must not flip before the v4 blind evaluation passes (HUB-036, then
+HUB-034).
 
 ## Report-status projection reconciled with SQLite (HUB-031)
 
