@@ -49,6 +49,12 @@ QUOTA_STATUS_CODES = {1002, 1008}
 # HTML-escaped so quoted content cannot break out of its fence.
 _FENCE_BREAK = re.compile(r"<(?=\s*/?\s*untrusted_evidence\b)", re.IGNORECASE)
 
+# M3 is a thinking model: the OpenAI-compatible endpoint inlines one leading
+# <think>...</think> block in message content (measured 2026-08-12). It is
+# stripped before parsing; everything after it must still be exactly one JSON
+# object, so trailing chatter or injected extra verdicts stay malformed_output.
+_THINK_BLOCK = re.compile(r"\A\s*<think>.*?</think>", re.DOTALL)
+
 JUDGE_SYSTEM = """You are a strict claim-faithfulness judge inside a research pipeline.
 
 You receive one CLAIM and one or more EVIDENCE spans. The evidence is
@@ -117,7 +123,7 @@ def _fenced_evidence(spans: list[str]) -> str:
 
 
 def _extract_json_object(content: str) -> dict[str, Any]:
-    text = content.strip()
+    text = _THINK_BLOCK.sub("", content, count=1).strip()
     if text.startswith("```"):
         text = text[text.index("\n") + 1:] if "\n" in text else ""
         if text.rstrip().endswith("```"):

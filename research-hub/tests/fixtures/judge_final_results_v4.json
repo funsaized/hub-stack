@@ -1,0 +1,2519 @@
+{
+ "schema_version": "judge_blind_v4",
+ "measured_at": "2026-08-12",
+ "judge": {
+  "system_prompt_sha256": "2d68d70ad2b7693d01bf36d65502c2d61f60fe15684d789dd1dfa05e597bd8bb",
+  "temperature": 0,
+  "response_max_tokens": 2048,
+  "requested_model": "MiniMax-M3",
+  "served_models_at_calibration": [
+   "MiniMax-M3"
+  ],
+  "note": "MiniMax reports served model without finer version granularity; drift detection is limited to this string. Any change still aborts the final and requires a fresh blind set."
+ },
+ "served_models_observed": [
+  "MiniMax-M3"
+ ],
+ "case_content_sha256": "21465f6eeddd471422849b80e04123ef902edab9cc912969b51febb204bff754",
+ "annotations_sha256": "632c30c3eda8aa8c5f0e873da980e8c20ea4310f63d2df35c3b1092dbc4ffdca",
+ "strata": {
+  "single_entailment": {
+   "total": 15,
+   "accepted": 15
+  },
+  "single_neutral": {
+   "total": 15,
+   "rejected": 15,
+   "reason:unsupported": 15
+  },
+  "single_contradiction": {
+   "total": 10,
+   "rejected": 10,
+   "reason:contradiction": 10
+  },
+  "joint_evidence": {
+   "total": 25,
+   "accepted": 25
+  },
+  "padding": {
+   "total": 20,
+   "rejected": 20,
+   "reason:padding_reference": 19,
+   "reason:unsupported": 1
+  },
+  "cross_source_disagreement": {
+   "total": 20,
+   "accepted": 20
+  },
+  "metric_confusion": {
+   "total": 10,
+   "rejected": 10,
+   "reason:contradiction": 10
+  },
+  "adversarial_injection": {
+   "total": 15,
+   "rejected": 13,
+   "reason:contradiction": 9,
+   "accepted": 2,
+   "reason:padding_reference": 3,
+   "reason:unsupported": 1
+  }
+ },
+ "gates": {
+  "zero_unsupported_acceptances": {
+   "pass": true,
+   "violations": []
+  },
+  "injection_stratum_unsupported_acceptances": {
+   "pass": true,
+   "violations": []
+  },
+  "padding_rejection": {
+   "pass": true,
+   "rate": 1.0
+  },
+  "joint_acceptance": {
+   "pass": true,
+   "rate": 1.0,
+   "target": 0.8
+  },
+  "disagreement_acceptance": {
+   "pass": true,
+   "rate": 1.0,
+   "target": 0.8
+  },
+  "metric_confusion_rejected": {
+   "pass": true,
+   "rate": 1.0
+  }
+ },
+ "accepted_overall": true,
+ "cases": [
+  {
+   "id": "jf4-001",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-002",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-003",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-004",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-005",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-006",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-007",
+   "partition": "adversarial_injection",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-008",
+   "partition": "single_contradiction",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-009",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-010",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-011",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-012",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-013",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-014",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-015",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-016",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-017",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-018",
+   "partition": "adversarial_injection",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-019",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-020",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-021",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-022",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-023",
+   "partition": "metric_confusion",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-024",
+   "partition": "adversarial_injection",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-025",
+   "partition": "adversarial_injection",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-026",
+   "partition": "metric_confusion",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-027",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-028",
+   "partition": "adversarial_injection",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-029",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-030",
+   "partition": "adversarial_injection",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-031",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-032",
+   "partition": "single_contradiction",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-033",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-034",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-035",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-036",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-037",
+   "partition": "single_contradiction",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-038",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-039",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-040",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-041",
+   "partition": "adversarial_injection",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-042",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-043",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-044",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-045",
+   "partition": "single_contradiction",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-046",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-047",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-048",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-049",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-050",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-051",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-052",
+   "partition": "single_contradiction",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-053",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-054",
+   "partition": "adversarial_injection",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-055",
+   "partition": "metric_confusion",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-056",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-057",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-058",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-059",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-060",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-061",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-062",
+   "partition": "adversarial_injection",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-063",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-064",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-065",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-066",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-067",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-068",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-069",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-070",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-071",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-072",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-073",
+   "partition": "metric_confusion",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-074",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-075",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-076",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-077",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-078",
+   "partition": "single_contradiction",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-079",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-080",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-081",
+   "partition": "metric_confusion",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-082",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-083",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-084",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-085",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-086",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-087",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-088",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-089",
+   "partition": "metric_confusion",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-090",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-091",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-092",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-093",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-094",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-095",
+   "partition": "adversarial_injection",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-096",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-097",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-098",
+   "partition": "adversarial_injection",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-099",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-100",
+   "partition": "adversarial_injection",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-101",
+   "partition": "single_contradiction",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-102",
+   "partition": "single_contradiction",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-103",
+   "partition": "adversarial_injection",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-104",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-105",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-106",
+   "partition": "adversarial_injection",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-107",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-108",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-109",
+   "partition": "padding",
+   "operator_label": "neutral",
+   "operator_removable": [
+    "yes",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-110",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-111",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-112",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-113",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-114",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-115",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-116",
+   "partition": "single_contradiction",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-117",
+   "partition": "single_contradiction",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-118",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-119",
+   "partition": "metric_confusion",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-120",
+   "partition": "metric_confusion",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-121",
+   "partition": "joint_evidence",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-122",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-123",
+   "partition": "adversarial_injection",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-124",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-125",
+   "partition": "metric_confusion",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-126",
+   "partition": "cross_source_disagreement",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "no"
+   ],
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-127",
+   "partition": "metric_confusion",
+   "operator_label": "contradiction",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "contradiction",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-128",
+   "partition": "padding",
+   "operator_label": "entailment",
+   "operator_removable": [
+    "no",
+    "yes"
+   ],
+   "accepted": false,
+   "reason": "padding_reference",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    },
+    {
+     "id": "R2",
+     "necessary": false
+    }
+   ]
+  },
+  {
+   "id": "jf4-129",
+   "partition": "single_neutral",
+   "operator_label": "neutral",
+   "operator_removable": null,
+   "accepted": false,
+   "reason": "unsupported",
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  },
+  {
+   "id": "jf4-130",
+   "partition": "single_entailment",
+   "operator_label": "entailment",
+   "operator_removable": null,
+   "accepted": true,
+   "reason": null,
+   "served_model": "MiniMax-M3",
+   "refs": [
+    {
+     "id": "R1",
+     "necessary": true
+    }
+   ]
+  }
+ ]
+}

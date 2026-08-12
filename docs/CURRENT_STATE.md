@@ -427,6 +427,20 @@ Deployed 2026-08-11; Milestones 1 and 3 are now complete:
   all-true, sealed attempt-11 artifacts byte-identical at 67 documents /
   13 reports.
 
+## v4 blind evaluation passed (HUB-036) — judge gate measured, still not deployed
+
+Measured 2026-08-12 on branch `hub-036-judge-eval-v4`. The MiniMax M3 judge
+gate passed the one-time operator-annotated 130-case v4 blind final on every
+gate: zero unsupported acceptances (including the adversarial-injection
+stratum), padding rejection 1.0, joint acceptance 25/25, cross-source
+disagreement acceptance 20/20, metric-confusion rejection 10/10. Seals:
+content `21465f6e…`, labels `632c30c3…`, results `7c9ed9ac…`; judge
+configuration frozen before the run; served model `MiniMax-M3` throughout
+(the seal records that MiniMax reports no finer version granularity — any
+served-model change requires a fresh blind set before the gate is trusted).
+The deployed stack is UNCHANGED: the sealed v2 NLI verifier remains the live
+gate and `CLAIM_GATE=nli` remains the default until HUB-034 is authorized.
+
 ## Selectable claim gate merged, not deployed (HUB-035)
 
 Merged 2026-08-12 on `hub-035-minimax-judge-gate`. The repository now contains

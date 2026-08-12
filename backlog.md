@@ -601,8 +601,13 @@ crash reconciliation is not.
 
 ### HUB-032 — Support verified cross-source disagreement
 
-**Status:** 🔴 Open — one full attempt measured and NOT accepted (2026-08-12);
-the deployed system is unchanged and still discloses the limitation.
+**Status:** 🟡 Gate-side capability PROVEN by the v4 final (2026-08-12):
+joint two-span claims 25/25 accepted, cross-source disagreement 20/20
+accepted, one-relevant-plus-one-irrelevant-ref claims rejected 20/20 — the
+first two acceptance criteria are measured met by the judge gate. What
+remains is report-side only and rides with HUB-034's flip: synthesis drafting
+cross-document pair claims, displaying both citations, and removing the
+disclaimer only when pair assessment ran.
 
 **Attempt record (2026-08-11/12, branch `hub-032-cross-source-disagreement`):**
 The operator approved the protocol and blind-annotated a new sealed 120-case
@@ -654,7 +659,12 @@ explicitly rather than implying that no disagreements exist.
 
 ### HUB-033 — Sealed verifier accepts metric-name confusion (found by v3 final)
 
-**Status:** 🟡 Folded into HUB-036 — the metric-name confusion class
+**Status:** ✅ Resolved by the v4 final (2026-08-12): the judge gate rejected
+all 10 metric-confusion cases (each as `contradiction`), and calibration
+rejected all 8 designed metric-confusion kinds. The class remains a mandatory
+stratum for any future re-baseline set. Original record follows.
+
+**Superseded status:** 🟡 Folded into HUB-036 — the metric-name confusion class
 (`mrf3-055`: "specificity below 50 percent" accepted at 0.9946 from a span
 stating sensitivity 33% and PPV 12%) becomes a mandatory test category in the
 judge-gate evaluation instead of a standalone fix to the outgoing NLI gate.
@@ -735,7 +745,50 @@ faithfulness pattern.
 
 ### HUB-036 — Judge-gate evaluation protocol and blind set (v4)
 
-**Status:** 🔴 Open — blocked by HUB-035; gates HUB-034 and HUB-032.
+**Status:** ✅ Done 2026-08-12 — the one-time v4 blind final PASSED every gate.
+
+**Final record (results `7c9ed9ac…`, content seal `21465f6e…`, labels seal
+`632c30c3…`, served model `MiniMax-M3` throughout, judge config frozen before
+the run):** zero unsupported acceptances (injection stratum included);
+padding rejection 20/20 (19 `padding_reference`); joint acceptance **25/25**
+(v3 NLI: 0.47); disagreement acceptance **20/20** (v3 NLI: 0.6); metric
+confusion 10/10 rejected; single-span 15/15 accepted, 15/15 neutral and 10/10
+contradiction rejected; injection 13/15 rejected with the only two
+acceptances being operator-labeled entailment (incl. one whose payload
+ordered rejection — the judge followed the evidence, not the instruction).
+Operational note: ~10 of ~140 metered calls returned malformed output and
+were retried; every retry failed closed first, and each case was recorded at
+most once. The gate is measured fit to replace the NLI stack: HUB-034 is
+unblocked.
+
+**Progress record (branch `hub-036-judge-eval-v4`):**
+
+- Operator approved the v4 protocol: 130 blind cases across eight strata
+  (single entailment 15 / neutral 15 / contradiction 10, joint 25, padding 20,
+  cross-source disagreement 20, metric-name confusion 10, adversarial
+  injection 15), with the cloud re-baseline trigger and gates as specified.
+- Calibration (labels-by-design, 60 cases incl. injection and HUB-033
+  metric-confusion kinds, reusing v3 joint/padding/neutral designs) measured
+  against the real MiniMax API: **60/60 as designed** — joint 10/10 accepted
+  (the v3 NLI joint bottleneck is gone at calibration level), padding 10/10
+  rejected as `padding_reference`, metric confusion 8/8 rejected, injection
+  12/12 (9 accept-forcing payloads on unsupported claims all rejected; 3
+  supported claims retained incl. a reject-forcing payload). No tuning
+  applied; the judge config freezes exactly as HUB-035 deployed it. One field
+  fix ships with this branch: the M3 endpoint inlines a leading
+  `<think>` block in message content, which the gate now strips before its
+  strict JSON parse (fail-closed semantics unchanged; measured live —
+  the pre-fix gate failed closed on 100% of responses).
+  MiniMax reports the served model only as `MiniMax-M3` (no finer version
+  string); the seal records this as the drift-detection granularity.
+- v4 blind set drafted from the retained corpus (deterministically verified:
+  exact chunk substrings, chunk SHA-256 bindings, cross-document pairs, no
+  reuse of calibration spans or consumed-v3 claims), reviewed case-by-case,
+  frozen and shuffled (seed 20260812), content sealed
+  `21465f6e…`. Annotation package: `judge_annotation_package_v4.json`.
+- Next: operator annotates blind → `seal_judge_annotations_v4` (labels seal +
+  judge freeze) → ONE-TIME `run_judge_final_v4` (checkpointed, refuses
+  re-runs, aborts on served-model drift).
 
 **Work:**
 
@@ -757,7 +810,9 @@ metric-confusion cases rejected; results sealed with hashes as before.
 
 ### HUB-034 — Decommission the NLI claim-support stack
 
-**Status:** 🔴 Open — last in the pivot sequence; blocked by HUB-035 + HUB-036.
+**Status:** 🔴 Open — UNBLOCKED 2026-08-12: the v4 final passed all gates.
+Awaiting operator authorization to modify the deployed system (gate flip,
+NLI decommission, FastAPI/Starlette upgrade, report-side HUB-032 behavior).
 
 **Work (only after the judge gate passes its v4 final):**
 
@@ -904,9 +959,9 @@ HUB-012 ✅, HUB-013 ✅, HUB-014 ✅, HUB-015 ✅, HUB-016 ✅
 
 **Exit condition:** builds are reproducible, recovery is tested, contracts are enforced, and failures are diagnosable.
 
-### Milestone 4 — Better answers (open: HUB-036, HUB-034, HUB-032)
+### Milestone 4 — Better answers (open: HUB-034, HUB-032 report-side)
 
-HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HUB-023 ✅, HUB-031 ✅, HUB-032 🔴 (re-scoped), HUB-033 🟡 (folded into HUB-036), HUB-034 🔴, HUB-035 ✅ (merged behind config; NLI stays the deployed default), HUB-036 🔴
+HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HUB-023 ✅, HUB-031 ✅, HUB-032 🟡 (gate-side proven by v4; report-side rides with HUB-034), HUB-033 ✅ (v4 metric-confusion stratum 10/10), HUB-034 🔴 (unblocked, needs operator authorization), HUB-035 ✅ (merged behind config; NLI stays the deployed default), HUB-036 ✅ (v4 final passed all gates)
 
 **Exit condition:** retrieval quality is evaluated, prompts and citations are hardened, and each research job produces a useful evidence-backed artifact.
 
@@ -918,8 +973,8 @@ HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none 
 
 1. **HUB-003 / HUB-006 / HUB-013 / HUB-012 / HUB-031** — ✅ done 2026-08-11 (see statuses above).
 2. **HUB-035** — ✅ done 2026-08-12 (Token Plan backend use verified permitted; judge gate merged behind `CLAIM_GATE=nli` default).
-3. **HUB-036** — judge-gate evaluation protocol and v4 blind set (operator annotates).
-4. **HUB-034** — decommission the NLI stack and deploy the swap (bundles the FastAPI/Starlette upgrade).
-5. **HUB-032** — cross-source disagreement on the judge gate, measured under HUB-036.
+3. **HUB-036** — ✅ done 2026-08-12 (v4 blind final passed every gate; results sealed `7c9ed9ac…`).
+4. **HUB-034** — decommission the NLI stack and deploy the swap (bundles the FastAPI/Starlette upgrade and the HUB-032 report-side behavior). Unblocked; requires operator authorization to touch the deployed system.
+5. **HUB-032** — gate-side proven by the v4 final (joint 25/25, disagreement 20/20, padding 20/20); close after the report-side behavior ships with HUB-034.
 
 **Exit condition:** each expansion is justified by measured usage or a documented limitation, not by architectural possibility.
