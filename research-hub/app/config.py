@@ -2,7 +2,7 @@
 
 import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -41,6 +41,14 @@ class Config:
     report_rrf_k: int = 60
     claim_verifier_url: str = "http://claim-verifier:8001"
     claim_verifier_timeout_seconds: float = 30.0
+    # HUB-035: "nli" (sealed v2 default) or "judge" (MiniMax M3, opt-in until
+    # HUB-034 flips the default after the v4 blind final passes).
+    claim_gate: str = "nli"
+    judge_base_url: str = "https://api.minimax.io/v1"
+    judge_model: str = "MiniMax-M3"
+    # Subscription Key — excluded from repr so the secret can never reach logs.
+    judge_api_key: str = field(default="", repr=False)
+    judge_timeout_seconds: float = 60.0
 
     def __post_init__(self) -> None:
         if not 1 <= self.report_rrf_k <= 1000:
@@ -54,6 +62,12 @@ class Config:
             raise ValueError("REPORT_RETRIEVAL_MIN_SCORE must be finite")
         if not math.isfinite(self.claim_verifier_timeout_seconds) or self.claim_verifier_timeout_seconds <= 0:
             raise ValueError("CLAIM_VERIFIER_TIMEOUT_SECONDS must be positive and finite")
+        if self.claim_gate not in {"nli", "judge"}:
+            raise ValueError("CLAIM_GATE must be 'nli' or 'judge'")
+        if self.claim_gate == "judge" and not self.judge_api_key:
+            raise ValueError("CLAIM_GATE=judge requires MINIMAX_SUBSCRIPTION_KEY")
+        if not math.isfinite(self.judge_timeout_seconds) or self.judge_timeout_seconds <= 0:
+            raise ValueError("JUDGE_TIMEOUT_SECONDS must be positive and finite")
         if self.crawl_max_markdown_chars < 1:
             raise ValueError("CRAWL_MAX_MARKDOWN_CHARS must be positive")
 
@@ -108,4 +122,9 @@ def load_config() -> Config:
         claim_verifier_timeout_seconds=float(
             os.environ.get("CLAIM_VERIFIER_TIMEOUT_SECONDS", "30")
         ),
+        claim_gate=os.environ.get("CLAIM_GATE", "nli").strip().lower(),
+        judge_base_url=os.environ.get("JUDGE_BASE_URL", "https://api.minimax.io/v1"),
+        judge_model=os.environ.get("JUDGE_MODEL", "MiniMax-M3"),
+        judge_api_key=os.environ.get("MINIMAX_SUBSCRIPTION_KEY", ""),
+        judge_timeout_seconds=float(os.environ.get("JUDGE_TIMEOUT_SECONDS", "60")),
     )

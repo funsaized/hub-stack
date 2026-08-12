@@ -233,6 +233,18 @@ API and worker. Ollama remains the only GPU consumer.
 - **Fail-closed claim support**: research/all readiness includes the verifier. Timeout,
   unavailability, revision mismatch, malformed output, unresolved spans, non-entailment, and
   inputs over 512 tokens reject persistence; no input is truncated.
+- **Selectable claim gate (HUB-035)**: `CLAIM_GATE=nli` (default) keeps the sealed v2
+  DeBERTa NLI verifier; `CLAIM_GATE=judge` selects the MiniMax M3 LLM-as-judge
+  faithfulness gate (`app/judge_gate.py`). The judge shares the verdict contract and
+  fail-closed semantics (timeout, quota exhaustion, malformed or schema-violating
+  output, missing served-model version all leave the report retryable), is conjunctive
+  with the deterministic structural checks (it can only reject more, never admit what
+  structure rejects), fences evidence as untrusted with fence-break neutralization,
+  judges multi-span claims natively with per-ref necessity (padding rejection), and
+  records the served model version in every verdict because a cloud judge is not
+  frozen. Selecting the judge sends retained evidence spans to the MiniMax API — a
+  deliberate privacy exception documented in `docs/NETWORKING.md`. The default must
+  not flip before the v4 blind evaluation passes (HUB-036, then HUB-034).
 - **Span-first report claims**: report synthesis drafts one claim per exact evidence
   sentence rather than drafting claims and then choosing evidence for them, so a claim can
   never be paired with a span that does not support it. Claims are compressions of their

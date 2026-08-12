@@ -663,7 +663,34 @@ with extra caution.
 
 ### HUB-035 — MiniMax M3 LLM-as-judge claim-faithfulness gate
 
-**Status:** 🔴 Open — do first in the pivot sequence.
+**Status:** ✅ Implemented and merged 2026-08-12 behind `CLAIM_GATE` (default
+`nli`) — the sealed v2 NLI verifier remains the deployed gate; nothing flips
+before the v4 final (HUB-036 → HUB-034).
+
+**Token Plan verification (2026-08-12, gate condition):** the official MiniMax
+docs (`platform.minimax.io/docs/token-plan/faq` and `…/token-plan/other-tools`)
+permit the Subscription Key with any tool accepting a custom Base URL + API Key
+against the OpenAI-compatible (`https://api.minimax.io/v1`) or
+Anthropic-compatible endpoints, with no tool-type or automation restriction
+documented; pay-as-you-go is only *recommended* for production. Single-user
+programmatic backend use is therefore permitted; quota exhaustion (5-hour
+rolling and weekly windows) fails closed and leaves reports retryable.
+
+**Implementation record:** `app/judge_gate.py` — OpenAI-compatible
+`/chat/completions` client (`MiniMax-M3`, temperature 0, bounded response),
+structured JSON verdict enforced strictly (exact keys, per-ref necessity, one
+refs entry per span), served model version required and recorded per verdict,
+every error path (timeout, HTTP failure, 429 and in-body quota codes, malformed
+or schema-violating output) raises `VerifierUnavailable` and stays retryable.
+Structural checks (supports-restates-claim verbatim, bounded refs) run locally
+before any API call — the judge is never consulted for a structurally invalid
+claim and cannot admit padding (an accepted verdict with an unnecessary span is
+downgraded to `padding_reference` locally). Evidence is fenced as untrusted
+with fence-break escaping; the system prompt forbids following instructions in
+evidence. 20 offline tests (httpx MockTransport) cover the fail-closed matrix,
+adversarial spans, fence integrity, key hygiene (header-only, absent from
+`Config` repr), and gate selection. The Subscription Key is wired from the
+gitignored `.env` via required `${MINIMAX_SUBSCRIPTION_KEY:?}` expansion.
 
 **Problem:** the frozen DeBERTa NLI gate cannot judge joint multi-span claims
 (measured: v3 final joint acceptance 0.47) and conflates metric names
@@ -877,9 +904,9 @@ HUB-012 ✅, HUB-013 ✅, HUB-014 ✅, HUB-015 ✅, HUB-016 ✅
 
 **Exit condition:** builds are reproducible, recovery is tested, contracts are enforced, and failures are diagnosable.
 
-### Milestone 4 — Better answers (open: HUB-035, HUB-036, HUB-034, HUB-032)
+### Milestone 4 — Better answers (open: HUB-036, HUB-034, HUB-032)
 
-HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HUB-023 ✅, HUB-031 ✅, HUB-032 🔴 (re-scoped), HUB-033 🟡 (folded into HUB-036), HUB-034 🔴, HUB-035 🔴, HUB-036 🔴
+HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HUB-023 ✅, HUB-031 ✅, HUB-032 🔴 (re-scoped), HUB-033 🟡 (folded into HUB-036), HUB-034 🔴, HUB-035 ✅ (merged behind config; NLI stays the deployed default), HUB-036 🔴
 
 **Exit condition:** retrieval quality is evaluated, prompts and citations are hardened, and each research job produces a useful evidence-backed artifact.
 
@@ -890,7 +917,7 @@ HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none 
 ### Recommended order for the remaining open work (2026-08-12, post-pivot)
 
 1. **HUB-003 / HUB-006 / HUB-013 / HUB-012 / HUB-031** — ✅ done 2026-08-11 (see statuses above).
-2. **HUB-035** — MiniMax M3 judge gate (verify Token Plan backend-use terms first).
+2. **HUB-035** — ✅ done 2026-08-12 (Token Plan backend use verified permitted; judge gate merged behind `CLAIM_GATE=nli` default).
 3. **HUB-036** — judge-gate evaluation protocol and v4 blind set (operator annotates).
 4. **HUB-034** — decommission the NLI stack and deploy the swap (bundles the FastAPI/Starlette upgrade).
 5. **HUB-032** — cross-source disagreement on the judge gate, measured under HUB-036.

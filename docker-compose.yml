@@ -248,6 +248,14 @@ services:
       - REPORT_RRF_K=${REPORT_RRF_K:-60}
       - CLAIM_VERIFIER_URL=http://claim-verifier:8001
       - CLAIM_VERIFIER_TIMEOUT_SECONDS=${CLAIM_VERIFIER_TIMEOUT_SECONDS:-30}
+      # HUB-035: claim gate selection. "nli" (sealed v2 default) or "judge"
+      # (MiniMax M3 cloud judge — retained corpus spans leave the machine).
+      - CLAIM_GATE=${CLAIM_GATE:-nli}
+      # Required secret from .env — the MiniMax Token Plan Subscription Key.
+      - MINIMAX_SUBSCRIPTION_KEY=${MINIMAX_SUBSCRIPTION_KEY:?Set MINIMAX_SUBSCRIPTION_KEY in .env — MiniMax Token Plan Subscription Key}
+      - JUDGE_BASE_URL=${JUDGE_BASE_URL:-https://api.minimax.io/v1}
+      - JUDGE_MODEL=${JUDGE_MODEL:-MiniMax-M3}
+      - JUDGE_TIMEOUT_SECONDS=${JUDGE_TIMEOUT_SECONDS:-60}
     depends_on:
       ollama:
         condition: service_healthy
@@ -310,6 +318,12 @@ services:
       - REPORT_RRF_K=${REPORT_RRF_K:-60}
       - CLAIM_VERIFIER_URL=http://claim-verifier:8001
       - CLAIM_VERIFIER_TIMEOUT_SECONDS=${CLAIM_VERIFIER_TIMEOUT_SECONDS:-30}
+      # HUB-035: claim gate selection (see research-hub service).
+      - CLAIM_GATE=${CLAIM_GATE:-nli}
+      - MINIMAX_SUBSCRIPTION_KEY=${MINIMAX_SUBSCRIPTION_KEY:?Set MINIMAX_SUBSCRIPTION_KEY in .env — MiniMax Token Plan Subscription Key}
+      - JUDGE_BASE_URL=${JUDGE_BASE_URL:-https://api.minimax.io/v1}
+      - JUDGE_MODEL=${JUDGE_MODEL:-MiniMax-M3}
+      - JUDGE_TIMEOUT_SECONDS=${JUDGE_TIMEOUT_SECONDS:-60}
     volumes:
       - research_hub_data:/app/data
     depends_on:

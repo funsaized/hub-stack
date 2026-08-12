@@ -63,6 +63,7 @@ jobs:
           # live only in the deployment's .env.
           SEARXNG_SECRET: ci-placeholder
           CRAWL4AI_API_TOKEN: ci-placeholder
+          MINIMAX_SUBSCRIPTION_KEY: ci-placeholder
         run: docker compose config --quiet
 
   build:

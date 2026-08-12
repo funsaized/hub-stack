@@ -24,6 +24,7 @@ from .document_store import DocumentStore
 from .url_policy import DestinationNotAllowed, vet_destination_async
 from .retrieval import ScopedRetrievalService
 from .claim_support import ClaimVerifierClient
+from .judge_gate import JudgeClaimVerifier
 from .observability import (
     CHUNKS, CRAWLS, EMBED_LATENCY, JOB_PHASE_LATENCY, SEARCH_RESULTS,
     UPSERT_LATENCY, phase_timer,
@@ -229,6 +230,19 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> list[str
     return [c.strip() for c in chunks if c.strip()]
 
 
+def build_claim_gate(cfg: Config):
+    """HUB-035: the MiniMax judge gate is opt-in; the sealed v2 NLI verifier
+    stays the default until HUB-034 flips it after the v4 final passes."""
+    if cfg.claim_gate == "judge":
+        return JudgeClaimVerifier(
+            base_url=cfg.judge_base_url,
+            api_key=cfg.judge_api_key,
+            model=cfg.judge_model,
+            timeout=cfg.judge_timeout_seconds,
+        )
+    return ClaimVerifierClient(cfg.claim_verifier_url, cfg.claim_verifier_timeout_seconds)
+
+
 class ResearchOrchestrator:
     """Runs research jobs and persists state to Redis."""
 
@@ -254,9 +268,7 @@ class ResearchOrchestrator:
             lexical=self.documents if cfg.report_hybrid_retrieval else None,
             rrf_k=cfg.report_rrf_k,
         )
-        self.claim_verifier = ClaimVerifierClient(
-            cfg.claim_verifier_url, cfg.claim_verifier_timeout_seconds
-        )
+        self.claim_verifier = build_claim_gate(cfg)
         self._redis: redis_async.Redis | None = None
 
     async def init(self):

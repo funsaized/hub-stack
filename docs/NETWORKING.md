@@ -17,6 +17,17 @@ Redis, Qdrant, and Crawl4AI publish no host ports. Use `docker compose
 exec` for maintenance and Compose service names such as `hub-qdrant:6333` for
 container-to-container monitoring.
 
+## Outbound exception: MiniMax judge gate (HUB-035)
+
+When `CLAIM_GATE=judge` is selected, Research Hub and the Research Worker call
+the MiniMax API (`https://api.minimax.io`) to judge claim faithfulness. This is
+a deliberate, operator-accepted exception to the local-only premise: retained
+corpus evidence spans and drafted claims leave the machine for judging. The
+Subscription Key lives only in the gitignored `.env` (required `${VAR:?}`
+expansion) and is sent only as an Authorization header — it never appears in
+logs, diagnostics, or request bodies. The default gate (`CLAIM_GATE=nli`) makes
+no outbound calls; no inbound surface changes either way.
+
 ## Allow Ollama from another device
 
 Ollama has no authentication in this deployment. Prefer binding its published
