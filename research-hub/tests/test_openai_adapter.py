@@ -160,7 +160,7 @@ class ProtocolTests(unittest.TestCase):
 
 class ConfigurationTests(unittest.TestCase):
     def test_generation_model_default_matches_deployment_default(self):
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {"MINIMAX_SUBSCRIPTION_KEY": "test-key"}, clear=True):
             config = load_config()
 
         self.assertEqual(config.llm_model, "qwen3.5:9b")

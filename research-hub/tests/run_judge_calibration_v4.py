@@ -23,8 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from app.claim_support import VerifierUnavailable  # noqa: E402
-from app.judge_gate import JudgeClaimVerifier  # noqa: E402
+from app.judge_gate import JudgeClaimVerifier, VerifierUnavailable  # noqa: E402
 from judge_seal_v4 import judge_config_fingerprint, wire_claim  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"

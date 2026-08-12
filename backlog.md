@@ -601,13 +601,13 @@ crash reconciliation is not.
 
 ### HUB-032 — Support verified cross-source disagreement
 
-**Status:** 🟡 Gate-side capability PROVEN by the v4 final (2026-08-12):
-joint two-span claims 25/25 accepted, cross-source disagreement 20/20
-accepted, one-relevant-plus-one-irrelevant-ref claims rejected 20/20 — the
-first two acceptance criteria are measured met by the judge gate. What
-remains is report-side only and rides with HUB-034's flip: synthesis drafting
-cross-document pair claims, displaying both citations, and removing the
-disclaimer only when pair assessment ran.
+**Status:** ✅ Done 2026-08-12 — closed by the v4 final plus the HUB-034
+deploy. Gate-side: joint two-span claims 25/25 accepted, cross-source
+disagreement 20/20 accepted, one-relevant-plus-one-irrelevant-ref claims
+rejected 20/20 under the sealed v4 evaluation. Report-side (deployed with
+HUB-034): synthesis drafts bounded cross-document span pairs, verified pair
+claims display both citations, and the standing disclaimer is emitted only
+when no cross-document pair was available for assessment.
 
 **Attempt record (2026-08-11/12, branch `hub-032-cross-source-disagreement`):**
 The operator approved the protocol and blind-annotated a new sealed 120-case
@@ -810,9 +810,25 @@ metric-confusion cases rejected; results sealed with hashes as before.
 
 ### HUB-034 — Decommission the NLI claim-support stack
 
-**Status:** 🔴 Open — UNBLOCKED 2026-08-12: the v4 final passed all gates.
-Awaiting operator authorization to modify the deployed system (gate flip,
-NLI decommission, FastAPI/Starlette upgrade, report-side HUB-032 behavior).
+**Status:** ✅ Done — operator-authorized and deployed 2026-08-12.
+
+**Deploy record:** `claim-verifier` service, `LocalClaimVerifier`, the baked
+DeBERTa weights, and NLI-specific tests removed (image ~0.4 GB, previously
+multi-GB with torch; `torch`/`transformers`/`sentencepiece` dropped from the
+lockfile). The judge (`app/judge_gate.py`) is the only claim gate; config
+requires `MINIMAX_SUBSCRIPTION_KEY` at startup. FastAPI 0.115.5 → 0.141.1
+(Starlette 1.6.0) bundled per the HUB-012 deferral; hashed lockfile
+regenerated, `pip check` clean. The v2 seal is retired explicitly in
+`docs/CURRENT_STATE.md` (fixtures retained as audit record); the v4 seal is
+active. Report-side HUB-032 behavior shipped (cross-document pair drafting
+ported from the archived v3 branch, judged with per-ref necessity; the
+disagreement disclaimer survives only when no cross-document pair was
+available). Deploy verified: compose topology seven containers with
+`hub-claim-verifier` removed, deployed `judge_gate.py`/`synthesis.py`/
+`research.py`/`config.py` SHA-256-identical to the tree in hub and worker,
+`/readyz` all-true, attempt-11 report and registry byte-identical
+(`068d60b2…`, `d6748d76…`) at 67 documents / 13 reports, 205 tests green in
+the deployed image.
 
 **Work (only after the judge gate passes its v4 final):**
 
@@ -959,9 +975,9 @@ HUB-012 ✅, HUB-013 ✅, HUB-014 ✅, HUB-015 ✅, HUB-016 ✅
 
 **Exit condition:** builds are reproducible, recovery is tested, contracts are enforced, and failures are diagnosable.
 
-### Milestone 4 — Better answers (open: HUB-034, HUB-032 report-side)
+### Milestone 4 — Better answers — ✅ COMPLETE (2026-08-12)
 
-HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HUB-023 ✅, HUB-031 ✅, HUB-032 🟡 (gate-side proven by v4; report-side rides with HUB-034), HUB-033 ✅ (v4 metric-confusion stratum 10/10), HUB-034 🔴 (unblocked, needs operator authorization), HUB-035 ✅ (merged behind config; NLI stays the deployed default), HUB-036 ✅ (v4 final passed all gates)
+HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HUB-023 ✅, HUB-031 ✅, HUB-032 ✅ (v4 final + HUB-034 report-side), HUB-033 ✅ (v4 metric-confusion stratum 10/10), HUB-034 ✅ (judge deployed; NLI decommissioned), HUB-035 ✅, HUB-036 ✅ (v4 final passed all gates)
 
 **Exit condition:** retrieval quality is evaluated, prompts and citations are hardened, and each research job produces a useful evidence-backed artifact.
 
@@ -974,7 +990,9 @@ HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none 
 1. **HUB-003 / HUB-006 / HUB-013 / HUB-012 / HUB-031** — ✅ done 2026-08-11 (see statuses above).
 2. **HUB-035** — ✅ done 2026-08-12 (Token Plan backend use verified permitted; judge gate merged behind `CLAIM_GATE=nli` default).
 3. **HUB-036** — ✅ done 2026-08-12 (v4 blind final passed every gate; results sealed `7c9ed9ac…`).
-4. **HUB-034** — decommission the NLI stack and deploy the swap (bundles the FastAPI/Starlette upgrade and the HUB-032 report-side behavior). Unblocked; requires operator authorization to touch the deployed system.
-5. **HUB-032** — gate-side proven by the v4 final (joint 25/25, disagreement 20/20, padding 20/20); close after the report-side behavior ships with HUB-034.
+4. **HUB-034** — ✅ done 2026-08-12 (operator-authorized; judge deployed as the only gate, NLI stack decommissioned, FastAPI/Starlette upgraded, deploy fully verified).
+5. **HUB-032** — ✅ done 2026-08-12 (v4 final gate-side + HUB-034 report-side pair drafting and disclaimer logic).
+
+The pivot sequence is complete; Milestone 4 is closed. Remaining open work is P3 (revisit triggers, none tripped).
 
 **Exit condition:** each expansion is justified by measured usage or a documented limitation, not by architectural possibility.

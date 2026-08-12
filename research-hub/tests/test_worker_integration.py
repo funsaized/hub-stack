@@ -60,7 +60,8 @@ class WorkerRedisIntegrationTests(unittest.IsolatedAsyncioTestCase):
         cfg = Config(
             redis_url="redis://localhost:6379/15", qdrant_url="", ollama_url="",
             llm_model="", embedding_model="", searxng_url="", crawl4ai_url="",
-            crawl4ai_token="", log_level="info", worker_lease_seconds=30,
+            crawl4ai_token="", log_level="info", judge_api_key="test-key",
+            worker_lease_seconds=30,
             worker_heartbeat_seconds=5, job_timeout_seconds=5,
             job_max_attempts=attempts, queue_poll_seconds=1,
         )

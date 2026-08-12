@@ -23,7 +23,6 @@ from .models import JobStatus, ResearchRequest
 from .document_store import DocumentStore
 from .url_policy import DestinationNotAllowed, vet_destination_async
 from .retrieval import ScopedRetrievalService
-from .claim_support import ClaimVerifierClient
 from .judge_gate import JudgeClaimVerifier
 from .observability import (
     CHUNKS, CRAWLS, EMBED_LATENCY, JOB_PHASE_LATENCY, SEARCH_RESULTS,
@@ -231,16 +230,17 @@ def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> list[str
 
 
 def build_claim_gate(cfg: Config):
-    """HUB-035: the MiniMax judge gate is opt-in; the sealed v2 NLI verifier
-    stays the default until HUB-034 flips it after the v4 final passes."""
-    if cfg.claim_gate == "judge":
-        return JudgeClaimVerifier(
-            base_url=cfg.judge_base_url,
-            api_key=cfg.judge_api_key,
-            model=cfg.judge_model,
-            timeout=cfg.judge_timeout_seconds,
-        )
-    return ClaimVerifierClient(cfg.claim_verifier_url, cfg.claim_verifier_timeout_seconds)
+    """The MiniMax judge is the claim gate (HUB-034; v4 final passed 2026-08-12).
+
+    The NLI verifier service and its sealed v2 evaluation are retired — see
+    docs/CURRENT_STATE.md. The judge was validated by the sealed v4 blind
+    evaluation and re-baselines on any served-model change."""
+    return JudgeClaimVerifier(
+        base_url=cfg.judge_base_url,
+        api_key=cfg.judge_api_key,
+        model=cfg.judge_model,
+        timeout=cfg.judge_timeout_seconds,
+    )
 
 
 class ResearchOrchestrator:

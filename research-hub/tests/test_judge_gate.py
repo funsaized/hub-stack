@@ -6,9 +6,8 @@ import unittest
 
 import httpx
 
-from app.claim_support import ClaimVerifierClient, VerifierUnavailable
 from app.config import Config
-from app.judge_gate import JUDGE_SYSTEM, JudgeClaimVerifier
+from app.judge_gate import JUDGE_SYSTEM, JudgeClaimVerifier, VerifierUnavailable
 from app.research import build_claim_gate
 
 
@@ -253,26 +252,18 @@ class GateSelectionTests(unittest.IsolatedAsyncioTestCase):
             crawl4ai_token="", log_level="info", **overrides,
         )
 
-    async def test_default_gate_is_the_sealed_nli_verifier(self):
-        gate = build_claim_gate(self.config())
-        self.addAsyncCleanup(gate.close)
-        self.assertIsInstance(gate, ClaimVerifierClient)
-
-    async def test_judge_gate_is_selected_by_flag(self):
-        gate = build_claim_gate(self.config(claim_gate="judge", judge_api_key="k"))
+    async def test_the_gate_is_the_judge(self):
+        # HUB-034: the NLI stack is retired; the judge is the only claim gate.
+        gate = build_claim_gate(self.config(judge_api_key="k"))
         self.addAsyncCleanup(gate.close)
         self.assertIsInstance(gate, JudgeClaimVerifier)
 
-    async def test_judge_gate_requires_the_subscription_key(self):
+    async def test_config_requires_the_subscription_key(self):
         with self.assertRaisesRegex(ValueError, "MINIMAX_SUBSCRIPTION_KEY"):
-            self.config(claim_gate="judge")
-
-    async def test_unknown_gate_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "CLAIM_GATE"):
-            self.config(claim_gate="hybrid")
+            self.config()
 
     async def test_key_is_absent_from_config_repr(self):
-        cfg = self.config(claim_gate="judge", judge_api_key="sk-cp-secret-value")
+        cfg = self.config(judge_api_key="sk-cp-secret-value")
         self.assertNotIn("sk-cp-secret-value", repr(cfg))
 
 
