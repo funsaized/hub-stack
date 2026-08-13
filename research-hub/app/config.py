@@ -52,7 +52,6 @@ class Config:
     plan_facet_relevance: float = 0.35
     plan_max_facets: int = 8
     plan_max_rounds: int = 3
-    plan_novelty_min: float = 0.2
     plan_search_budget: int = 12
     plan_crawl_budget: int = 40
     # The claim gate is the MiniMax M3 judge (HUB-034; sealed v4 final passed).
@@ -91,8 +90,6 @@ class Config:
             raise ValueError("PLAN_MAX_FACETS must be between 1 and 32")
         if not 1 <= self.plan_max_rounds <= 10:
             raise ValueError("PLAN_MAX_ROUNDS must be between 1 and 10")
-        if not 0.0 <= self.plan_novelty_min <= 1.0:
-            raise ValueError("PLAN_NOVELTY_MIN must be in [0.0, 1.0]")
         if not 1 <= self.plan_search_budget <= 64:
             raise ValueError("PLAN_SEARCH_BUDGET must be between 1 and 64")
         if not 1 <= self.plan_crawl_budget <= 500:
@@ -150,7 +147,6 @@ def load_config() -> Config:
         plan_facet_relevance=float(os.environ.get("PLAN_FACET_RELEVANCE", "0.35")),
         plan_max_facets=int(os.environ.get("PLAN_MAX_FACETS", "8")),
         plan_max_rounds=int(os.environ.get("PLAN_MAX_ROUNDS", "3")),
-        plan_novelty_min=float(os.environ.get("PLAN_NOVELTY_MIN", "0.2")),
         plan_search_budget=int(os.environ.get("PLAN_SEARCH_BUDGET", "12")),
         plan_crawl_budget=int(os.environ.get("PLAN_CRAWL_BUDGET", "40")),
         judge_base_url=os.environ.get("JUDGE_BASE_URL", "https://api.minimax.io/v1"),

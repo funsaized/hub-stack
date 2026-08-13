@@ -869,10 +869,10 @@ saturation. Novelty was computed over the whole policy-accepted candidate pool
 (59–93 URLs/round) while a round fetches only `depth` documents, so the ratio
 pins near 1.0 whatever the true saturation. The denominator is now the round's
 top-`depth` fetch window, with the full pool kept in provenance as `pool`.
-`PLAN_NOVELTY_MIN = 0.2` is still uncalibrated — the corrected metric has not
-been observed live, so the next planned run is still a calibration run.
+That correction made the number honest but still not useful, and the metric
+was retired outright the same day — see "Stage 2 as built, then redesigned".
 
-**Finding 2 — relevance drift across rounds; OPEN, no fix attempted.** The
+**Finding 2 — relevance drift across rounds; fixed by the two-sided bar.** The
 planner proposed queries naming non-existent tools (`crdb-migration-tools`,
 `luupgtool`), and later facets pulled in HAProxy docs, pgBackRest release
 notes, a Barman manual and Datadog/Netdata monitoring pages that do not
@@ -897,35 +897,57 @@ construction rather than by reimplementation. SSRF vetting is per-URL in
 `crawl_one` and therefore unchanged. Crawl count is still bounded by `depth`,
 so breadth arrives at constant crawl and judge cost.
 
-**Stage 2 as built.** A round loop wraps search and crawl only; ingestion
-still runs once, unchanged, over the accumulated crawl results — restructuring
-it would risk the lease/heartbeat/idempotency semantics the acceptance
-criteria require untouched. After each round a bounded call reads a per-query
-coverage summary and names the gaps; those become the next round's queries,
-admitted by the same distinctness bar against **every** query already issued.
-Rounds stop on novelty saturation (a round's fraction of policy-accepted
-candidates never seen before falling under `PLAN_NOVELTY_MIN`, or fewer than
-two new), checked *before* the `PLAN_MAX_ROUNDS` rail so a stop is attributed
-to the evidence running dry whenever both would have fired. `seen_canonical`
-extends dedup across rounds, so no document is fetched twice. A collapsed plan
-never opens a second round.
+**Stage 2 as built, then redesigned (2026-08-13).** A round loop wraps search
+and crawl only; ingestion still runs once, unchanged, over the accumulated
+crawl results — restructuring it would risk the lease/heartbeat/idempotency
+semantics the acceptance criteria require untouched. `seen_canonical` dedups
+across rounds, so no document is fetched twice, and a collapsed plan never
+opens a second round.
 
-Novelty is measured on policy-accepted candidates rather than the PRD's
-"retained documents" — the same signal one step earlier, so saturation costs
-no wasted fetches to discover. Recorded stop reasons: `single_round`,
-`saturation`, `coverage`, `max_rounds`, `budget`, `planner_unavailable`.
+Stopping was rebuilt after a second prior-art pass (11 further arXiv abstracts
+read; citations in the PRD). `PLAN_NOVELTY_MIN` is **retired**: document
+novelty could never fire, because admitting only distinct queries guarantees
+distinct documents, so the ratio pins near 1.0 whatever the true state of the
+research (observed live at 1.0 / 1.0 / 0.983). Saturation is now measured in
+facet-coverage space per RAVine (2507.16725): a facet is covered once a
+retained document came from its own search, recomputed over every issued query
+each round. Two threshold-free rules — `coverage_complete` (every facet
+answered) and `coverage_plateau` (a round raised the count by zero) — with
+`PLAN_MAX_ROUNDS` as the rail.
 
-Every planner failure mode — dead Ollama, malformed JSON, wrong embedding
-count, bad admission input, gap-pass failure — degrades to the single-query
-plan or ends the rounds with the reason recorded, never a failed job. 274
-tests pass in-container (69 new, offline and deterministic), ten of which
-drive `run_job`'s acquisition directly.
+**Rounds therefore exist to finish covering the admitted plan, not to invent
+new angles**, which makes one round the normal case. This is load-bearing: if
+completion did not end the loop, a gap pass that keeps inventing facets would
+raise the count forever — novelty's runaway in a different hat. The LLM gap
+pass is now **advisory**, checked only after the arithmetic signal, because
+sufficiency judgements measure poorly (RaCGEval 2411.05547, 46.7%) and
+unaligned models default to answering rather than declining (2507.04976).
 
-**Next, in order:** (1) add the relevance floor for Finding 2 and re-measure
-on the same topic; (2) calibrate `PLAN_NOVELTY_MIN` against the corrected
-metric; (3) decide whether `depth` should remain a per-round allowance or
-become a job-wide budget, since that choice is what makes the breadth
-comparison non-cost-neutral.
+Recorded stop reasons: `single_round`, `coverage_complete`,
+`coverage_plateau`, `max_rounds`, `budget`, `coverage`, `planner_unavailable`.
+
+**Query quality (2026-08-13).** Admission is two-sided: a facet must be both
+distinct from the admitted set and above `PLAN_FACET_RELEVANCE` to the topic,
+fixing the observed drift into HAProxy/Barman/monitoring pages. Pre-issue QPP
+(Diaz 1507.03928) rejects run-together identifiers, out-of-range word counts
+and non-alphabetic soup before a search is spent — tuned not to fire on
+`PostgreSQL`, `WAL`, `pg_upgrade` or `libc/libssl`. A collection-IDF predictor
+was deliberately not built: QPP predicts against the collection being
+searched, and sub-queries search the web while our document frequencies are
+local. Planner and gap prompts now forbid run-together tokens and inventing
+tool names.
+
+Every planner failure mode degrades to the single-query plan or ends the
+rounds with the reason recorded, never a failed job. 293 tests pass
+in-container, zero skips.
+
+**Next, in order:** (1) re-measure on the same topic with the two-sided bar,
+pre-issue QPP and coverage stopping in place, and check whether the drift is
+actually gone rather than assumed gone; (2) calibrate `PLAN_FACET_RELEVANCE`
+from the recorded topic cosines — it is the one remaining guessed threshold;
+(3) decide whether `depth` should stay a per-round allowance or become a
+job-wide budget, since that choice is what makes the breadth comparison
+non-cost-neutral.
 
 **Trigger record:** a research job issues exactly one SearXNG query, so the
 retained corpus for a report contains only what that phrasing surfaced. The
@@ -948,12 +970,11 @@ sources that agree.
 - **Gap-driven rounds.** After each round, one bounded call reads a per-facet
   coverage summary (retained documents, distinct domains) and names what is
   still uncovered; only those gaps become the next round's queries (KiRAG).
-- **Stopping — saturation first, coverage second, budget last.** Stop when a
-  round's yield of new canonical URLs falls below `PLAN_NOVELTY_MIN` (KAIR's
-  round-over-round saturation, instanced on this system's stable canonical-URL
-  document identity); or when every facet is covered and no gap is named; with
-  hard per-job caps on rounds, searches, crawls, and wall-clock as the
-  backstop only.
+- **Stopping — coverage first, rails last.** *(Original design; superseded
+  2026-08-13 — novelty saturation was implemented, measured and retired
+  because it cannot fire under distinctness-based admission. Coverage was
+  promoted to primary, in facet space, and the LLM gap pass demoted to
+  advisory. See the status section above.)*
 
 **Prior-art traps the design explicitly avoids:** fixed depth × breadth
 parameters (Static-DRA's own limitation); expecting breadth to raise report

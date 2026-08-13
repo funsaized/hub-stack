@@ -111,17 +111,21 @@ Admission behaved as designed — six facets admitted at cosine 0.58–0.83, one
 refused `redundant` at 0.8549 (the threshold discriminating at the margin),
 one refused by the search-budget rail.
 
-**Finding 1 — `PLAN_NOVELTY_MIN` could never fire, and is now fixed.**
+**Finding 1 — `PLAN_NOVELTY_MIN` could never fire; the metric is now
+retired.**
 Round novelty measured 1.0 / 1.0 / 0.983 and the run stopped on the
 `max_rounds` rail, never on saturation. Cause: novelty was measured over the
 whole policy-accepted candidate pool (59–93 URLs per round) while a round only
 fetches `depth` documents, so almost every candidate is unseen and the ratio
 pins near 1.0 regardless of real saturation. The denominator is now the
-round's top-`depth` fetch window; the full pool is retained in provenance as
-`pool` for auditability. **The threshold `0.2` remains uncalibrated** — the
-corrected metric has not yet been observed live.
+round's top-`depth` fetch window. That made the number honest but not useful,
+and a prior-art pass the same day retired it as a control signal altogether:
+the signal is structurally incompatible with distinctness-based admission.
+Saturation now lives in facet-coverage space, with no tuned threshold at all
+(see below). Novelty is still recorded per round for calibration.
 
-**Finding 2 — facets drift off-topic as rounds progress (open).** The planner
+**Finding 2 — facets drift off-topic as rounds progress; fixed the same
+day by the two-sided admission bar and pre-issue QPP (see below).** The planner
 proposed queries naming tools that do not exist (`crdb-migration-tools`,
 `luupgtool`), and later-round facets pulled in HAProxy management docs,
 pgBackRest release notes, a Barman manual and Datadog/Netdata monitoring pages
@@ -146,6 +150,48 @@ completed attempt-2 report. The claim gate and its v4 seal were not modified
 diagnostic is emitted only after a batch completes, the failed attempt logged
 no `served_model` values, so served-model auditing has a gap on failed
 batches.
+
+## Query planning: stopping and query quality rebuilt (HUB-024, 2026-08-13)
+
+Merged after the measurement above, grounded in a second prior-art pass (11
+further arXiv abstracts fetched and read; citations in the PRD). **Not yet
+re-measured live** — the deployed stack runs this code, but no planned job has
+been run against it, so the drift is fixed in design and in tests, not yet
+demonstrated on a real corpus.
+
+- **Stopping moved from document space to facet-coverage space** (RAVine,
+  2507.16725). A facet counts as covered once a retained document came from
+  its own search, recomputed over every issued query each round. Two rules,
+  neither with a tuned threshold: `coverage_complete` (every issued facet
+  answered) and `coverage_plateau` (a round raised the count by zero).
+  `PLAN_NOVELTY_MIN` is retired and removed from config, compose and
+  `.env.example`.
+- **Rounds now exist to finish covering the admitted plan, not to invent new
+  angles**, so one round is the normal case and extra rounds fire only when
+  the crawl allowance could not reach every facet. If completion did not end
+  the loop, a gap pass inventing facets would raise the count forever.
+- **The LLM gap pass is advisory**, checked only after the arithmetic signal:
+  sufficiency judgements measure poorly (RaCGEval 2411.05547, baselines at
+  46.7%) and unaligned models default to answering rather than declining
+  (2507.04976).
+- **Admission is two-sided** — a facet must be distinct from the admitted set
+  *and* above `PLAN_FACET_RELEVANCE` (0.35) to the topic. Distinctness alone
+  selects for divergence, which is what produced the drift.
+- **Pre-issue QPP** (Diaz, 1507.03928) rejects run-together identifiers,
+  out-of-range word counts and non-alphabetic soup before a search is spent,
+  tuned not to fire on `PostgreSQL`, `WAL`, `pg_upgrade` or `libc/libssl`. A
+  collection-IDF predictor was deliberately not built: QPP predicts against
+  the collection being searched, and sub-queries search the web while our
+  document frequencies are local.
+- **Judge parse failures now log the raw reply** (served model, length,
+  SHA-256, bounded preview) on the failure path only. The verdict contract is
+  untouched and still fails closed, so the v4 seal is unaffected.
+
+`PLAN_FACET_RELEVANCE` is the one remaining guessed threshold and ships
+deliberately permissive, with every candidate's topic cosine recorded in job
+provenance so it can be calibrated rather than guessed twice.
+
+293 tests green in-container, zero skips; ruff E9/F clean; compose valid.
 
 ## Query planning mechanism (HUB-024 stages 1–2)
 

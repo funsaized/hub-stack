@@ -25,6 +25,7 @@ from .url_policy import DestinationNotAllowed, vet_destination_async
 from .query_plan import (
     RoundRecord,
     acquisition_provenance,
+    facet_coverage,
     interleave,
     novelty_ratio,
     plan_gap_round,
@@ -176,18 +177,18 @@ def apply_source_policy(results: list[dict], req: ResearchRequest,
 
 
 def _query_coverage_rows(
-    queries: list[str], results_by_facet: list[list[dict]], covered: set[str],
+    queries: list[str], query_results: dict[str, set[str]], retained: set[str],
 ) -> list[tuple[str, int, int]]:
     """Per-query (documents, distinct domains) for the gap pass to reason over.
 
-    A query is credited with every fetched document its own search surfaced,
-    including documents an earlier round already retained -- coverage is about
-    what the corpus answers, not about which query got there first.
+    A query is credited with every retained document its own search surfaced,
+    including documents a later round fetched -- coverage is about what the
+    corpus answers, not about which query got there first. A facet showing
+    zero documents is the strongest gap signal the pass has.
     """
     rows: list[tuple[str, int, int]] = []
-    for query, results in zip(queries, results_by_facet):
-        canonical = {canonicalize_url(r.get("url", "")) for r in results}
-        hit = canonical & covered
+    for query in queries:
+        hit = query_results.get(query, set()) & retained
         domains = {urlsplit(url).hostname or "" for url in hit}
         rows.append((query, len(hit), len(domains)))
     return rows
@@ -495,7 +496,9 @@ class ResearchOrchestrator:
             seen_canonical: set[str] = set()
             issued_queries = list(plan.queries)
             issued_vectors = list(plan.vectors)
-            query_coverage: list[tuple[str, int, int]] = []
+            query_results: dict[str, set[str]] = {}
+            covered_facets = 0
+            issued_facets = 0
             round_queries = list(plan.queries)
             crawls_attempted = 0
             acquisition_stop = "single_round"
@@ -616,10 +619,10 @@ class ResearchOrchestrator:
                 if round_index == 1 and not urls_to_crawl:
                     raise RuntimeError("No search results passed crawl policy")
                 crawls_attempted += len(urls_to_crawl)
-                query_coverage.extend(
-                    _query_coverage_rows(round_queries, results_by_facet,
-                                         seen_canonical)
-                )
+                for query, facet_results in zip(round_queries, results_by_facet):
+                    query_results[query] = {
+                        canonicalize_url(r.get("url", "")) for r in facet_results
+                    }
                 await self._update_job(job_id, progress={
                     "phase": "searching_done",
                     "round": round_index,
@@ -644,6 +647,15 @@ class ResearchOrchestrator:
                     crawl_one(u, i, selected_results)
                     for i, u in enumerate(urls_to_crawl)
                 ])
+                retained_canonical = {
+                    (r.get("policy_metadata") or {}).get("canonical_url")
+                    or canonicalize_url(r.get("url", ""))
+                    for r in crawl_results
+                }
+                previous_covered = covered_facets
+                covered_facets, issued_facets = facet_coverage(
+                    query_results, retained_canonical
+                )
                 rounds.append(RoundRecord(
                     index=round_index, queries=list(round_queries),
                     candidates=len(novelty_window),
@@ -652,19 +664,25 @@ class ResearchOrchestrator:
                                           len(novelty_window)),
                     crawled=len(crawl_results) - crawled_before,
                     pool=len(accepted),
+                    covered_facets=covered_facets, issued_facets=issued_facets,
                 ))
 
                 round_queries = []
                 if not rounds_enabled:
                     break
-                # Saturation first, budget last: a stop is attributed to the
-                # evidence running dry whenever both would have fired.
+                # Coverage plateau first, rails next, the LLM last. The gap
+                # pass is advisory: it can propose what to ask, and it can end
+                # the research by declining, but it is checked only after the
+                # arithmetic signal, because sufficiency judgements of exactly
+                # this kind measure poorly (RaCGEval, 2411.05547) and unaligned
+                # models default to answering rather than declining
+                # (2507.04976).
                 continue_rounds, reason = should_continue(
                     round_index=round_index,
-                    new_candidates=len(new_in_window),
-                    candidates=len(novelty_window),
+                    covered_facets=covered_facets,
+                    issued_facets=issued_facets,
+                    previous_covered_facets=previous_covered,
                     max_rounds=self.cfg.plan_max_rounds,
-                    novelty_min=self.cfg.plan_novelty_min,
                 )
                 if not continue_rounds:
                     acquisition_stop = reason
@@ -674,7 +692,9 @@ class ResearchOrchestrator:
                     break
                 gap_queries, issued_vectors, gap_decisions, gap_reason = (
                     await plan_gap_round(
-                        self.ollama, topic, query_coverage,
+                        self.ollama, topic,
+                        _query_coverage_rows(issued_queries, query_results,
+                                             retained_canonical),
                         issued_queries, issued_vectors,
                         distinct=self.cfg.plan_facet_distinct,
                         relevance=self.cfg.plan_facet_relevance,

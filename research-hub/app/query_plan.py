@@ -437,6 +437,11 @@ class RoundRecord:
     #: Full count of policy-accepted candidates, kept for auditability so the
     #: window can be read in context.
     pool: int = 0
+    #: The stop signal: facets holding at least one retained document, out of
+    #: every facet issued so far. Document novelty above is recorded for
+    #: calibration only and no longer controls anything.
+    covered_facets: int = 0
+    issued_facets: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -447,6 +452,8 @@ class RoundRecord:
             "novelty": round(self.novelty, 4),
             "crawled": self.crawled,
             "pool": self.pool,
+            "covered_facets": self.covered_facets,
+            "issued_facets": self.issued_facets,
         }
 
 
@@ -467,24 +474,54 @@ def novelty_ratio(new_candidates: int, candidates: int) -> float:
     return new_candidates / candidates
 
 
+def facet_coverage(
+    query_results: dict[str, set[str]], retained: set[str],
+) -> tuple[int, int]:
+    """(facets with at least one retained document, facets issued).
+
+    Coverage is recomputed over EVERY query the job has issued, not just the
+    latest round's, because a document fetched in a later round can cover an
+    earlier facet. ``query_results`` maps each issued query to the canonical
+    URLs its own search surfaced.
+    """
+    covered = sum(1 for urls in query_results.values() if urls & retained)
+    return covered, len(query_results)
+
+
 def should_continue(
     *,
     round_index: int,
-    new_candidates: int,
-    candidates: int,
+    covered_facets: int,
+    issued_facets: int,
+    previous_covered_facets: int,
     max_rounds: int,
-    novelty_min: float,
-    min_new_documents: int = 2,
 ) -> tuple[bool, str]:
     """Decide whether another round is warranted, and say why not.
 
-    Saturation first, budget last -- the ordering the PRD requires, so a stop
-    is attributed to the evidence running dry rather than to a rail whenever
-    both would have fired.
+    Saturation is measured in FACET-COVERAGE space, not document space. The
+    document-novelty signal this replaced could never fire: admission only
+    admits distinct queries, distinct queries return distinct documents, so
+    novelty was pinned near 1.0 by construction whatever the true state of the
+    research (measured 1.0 / 1.0 / 0.983 on 2026-08-13 across rounds that had
+    visibly stopped finding relevant material).
+
+    **Rounds exist to finish covering the admitted plan, not to invent new
+    angles.** A round is warranted only while some issued facet still holds no
+    evidence -- which happens when the crawl allowance could not reach every
+    facet in one pass. That makes a single round the normal case and extra
+    rounds the exception, and it is what stops this signal from repeating
+    novelty's failure: if coverage completing did not end the loop, a gap pass
+    that keeps inventing facets would keep raising the count forever.
+
+    No tuned threshold anywhere: complete means every facet answered, and a
+    plateau means a round raised the count by zero. Both are checked before
+    the round rail, so a stop is attributed to the research converging rather
+    than to a budget whenever both would have fired.
     """
-    ratio = novelty_ratio(new_candidates, candidates)
-    if new_candidates < min_new_documents or ratio < novelty_min:
-        return False, "saturation"
+    if issued_facets and covered_facets >= issued_facets:
+        return False, "coverage_complete"
+    if covered_facets <= previous_covered_facets:
+        return False, "coverage_plateau"
     if round_index >= max_rounds:
         return False, "max_rounds"
     return True, "continue"

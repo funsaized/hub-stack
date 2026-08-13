@@ -26,6 +26,7 @@ from app.query_plan import (
     greedy_admit,
     interleave,
     normalize_candidate,
+    facet_coverage,
     novelty_ratio,
     query_defects,
     parse_candidates,
@@ -366,24 +367,28 @@ def test_query_plan_is_json_serializable_for_job_progress():
 
 # --- acquisition path: how many searches a job actually issues -------------
 
+class ProbeStop(RuntimeError):
+    """Sentinel: acquisition finished, stop before ingestion."""
+
+
 def _acquisition_probe(monkeypatch, *, planning, plan_reply=None, vectors=None,
                        results_per_query=3, reply_queue=None,
                        vector_queue=None, results_for=None, **config_overrides):
-    """Drive ResearchOrchestrator.run_job through search, then stop.
+    """Drive ResearchOrchestrator.run_job through acquisition, then stop.
 
-    Every crawl destination is refused by a stubbed SSRF policy, so the job
-    raises after acquisition without any DNS lookup, fetch or ingestion. The
-    orchestrator is built without __init__ because only the acquisition
-    collaborators are under test.
+    Crawls succeed against a stub (no DNS, no fetch) so facet coverage is
+    real, and ingestion raises a sentinel immediately after. The orchestrator
+    is built without __init__ because only the acquisition collaborators are
+    under test.
     """
     from app import research as research_module
     from app.research import ResearchOrchestrator
-    from app.url_policy import DestinationNotAllowed
 
-    monkeypatch.setattr(
-        research_module, "vet_destination_async",
-        lambda url: _raise_not_allowed(DestinationNotAllowed, url),
-    )
+    async def allow_everything(_url):
+        return None
+
+    monkeypatch.setattr(research_module, "vet_destination_async",
+                        allow_everything)
 
     searched: list[str] = []
     progress: dict = {}
@@ -401,6 +406,14 @@ def _acquisition_probe(monkeypatch, *, planning, plan_reply=None, vectors=None,
                 for i in range(results_per_query)
             ]
 
+    class Crawler:
+        async def crawl(self, url, *, respect_robots_txt=True):
+            return {"url": url, "title": "t", "markdown": "body text"}
+
+    class Documents:
+        def save(self, *_args, **_kwargs):
+            raise ProbeStop("acquisition complete")
+
     orchestrator = object.__new__(ResearchOrchestrator)
     # The synthetic facet vectors are orthogonal unit vectors, so their topic
     # cosine is 0.0 by construction. Cases that are not about the relevance
@@ -412,6 +425,8 @@ def _acquisition_probe(monkeypatch, *, planning, plan_reply=None, vectors=None,
                                      reply_queue=reply_queue,
                                      vector_queue=vector_queue)
     orchestrator.searxng = Searx()
+    orchestrator.crawl4ai = Crawler()
+    orchestrator.documents = Documents()
 
     async def get_job(job_id):
         return {"topic": "a research topic", "depth": 10, "max_sources": 12,
@@ -423,15 +438,9 @@ def _acquisition_probe(monkeypatch, *, planning, plan_reply=None, vectors=None,
     orchestrator.get_job = get_job
     orchestrator._update_job = update_job
 
-    with pytest.raises(RuntimeError, match="No pages crawled successfully"):
+    with pytest.raises(ProbeStop):
         run(orchestrator.run_job("job-1"))
     return searched, progress
-
-
-def _raise_not_allowed(exc_type, url):
-    async def raiser():
-        raise exc_type(url, "test_stub")
-    return raiser()
 
 
 def test_planning_disabled_issues_exactly_one_search_and_no_planner_call(
@@ -583,53 +592,79 @@ def test_config_rejects_a_relevance_floor_above_the_distinctness_ceiling():
         _config(plan_facet_relevance=0.9, plan_facet_distinct=0.85)
 
 
-# --- stage 2: novelty saturation and the stop decision ---------------------
+# --- stage 2: coverage saturation and the stop decision --------------------
 
 def test_novelty_ratio_is_the_new_fraction_and_safe_when_empty():
+    """Still recorded for calibration; no longer controls anything."""
     assert novelty_ratio(2, 8) == pytest.approx(0.25)
     assert novelty_ratio(0, 0) == 0.0
 
 
-def test_rounds_continue_while_each_one_still_finds_new_sources():
+def test_facet_coverage_counts_facets_holding_a_retained_document():
+    query_results = {
+        "q1": {"https://a", "https://b"},
+        "q2": {"https://c"},
+        "q3": {"https://d"},
+    }
+    covered, issued = facet_coverage(query_results, {"https://a", "https://c"})
+    assert (covered, issued) == (2, 3)
+
+
+def test_facet_coverage_credits_a_facet_a_later_round_answered():
+    """Coverage is recomputed over every issued query, not just this round's."""
+    query_results = {"early facet": {"https://x"}}
+    assert facet_coverage(query_results, set()) == (0, 1)
+    assert facet_coverage(query_results, {"https://x"}) == (1, 1)
+
+
+def test_rounds_continue_while_each_one_covers_another_facet():
     keep_going, reason = should_continue(
-        round_index=1, new_candidates=8, candidates=10,
-        max_rounds=3, novelty_min=0.2,
+        round_index=1, covered_facets=3, issued_facets=5,
+        previous_covered_facets=0, max_rounds=3,
     )
     assert (keep_going, reason) == (True, "continue")
 
 
-def test_rounds_stop_when_novelty_falls_below_the_threshold():
+def test_a_round_that_covers_no_new_facet_stops_the_research():
     keep_going, reason = should_continue(
-        round_index=1, new_candidates=1, candidates=20,
-        max_rounds=3, novelty_min=0.2,
+        round_index=2, covered_facets=4, issued_facets=6,
+        previous_covered_facets=4, max_rounds=5,
     )
-    assert (keep_going, reason) == (False, "saturation")
+    assert (keep_going, reason) == (False, "coverage_plateau")
 
 
-def test_rounds_stop_on_too_few_new_documents_even_at_high_novelty():
-    """1 of 1 is ratio 1.0 but yields almost nothing: still saturated."""
+def test_plateau_is_attributed_before_the_round_budget():
+    """When both would fire, the stop is the research converging."""
     keep_going, reason = should_continue(
-        round_index=1, new_candidates=1, candidates=1,
-        max_rounds=3, novelty_min=0.2,
+        round_index=3, covered_facets=4, issued_facets=6,
+        previous_covered_facets=4, max_rounds=3,
     )
-    assert (keep_going, reason) == (False, "saturation")
-
-
-def test_saturation_is_attributed_before_the_round_budget():
-    """When both would fire, the stop is the evidence running dry."""
-    keep_going, reason = should_continue(
-        round_index=3, new_candidates=0, candidates=10,
-        max_rounds=3, novelty_min=0.2,
-    )
-    assert (keep_going, reason) == (False, "saturation")
+    assert (keep_going, reason) == (False, "coverage_plateau")
 
 
 def test_round_budget_stops_a_still_productive_search():
     keep_going, reason = should_continue(
-        round_index=3, new_candidates=10, candidates=10,
-        max_rounds=3, novelty_min=0.2,
+        round_index=3, covered_facets=9, issued_facets=12,
+        previous_covered_facets=4, max_rounds=3,
     )
     assert (keep_going, reason) == (False, "max_rounds")
+
+
+def test_the_stop_rule_needs_no_tuned_threshold():
+    """A round raising the covered count by one is progress; by zero is not."""
+    assert should_continue(round_index=2, covered_facets=5, issued_facets=9,
+                           previous_covered_facets=4, max_rounds=9)[0] is True
+    assert should_continue(round_index=2, covered_facets=4, issued_facets=9,
+                           previous_covered_facets=4, max_rounds=9)[0] is False
+
+
+def test_every_facet_answered_ends_the_research():
+    """Rounds finish covering the plan; they do not invent new angles."""
+    keep_going, reason = should_continue(
+        round_index=1, covered_facets=4, issued_facets=4,
+        previous_covered_facets=0, max_rounds=5,
+    )
+    assert (keep_going, reason) == (False, "coverage_complete")
 
 
 # --- stage 2: gap-driven rounds --------------------------------------------
@@ -721,13 +756,34 @@ def test_a_collapsed_plan_never_opens_a_second_round(monkeypatch):
     assert len(progress["query_plan"]["rounds"]) == 1
 
 
-def test_a_widened_plan_runs_a_gap_driven_second_round(monkeypatch):
+def test_every_facet_covered_in_one_round_never_opens_a_second(monkeypatch):
+    """The normal case: one round answers the plan, so the research ends."""
     searched, progress = _acquisition_probe(
         monkeypatch, planning=True,
-        reply_queue=[
-            '{"facets": ["facet alpha here", "facet beta here"]}',
-            '{"facets": ["the gap query here"]}',
-        ],
+        reply_queue=['{"facets": ["facet alpha here", "facet beta here"]}',
+                     '{"facets": ["the gap query here"]}'],
+        vector_queue=[[E1, E2, E3], [E4]],
+        plan_max_rounds=3,
+    )
+    assert searched == ["a research topic", "facet alpha here",
+                        "facet beta here"]
+    plan = progress["query_plan"]
+    assert plan["acquisition_stop_reason"] == "coverage_complete"
+    assert plan["rounds"][0]["covered_facets"] == 3
+    assert plan["rounds"][0]["issued_facets"] == 3
+
+
+def test_an_uncovered_facet_opens_a_gap_driven_second_round(monkeypatch):
+    """Rounds exist to finish covering the plan the budget could not reach."""
+    def results_for(query, facet_index):
+        if facet_index == 2:
+            return []  # this facet found nothing, so it stays uncovered
+        return [f"https://f{facet_index}-r{i}.example.com/p" for i in range(3)]
+
+    searched, progress = _acquisition_probe(
+        monkeypatch, planning=True, results_for=results_for,
+        reply_queue=['{"facets": ["facet alpha here", "facet beta here"]}',
+                     '{"facets": ["the gap query here"]}'],
         vector_queue=[[E1, E2, E3], [E4]],
         plan_max_rounds=2,
     )
@@ -735,42 +791,38 @@ def test_a_widened_plan_runs_a_gap_driven_second_round(monkeypatch):
                         "facet beta here", "the gap query here"]
     plan = progress["query_plan"]
     assert [r["index"] for r in plan["rounds"]] == [1, 2]
-    assert plan["rounds"][1]["queries"] == ["the gap query here"]
+    assert plan["rounds"][0]["covered_facets"] == 2
+    assert plan["rounds"][0]["issued_facets"] == 3
+    # Round 2 covers the gap facet but facet beta is still empty, so the
+    # research ends on the rail rather than on completion.
     assert plan["acquisition_stop_reason"] == "max_rounds"
-    assert plan["queries"][-1] == "the gap query here"
 
 
-def test_a_round_that_resurfaces_known_sources_stops_on_saturation(monkeypatch):
-    """Round 2 returns exactly round 1's URLs, so nothing new is acquired."""
+def test_a_round_that_covers_nothing_new_stops_the_research(monkeypatch):
     def results_for(query, facet_index):
-        return [f"https://shared{i}.example.com/p" for i in range(3)]
+        if facet_index in (2, 3):
+            return []  # facet beta and the gap query both find nothing
+        return [f"https://f{facet_index}-r{i}.example.com/p" for i in range(3)]
 
     searched, progress = _acquisition_probe(
         monkeypatch, planning=True, results_for=results_for,
-        reply_queue=[
-            '{"facets": ["facet alpha here", "facet beta here"]}',
-            '{"facets": ["the gap query here"]}',
-        ],
+        reply_queue=['{"facets": ["facet alpha here", "facet beta here"]}',
+                     '{"facets": ["the gap query here"]}'],
         vector_queue=[[E1, E2, E3], [E4]],
-        plan_max_rounds=3,
+        plan_max_rounds=5,
     )
-    # Round 1's facets all return the same three URLs, which dedup to three
-    # genuinely new sources -- so round 1 is productive and a gap round runs.
-    # Round 2 resurfaces only those three, yields nothing new, and stops the
-    # research two rounds below the max_rounds rail.
-    assert searched == ["a research topic", "facet alpha here",
-                        "facet beta here", "the gap query here"]
+    assert len(searched) == 4
     plan = progress["query_plan"]
-    assert plan["acquisition_stop_reason"] == "saturation"
-    assert plan["rounds"][0]["new_candidates"] == 3
-    assert plan["rounds"][1]["candidates"] == 3
-    assert plan["rounds"][1]["new_candidates"] == 0
-    assert plan["rounds"][1]["crawled"] == 0
+    assert plan["rounds"][1]["covered_facets"] == 2
+    # Two rounds below the rail: nothing new was answered.
+    assert plan["acquisition_stop_reason"] == "coverage_plateau"
 
 
 def test_no_document_is_fetched_twice_across_rounds(monkeypatch):
     """Round 2 re-surfacing a round-1 URL must not re-select it for crawl."""
     def results_for(query, facet_index):
+        if facet_index == 2:
+            return []
         if facet_index < 3:
             return [f"https://f{facet_index}-r{i}.example.com/p"
                     for i in range(3)]
@@ -780,60 +832,50 @@ def test_no_document_is_fetched_twice_across_rounds(monkeypatch):
 
     searched, progress = _acquisition_probe(
         monkeypatch, planning=True, results_for=results_for,
-        reply_queue=[
-            '{"facets": ["facet alpha here", "facet beta here"]}',
-            '{"facets": ["the gap query here"]}',
-        ],
+        reply_queue=['{"facets": ["facet alpha here", "facet beta here"]}',
+                     '{"facets": ["the gap query here"]}'],
         vector_queue=[[E1, E2, E3], [E4]],
         plan_max_rounds=2,
     )
     assert len(searched) == 4
     round_two = progress["query_plan"]["rounds"][1]
-    assert round_two["candidates"] == 4
+    assert round_two["pool"] == 4
     assert round_two["new_candidates"] == 2
-    assert round_two["novelty"] == pytest.approx(0.5)
+    assert round_two["crawled"] == 2
 
 
-def test_novelty_is_measured_over_the_fetch_window_not_the_whole_pool(
+def test_novelty_is_recorded_over_the_fetch_window_not_the_whole_pool(
         monkeypatch):
-    """Regression for the 2026-08-13 live finding.
+    """Novelty no longer controls anything, but it must still be recorded
+    honestly: over the round's top-`depth` fetch window, never the pool.
 
-    A round surfaces far more candidates than it can crawl. Measured against
-    the whole pool, novelty pins near 1.0 and saturation can never fire --
-    which is exactly what the first live planned job did (1.0 / 1.0 / 0.983
-    over three saturated rounds). The denominator must be the round's
-    top-`depth` window.
+    Measured against the pool it pins near 1.0 -- which is exactly why it
+    could never work as a stop signal (observed live at 1.0 / 1.0 / 0.983
+    across three rounds that had plainly stopped making progress).
     """
     retained = [f"https://shared{i}.example.com/p" for i in range(10)]
 
     def results_for(query, facet_index):
+        if facet_index == 2:
+            return []
         if facet_index < 3:
-            # Round 1's three facets converge on the same ten sources, all of
-            # which fit the depth-10 allowance and are fetched.
             return retained
-        # Round 2 re-surfaces exactly those ten at the top, then drags in a
-        # long tail of unseen URLs it will never reach.
+        # Round 2 re-surfaces all ten at the top, then a long unseen tail it
+        # will never reach.
         return retained + [f"https://tail{i}.example.com/p" for i in range(40)]
 
     searched, progress = _acquisition_probe(
         monkeypatch, planning=True, results_for=results_for,
-        reply_queue=[
-            '{"facets": ["facet alpha here", "facet beta here"]}',
-            '{"facets": ["the gap query here"]}',
-        ],
+        reply_queue=['{"facets": ["facet alpha here", "facet beta here"]}',
+                     '{"facets": ["the gap query here"]}'],
         vector_queue=[[E1, E2, E3], [E4]],
         plan_max_rounds=5,
     )
     round_two = progress["query_plan"]["rounds"][1]
-    # The pool is huge and almost entirely unseen...
-    assert round_two["pool"] == 50
-    # ...but the window this round would actually fetch is entirely known.
-    assert round_two["candidates"] == 10
+    assert round_two["pool"] == 50           # the pool is almost all unseen...
+    assert round_two["candidates"] == 10     # ...but the fetch window is not
     assert round_two["new_candidates"] == 0
     assert round_two["novelty"] == 0.0
-    # So the research stops on saturation, three rounds below the rail.
-    assert progress["query_plan"]["acquisition_stop_reason"] == "saturation"
-    assert len(searched) == 4
 
 
 def test_planning_disabled_records_a_single_round_and_no_gap_pass(monkeypatch):
@@ -854,8 +896,9 @@ def test_acquisition_provenance_records_rounds_and_the_stop_reason():
     provenance = acquisition_provenance(
         plan, issued_queries=["topic", "first distinct facet", "gap q"],
         decisions=list(plan.decisions),
-        rounds=[RoundRecord(1, ["topic", "first distinct facet"], 10, 10, 1.0, 8, 40),
-                RoundRecord(2, ["gap q"], 6, 1, 1 / 6, 1, 55)],
+        rounds=[RoundRecord(1, ["topic", "first distinct facet"], 10, 10, 1.0,
+                            8, 40, 2, 3),
+                RoundRecord(2, ["gap q"], 6, 1, 1 / 6, 1, 55, 3, 3)],
         stop_reason="saturation",
     )
     assert provenance["queries"] == ["topic", "first distinct facet", "gap q"]
@@ -864,6 +907,7 @@ def test_acquisition_provenance_records_rounds_and_the_stop_reason():
     assert provenance["rounds"][1] == {
         "index": 2, "queries": ["gap q"], "candidates": 6,
         "new_candidates": 1, "novelty": 0.1667, "crawled": 1, "pool": 55,
+        "covered_facets": 3, "issued_facets": 3,
     }
 
 
@@ -872,7 +916,7 @@ def test_acquisition_provenance_is_json_serializable():
     plan = QueryPlan(queries=["topic"], stop_reason="collapse")
     payload = acquisition_provenance(
         plan, issued_queries=["topic"], decisions=[],
-        rounds=[RoundRecord(1, ["topic"], 3, 3, 1.0, 2)],
+        rounds=[RoundRecord(1, ["topic"], 3, 3, 1.0, 2, 3, 1, 1)],
         stop_reason="single_round",
     )
     assert json.loads(json.dumps(payload))["rounds"][0]["crawled"] == 2
@@ -908,7 +952,6 @@ def test_query_planning_defaults_are_off_and_inert():
     assert cfg.plan_facet_distinct == 0.85
     assert cfg.plan_max_facets == 8
     assert cfg.plan_max_rounds == 3
-    assert cfg.plan_novelty_min == 0.2
     assert cfg.plan_search_budget == 12
     assert cfg.plan_crawl_budget == 40
 
@@ -922,8 +965,6 @@ def test_query_planning_defaults_are_off_and_inert():
     {"plan_crawl_budget": 0},
     {"plan_max_rounds": 0},
     {"plan_max_rounds": 50},
-    {"plan_novelty_min": -0.1},
-    {"plan_novelty_min": 1.5},
 ])
 def test_planning_config_rejects_out_of_range_rails(overrides):
     with pytest.raises(ValueError):
