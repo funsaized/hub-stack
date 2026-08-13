@@ -83,6 +83,30 @@ Rider changes deployed with the same rebuild:
   must be present (compose `${VAR:?}` and config validation); judged
   evidence spans leave the machine (see `docs/NETWORKING.md`).
 
+## Query planning stage 1 merged, not deployed (HUB-024)
+
+Merged 2026-08-13. The repository now contains `app/query_plan.py`, the
+stage-1 adaptive query planner (facet admission by marginal distinctness,
+cross-facet canonical dedup, budget rails, single round). **The deployed
+stack was not rebuilt and no deployed container was recreated**, so live
+acquisition still issues exactly one SearXNG query per job.
+
+`REPORT_QUERY_PLANNING` defaults to `false` in config, compose and
+`.env.example`; with it false the acquisition path issues the single search
+it always did and never invokes the planner. Breadth, when enabled, is
+emergent from `PLAN_FACET_DISTINCT` (0.85) rather than any fixed sub-query
+count — `PLAN_MAX_FACETS` (8) is a rail against a pathological planner. The
+crawl cap is still `depth`, so breadth would arrive at constant crawl and
+judge cost; the claim gate, the v4 seal and judge-call volume per report are
+untouched.
+
+Verified before merge: 249 tests green in-container with zero skips (44 new,
+offline and deterministic), `ruff --select E9,F` clean, `compileall` clean,
+`docker compose config` valid. Enabling the flag in the deployed stack is a
+separate operator decision that has not been taken, and stage 2 (gap-driven
+rounds with novelty-saturation stopping) plus stage 3 (breadth measurement
+against the job-`24a8a471` baseline above) remain open.
+
 ## Deployment model
 
 The repository is stored on the Windows filesystem under OneDrive. Docker

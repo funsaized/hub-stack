@@ -235,6 +235,15 @@ services:
       - REPORT_RETRIEVAL_MIN_SCORE=${REPORT_RETRIEVAL_MIN_SCORE:-}
       - REPORT_HYBRID_RETRIEVAL=${REPORT_HYBRID_RETRIEVAL:-true}
       - REPORT_RRF_K=${REPORT_RRF_K:-60}
+      # HUB-024 adaptive query planning. Off by default: with the master
+      # switch false, acquisition issues the single search it always did.
+      # PLAN_MAX_FACETS is a rail against a pathological planner; breadth is
+      # decided by PLAN_FACET_DISTINCT.
+      - REPORT_QUERY_PLANNING=${REPORT_QUERY_PLANNING:-false}
+      - PLAN_FACET_DISTINCT=${PLAN_FACET_DISTINCT:-0.85}
+      - PLAN_MAX_FACETS=${PLAN_MAX_FACETS:-8}
+      - PLAN_SEARCH_BUDGET=${PLAN_SEARCH_BUDGET:-12}
+      - PLAN_CRAWL_BUDGET=${PLAN_CRAWL_BUDGET:-40}
       # HUB-034: the claim gate is the MiniMax M3 judge (retained corpus
       # spans leave the machine for judging — operator-accepted exception).
       # Required secret from .env — the MiniMax Token Plan Subscription Key.
@@ -300,6 +309,15 @@ services:
       - REPORT_RETRIEVAL_MIN_SCORE=${REPORT_RETRIEVAL_MIN_SCORE:-}
       - REPORT_HYBRID_RETRIEVAL=${REPORT_HYBRID_RETRIEVAL:-true}
       - REPORT_RRF_K=${REPORT_RRF_K:-60}
+      # HUB-024 adaptive query planning. Off by default: with the master
+      # switch false, acquisition issues the single search it always did.
+      # PLAN_MAX_FACETS is a rail against a pathological planner; breadth is
+      # decided by PLAN_FACET_DISTINCT.
+      - REPORT_QUERY_PLANNING=${REPORT_QUERY_PLANNING:-false}
+      - PLAN_FACET_DISTINCT=${PLAN_FACET_DISTINCT:-0.85}
+      - PLAN_MAX_FACETS=${PLAN_MAX_FACETS:-8}
+      - PLAN_SEARCH_BUDGET=${PLAN_SEARCH_BUDGET:-12}
+      - PLAN_CRAWL_BUDGET=${PLAN_CRAWL_BUDGET:-40}
       # HUB-034: judge claim gate (see research-hub service).
       - MINIMAX_SUBSCRIPTION_KEY=${MINIMAX_SUBSCRIPTION_KEY:?Set MINIMAX_SUBSCRIPTION_KEY in .env — MiniMax Token Plan Subscription Key}
       - JUDGE_BASE_URL=${JUDGE_BASE_URL:-https://api.minimax.io/v1}

@@ -22,6 +22,7 @@ from .context import classify_and_sanitize
 from .models import JobStatus, ResearchRequest
 from .document_store import DocumentStore
 from .url_policy import DestinationNotAllowed, vet_destination_async
+from .query_plan import interleave, plan_queries, single_query_plan
 from .retrieval import ScopedRetrievalService
 from .judge_gate import JudgeClaimVerifier
 from .observability import (
@@ -427,16 +428,51 @@ class ResearchOrchestrator:
             phase = "search"
             await self._update_job(job_id, status=JobStatus.SEARCHING.value,
                                    progress={"phase": "searching", "topic": topic})
-            with phase_timer("search", logger, job_id=job_id):
-                search_results = await self.searxng.search(
-                    topic, max_results=max_sources, language=language
+            # Acquisition breadth is emergent (HUB-024): the planner admits a
+            # facet only while it adds retrieval intent the plan lacks. With
+            # planning disabled -- or whenever candidates collapse into the
+            # topic -- the plan is exactly [topic], so the loop below issues the
+            # single search the pre-planning path issued.
+            planning_enabled = getattr(self.cfg, "report_query_planning", False)
+            if planning_enabled:
+                plan = await plan_queries(
+                    self.ollama, topic,
+                    distinct=self.cfg.plan_facet_distinct,
+                    max_facets=self.cfg.plan_max_facets,
+                    search_budget=self.cfg.plan_search_budget,
+                    job_id=job_id,
                 )
+            else:
+                plan = single_query_plan(topic, "planning_disabled")
+            logger.info("query_plan_built", extra={
+                "job_id": job_id, "phase": "search",
+                "facet_count": len(plan.queries),
+                "plan_stop_reason": plan.stop_reason,
+            })
+
+            with phase_timer("search", logger, job_id=job_id):
+                # Sequential: a handful of facets costs seconds against the
+                # local SearXNG, and firing them concurrently would push a
+                # burst at the same upstream engines.
+                results_by_facet = [
+                    await self.searxng.search(
+                        query, max_results=max_sources, language=language
+                    )
+                    for query in plan.queries
+                ]
+            search_results = interleave(results_by_facet)
             SEARCH_RESULTS.observe(len(search_results))
             if not search_results:
                 raise RuntimeError("No search results found")
 
+            # One policy pass over the merged candidates is what makes every
+            # sub-query inherit the full HUB-020/021 source policy and
+            # deduplicate canonical URLs *across* facets before any crawl.
             policy_results, policy_decisions = apply_source_policy(search_results, request)
-            selected_results = policy_results[:depth]
+            crawl_cap = depth
+            if planning_enabled:
+                crawl_cap = min(depth, self.cfg.plan_crawl_budget)
+            selected_results = policy_results[:crawl_cap]
             urls_to_crawl = [r["url"] for r in selected_results]
             if not urls_to_crawl:
                 raise RuntimeError("No search results passed crawl policy")
@@ -444,6 +480,7 @@ class ResearchOrchestrator:
                 "phase": "searching_done",
                 "candidate_urls": len(urls_to_crawl),
                 "crawl_policy": policy_decisions,
+                "query_plan": plan.provenance(),
             })
 
             # Phase 2: Crawl (concurrent)
@@ -675,6 +712,7 @@ class ResearchOrchestrator:
                     ) if batches_completed else 0,
                     "crawl_policy": policy_decisions,
                     "robots_respected": respect_robots,
+                    "query_plan": plan.provenance(),
                 },
             )
             # Synthesis is deliberately outside ingestion failure semantics. A failed

@@ -1,6 +1,7 @@
 # HUB-024 — Adaptive query planning and iterative research
 
-Status: design, operator-opened 2026-08-13 (revisit trigger tripped — reports
+Status: stage 1 implemented 2026-08-13 behind `REPORT_QUERY_PLANNING=false`;
+stages 2–3 open. Operator-opened 2026-08-13 (revisit trigger tripped — reports
 are built from whatever a single search phrasing surfaced).
 Prior art reviewed: 16 arXiv abstracts, fetched and read 2026-08-13 (citations
 at the end; every claim below is attributed to a fetched abstract or marked as
@@ -141,6 +142,49 @@ judged); any change to judge-call volume per report.
   yield, and the stop reason (`saturation` / `coverage` / `budget`) are
   recorded in job progress.
 - `REPORT_QUERY_PLANNING=false` reproduces current behavior exactly.
+
+## Implementation record — stage 1 (2026-08-13)
+
+Built: facet admission, cross-facet canonical dedup, budget rails, single
+round, all behind `REPORT_QUERY_PLANNING=false`. Not built: gap-driven rounds,
+novelty saturation, `PLAN_NOVELTY_MIN` (stage 2); breadth measurement
+(stage 3).
+
+`app/query_plan.py` holds the mechanism; `app/research.py` phase 1 consumes
+it. Three choices are worth recording because they are what keep the
+acceptance criteria true by construction rather than by assertion:
+
+1. **The topic is always facet 0.** A plan can only ever widen the
+   pre-planning search, never replace it — so a degenerate planner cannot
+   steer acquisition away from what the user actually asked, and the collapse
+   case is literally the old query.
+2. **One `apply_source_policy` pass over the merged candidates.** Canonical
+   dedup across facets, allow/block lists, per-domain limits and freshness are
+   not reimplemented for planning; sub-queries inherit HUB-020/021 because
+   they flow through the same tested function. SSRF vetting is per-URL in
+   `crawl_one` and never saw a change.
+3. **Round-robin interleave, and `depth` still caps crawls.** Concatenating
+   facet results would let facet 1 consume the whole crawl budget and silently
+   collapse a multi-facet plan back to a single-facet corpus. Because the
+   crawl cap is unchanged, breadth arrives at *constant* crawl and judge cost —
+   which is what keeps "judge calls per report stay bounded by the existing
+   drafting caps" true without any new accounting.
+
+Failure policy: every planner failure (unreachable model, malformed JSON,
+mismatched embedding count) degrades to the single-query plan and records
+`planner_unavailable` as the stop reason. The planner never fails a job.
+
+Verification: 249 tests pass in-container with zero skips, 44 of them new and
+fully offline (planner LLM and embeddings stubbed, no live search). Beyond the
+unit cases, five drive `run_job`'s acquisition directly and assert the
+criteria: flag off issues exactly one search and never calls the planner; a
+collapsed plan issues exactly one search; admitted facets issue one search
+each; a dead planner still acquires on the single query; and every facet's
+results appear in the one policy record.
+
+Deliberately unmeasured: `PLAN_FACET_DISTINCT = 0.85` is still the design
+default. The open thread below is unresolved — the first measurement calibrates
+the thresholds, it does not validate the design.
 
 ## Load-bearing risk
 
