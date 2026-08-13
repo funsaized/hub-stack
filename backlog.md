@@ -1090,18 +1090,14 @@ unguessed.
 forcing the behavior. Both observations were real; neither turned out to be a
 defect worth engineering around.
 
-**Collapse — claim withdrawn.** Collapse fired in 0 of 8 evaluation jobs,
-including a deliberately narrow topic that admitted 4 facets and retained 21
-sources. A planner asked for distinct information needs reliably finds some,
-whatever the topic's breadth, so tightening `PLAN_FACET_DISTINCT` far enough
-to force collapse would cost breadth on exactly the topics planning exists to
-serve. The PRD acceptance bullet claiming narrow topics issue exactly one
-search is struck through and annotated with the measurement.
-
-What genuinely holds, and stays tested: `REPORT_QUERY_PLANNING=false` is
-byte-identical to the pre-planning path including crawl cost, and a plan that
-*does* collapse issues exactly one search and never opens a second round.
-Those are the properties the equivalence guarantee actually needs.
+**Collapse — claim withdrawn, then partially reinstated.** Collapse fired in 0
+of 8 evaluation jobs, including a deliberately narrow topic that admitted 4
+facets and retained 21 sources, so the PRD bullet claiming narrow topics issue
+exactly one search was struck through as measured false. **Corrected
+2026-08-13:** it subsequently fired once, on "Zero downtime blue green
+deployment strategies" (`facets=1`, `stop=single_round`). Collapse is
+therefore rare rather than impossible, and the honest statement is that it
+cannot be relied on as a cost-control property — not that it never happens.
 
 **Rounds — kept as a documented safety net.** All 8 jobs stopped
 `coverage_complete` in round 1, so the gap pass and `PLAN_MAX_ROUNDS` never
@@ -1117,46 +1113,43 @@ normal path.
 **No code change.** The fix was that the docs claimed more than the system
 does.
 
-### HUB-040 — Cross-source disagreements never fire; pair selection is the cause
+### HUB-040 — Cross-source disagreements: drafting fixed, selection is the remaining cause
 
-**Status:** 🔴 OPEN — diagnosed 2026-08-13, cause identified, fix not attempted.
+**Status:** 🟡 PARTIAL — the drafting escape hatch is closed and deployed; no
+disagreement has still ever been produced. The cause is now narrowed to pair
+selection with evidence rather than suspicion.
 
-**Observation.** Not one verified source disagreement has appeared in any job
-ever run, including topics chosen specifically to elicit them. Until now the
-claim `kind` was invisible in logs and progress, so "no disagreements" was
-unfalsifiable — it could equally have been the drafter, the gate, or the
-display cap.
+**What was wrong and is now fixed.** Pair drafting asked the model, in one
+call, to produce either a conflict or a combined fact. It took the easier
+branch every time: across every job ever run it proposed zero disagreements,
+so none could reach the gate. Conflict is now decided first, in its own
+bounded local call, and the claim is drafted on the decided branch with no
+alternative offered; the claim's kind comes from the decision, not the
+drafting call. A failed judgement falls back to the finding branch, so a
+broken judgement costs a disagreement rather than the pair.
 
-**Measured, on "Microservices versus monolithic architecture tradeoffs":**
+**Measured after the fix: still zero.** Across five corpora and **95 offered
+pairs**, including a topic chosen specifically to be contested
+("Microservices versus monolithic architecture tradeoffs", 20 pairs), the
+conflict detector returned "no conflict" every time. The detector is running —
+75 calls were logged across the four end-to-end jobs, one per pair — so this
+is a judgement, not a plumbing failure.
 
-```
-pairs_offered: 16
-drafted_by_kind:  {"finding": 6}      <- zero disagreements proposed
-verified_by_kind: {"finding": 3}
-draft_rejections: {"declined_pair": 9, "duplicate_claim": 1}
-```
+**The remaining cause is pair selection.** `_pair_candidates` still ranks by
+shared vocabulary, which selects pairs that *combine easily* rather than pairs
+that *conflict*. Two sources that disagree share a subject but diverge in the
+assertion, and lexical overlap does not favour that. Removing the drafting
+escape hatch was necessary and insufficient: with the easy branch gone, the
+pairs on offer simply contain no conflicts to find.
 
-**The gate is exonerated.** No disagreement is ever rejected because none is
-ever drafted. The drafter classifies every usable pair as a `finding`, and
-declines 9 of 16 pairs outright as uncombinable.
+**Next, and unvalidated:** select pairs for contrast rather than overlap —
+high subject similarity with low assertion similarity — or over-generate pairs
+and let the conflict pass filter them. Both remain guesses; the instrumentation
+now in place is what would measure either.
 
-**Likely cause: `_pair_candidates` ranks by shared vocabulary.** That selects
-span pairs that *combine easily*, which is close to the opposite of selecting
-pairs that *conflict*. Two sources that disagree share a subject but diverge
-in the assertion; lexical overlap does not favour that, and the prompt's
-easier `finding` branch absorbs whatever remains. The 9 declines suggest the
-selected pairs are often not related enough to combine at all.
-
-**Fix directions, none validated.** Select pairs for contrast rather than
-overlap — for example high subject similarity with low assertion similarity —
-or add an explicit cheap "do these two spans conflict?" pass before drafting
-and route only positives down the disagreement branch. Both are guesses until
-measured; the instrumentation added here is what makes measuring them
-possible.
-
-**Do not treat the standing disclaimer as covering this.** Reports currently
-say "No material source disagreements were identified", which reads as a
-finding about the sources. It is presently a statement about the drafter.
+**Reports still say "No material source disagreements were identified."** That
+reads as a claim about the sources. It remains a statement about what the
+pipeline can currently surface.
 
 ### HUB-041 — `/rag` returned nothing at its default context budget
 

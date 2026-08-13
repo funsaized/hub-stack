@@ -290,6 +290,37 @@ Findings ranged 3–31 per report, tracking corpus quality rather than corpus
 size: job 6 retained 11 sources but yielded 3 findings, job 5 retained 9 and
 yielded 31.
 
+## End-to-end validation of the assembled stack (2026-08-13)
+
+Every component had been validated in isolation; none had been validated
+together. Four fresh topics through the full deployed pipeline — query
+planning, widened engine pool, source screening at 0.54, 16K context, 40-span
+drafting, conflict-first pair drafting, judge at 8192 tokens / 180 s.
+
+| Topic | Facets | Stop | Kept / dropped | Findings | Pair-cited | Disagreements |
+|---|---|---|---|---|---|---|
+| Debezium CDC connector config | 5 | `coverage_complete` | 12 / 16 | 27 | 5 | 0 |
+| HTTP caching, ETag | 4 | `coverage_complete` | 15 / 6 | 27 | 4 | 0 |
+| Blue-green deployment | **1** | `single_round` | 3 / 3 | 22 | 8 | 0 |
+| Prometheus alerting rules | 4 | `coverage_complete` | 10 / 13 | 13 | 7 | 0 |
+
+**4 of 4 completed on the first attempt**, no acquisition failures and no
+judge failures. The screen dropped 3–16 documents per job, consistent with the
+lower precision of the widened engine pool. Findings ranged 13–27.
+
+**Collapse fired for the first time.** The blue-green topic admitted one facet
+and issued a single search. HUB-039 had recorded collapse as measured false on
+0-of-8 evidence; it is rare rather than impossible, and that record is
+corrected.
+
+**Disagreements remain zero, and the cause is now narrowed.** The conflict
+detector ran on every pair — 75 calls across the four jobs — and judged "no
+conflict" each time. A follow-up retry on a corpus chosen to be contested
+(microservices versus monolith, 20 pairs) also produced none. With the
+drafting escape hatch removed, the remaining cause is pair *selection*, which
+still ranks by shared vocabulary and therefore surfaces pairs that combine
+rather than pairs that conflict. See HUB-040.
+
 ## Source screening re-validated on the bing-era search mix (2026-08-13)
 
 The engine widening changed what search returns, so the screen's calibration
