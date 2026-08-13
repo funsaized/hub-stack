@@ -59,10 +59,14 @@ JUDGE_REJECTION_REASONS = ("unsupported", "contradiction", "padding_reference")
 MAX_JUDGE_EVIDENCE_CHARS = 8000
 MAX_JUDGE_CLAIM_CHARS = 2000
 # Reasoning counts against this budget even when reasoning_split routes it to
-# its own field, so the allowance has to cover thinking AND the verdict. At
-# 2048 a long deliberation could consume the whole budget and return a message
-# carrying reasoning_content but no content at all (observed 2026-08-13).
-RESPONSE_MAX_TOKENS = 4096
+# its own field, so the allowance has to cover thinking AND the verdict. A
+# message carrying reasoning_content but no content at all means the budget
+# ran out mid-deliberation. Measured 2026-08-13: one such failure logged
+# finish_reason=length after 19,637 characters of reasoning -- roughly 4,900
+# tokens against a 4,096 allowance. 8192 leaves room for that plus the
+# hundred-token verdict. This bounds output length only; it does not change
+# how the judge decides, so the sealed v4 evaluation still describes the gate.
+RESPONSE_MAX_TOKENS = 8192
 # MiniMax platform codes that mean the Token Plan window or balance is spent
 # (1002: rate limit, 1008: insufficient quota/balance).
 QUOTA_STATUS_CODES = {1002, 1008}
