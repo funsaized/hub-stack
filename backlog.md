@@ -992,6 +992,97 @@ lease/retry/idempotency semantics unchanged; plan provenance (facets, queries,
 new-document yield, stop reason) recorded in job progress;
 `REPORT_QUERY_PLANNING=false` reproduces current behavior exactly.
 
+### HUB-037 — Judge verdict parsing fails when MiniMax leaks JSON into its reasoning block
+
+**Status:** 🔴 OPEN — measured 2026-08-13, highest-value reliability fix
+available. Trigger tripped by evidence, not speculation.
+
+**Defect.** MiniMax M3 sometimes begins emitting the JSON verdict *inside* its
+`<think>` block and closes the block mid-token:
+
+```
+<think>
+…reasoning…{"
+</think>
+accepted": true, "reason": null, "refs": [{"id": "R1", "necessary": true}]}
+```
+
+`_THINK_BLOCK` in `app/judge_gate.py` strips `<think>…</think>` and removes
+the `{"` with it, leaving `accepted": true…`, which `json.loads` rejects. The
+`Extra data: line 1 column 11` failures seen earlier are the same leak
+splitting at a different point.
+
+**Measured impact.** 3 of 8 reports failed in the 2026-08-13 evaluation
+campaign (37.5%); every failure had this signature. Across the whole day's
+live runs the rate is ~38%. The gate fails closed and the report stays
+retryable, so nothing unsupported is published — this is a reliability and
+cost problem (a failed report wastes its whole batch of metered calls), not a
+correctness one.
+
+**Why it was not fixed in place.** The claim gate and its v4 seal were out of
+scope for HUB-024, and patching it mid-campaign would have destroyed
+comparability between batches.
+
+**Proposed fix, and its risk.** Repair only this known pathology
+deterministically: after stripping the reasoning block, if the remainder
+matches `^[A-Za-z_]+"\s*:` it lost a leading `{"`, so restore it and parse.
+Any reconstructed verdict still passes through the unchanged
+`_enforce_verdict` structural gate, so a bad reconstruction fails closed
+exactly as today. The alternative — asking MiniMax to disable reasoning —
+should be checked first, since not emitting the block at all is strictly
+better than repairing it.
+
+**Acceptance:** a reply with the leak parses to the correct verdict; a
+mangled reply that cannot be reconstructed still fails closed; the sealed v4
+fixtures re-verify unchanged; live report failure rate falls well below the
+measured 37.5%.
+
+### HUB-038 — Facet relevance is guarded; source relevance is not
+
+**Status:** 🔴 OPEN — measured 2026-08-13.
+
+`PLAN_FACET_RELEVANCE` admits *facets*, not *sources*. A perfectly on-topic
+facet can still return off-topic documents: the Redis `appendfsync` corpus
+retained Couchbase and Databricks documentation, and the Kubernetes
+autoscaling corpus retained an NIH paper. Breadth is real but not uniformly
+on-topic, and every off-topic document is a candidate for span drafting and
+therefore for metered judge calls.
+
+**Also observed:** zero verified source disagreements across all eight
+campaign jobs, including a topic chosen specifically to elicit them, and
+findings such as a market-size statistic surfacing for an architecture
+tradeoffs question. The judge verifies faithfulness, not informativeness or
+topicality, so **span selection is now the binding quality constraint** — all
+five successful reports hit the 12-finding cap with further verified claims
+withheld.
+
+**Revisit trigger:** already tripped. Candidate approaches: score retained
+documents against the topic embedding before span drafting; or rank spans by
+topic similarity rather than retrieval score alone.
+
+### HUB-039 — Collapse and multi-round machinery do not engage in practice
+
+**Status:** 🔴 OPEN — measured 2026-08-13; a claim-versus-reality gap, not a
+malfunction.
+
+Two HUB-024 acceptance claims do not describe deployed behavior:
+
+- **Collapse never fired** in 8 of 8 jobs, including a deliberately narrow
+  topic ("Redis AOF appendfsync configuration options") that admitted 4
+  facets and retained 21 sources across 18 domains. The documented property
+  "a narrow topic issues exactly one search and is equivalent to the
+  pre-planning path" is not what the system does.
+- **Rounds never engage.** All 8 jobs stopped `coverage_complete` in round 1,
+  because a per-facet crawl allowance covers the whole plan in one pass. The
+  gap pass, plateau detection and `PLAN_MAX_ROUNDS` are effectively dead code
+  at current settings.
+
+Neither costs correctness, and the breadth results are good, but the docs
+should either describe what happens or the behavior should be changed to
+match the docs. Options: raise `PLAN_FACET_DISTINCT` so narrow topics really
+do collapse; or delete the round machinery as unused; or keep it and document
+it as a safety net that current settings never reach.
+
 ### HUB-025 — Add scheduled research jobs
 
 Add recurring jobs only after the durable worker, idempotency, and notification paths are complete.
