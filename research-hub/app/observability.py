@@ -20,6 +20,10 @@ CHUNKS = Histogram("hub_chunks_per_source", "Chunks produced per source", bucket
 EMBED_LATENCY = Histogram("hub_embedding_duration_seconds", "Embedding batch latency")
 UPSERT_LATENCY = Histogram("hub_upsert_duration_seconds", "Qdrant upsert latency")
 RETRIEVAL_SCORE = Histogram("hub_retrieval_score", "Retrieved cosine scores", buckets=(0, .25, .5, .7, .8, .9, 1))
+# Query retrieval is embed + vector search + lexical search + fusion. Timing it
+# as EMBED_LATENCY, as /query did before HUB-043, reported the whole of that
+# under a name meaning one part of it.
+RETRIEVAL_LATENCY = Histogram("hub_retrieval_duration_seconds", "Query retrieval latency")
 GENERATION_LATENCY = Histogram("hub_generation_duration_seconds", "LLM generation latency")
 GENERATION_TOKENS = Counter("hub_generation_tokens_total", "Generated tokens reported or estimated")
 REPORT_RETRIEVAL_ITEMS = Histogram(

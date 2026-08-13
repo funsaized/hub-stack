@@ -1263,23 +1263,23 @@ persistent corpus.
 
 ### HUB-043 — Retrieval is job-scoped; the corpus cannot be queried as one base
 
-**Status:** 🔴 OPEN — the highest-value item on the board. Analysis and
-literature grounding in the 2026-08-13 system analysis.
+**Status:** ✅ DONE — implemented and verified 2026-08-13. See
+`docs/CURRENT_STATE.md`, "One retrieval path".
 
-`ScopedRetrievalService.retrieve(job_id, topic)` takes a job id as its first
+`ScopedRetrievalService.retrieve(job_id, topic)` took a job id as its first
 argument, so hybrid dense+BM25 fusion, per-source caps and the FTS5 needle
-channel run **only** during one job's report synthesis. `/query` and `/rag`
-use a separate, simpler, dense-only path.
+channel ran **only** during one job's report synthesis. `/query` and `/rag`
+used a separate, simpler, dense-only path.
 
-The system therefore has two retrieval implementations and the better one
-cannot see the corpus: 530 documents sit physically in one index and
-logically in 49 silos. The exact-term channel that HUB-017 measured lifting
+The system therefore had two retrieval implementations and the better one
+could not see the corpus: 679 documents sat physically in one index and
+logically in 62 silos. The exact-term channel that HUB-017 measured lifting
 hit@4 from `0.6923` to `1.0` — the one that recovered a DOI no reranking
-could reach — is unavailable to every corpus-wide query.
+could reach — was unavailable to every corpus-wide query.
 
-This is the gap between the current system and the stated goal of a
-searchable, cross-referenced knowledge base, and it is a prerequisite for
-HUB-044 through HUB-046.
+This was the gap between the system and the stated goal of a searchable,
+cross-referenced knowledge base, and a prerequisite for HUB-044 through
+HUB-046.
 
 **Approach.** Make `job_id` an optional filter rather than a required
 argument, unscope the lexical channel, and route `/query` and `/rag` through
@@ -1290,6 +1290,29 @@ now the thing to fix.
 
 **Acceptance:** one retrieval path; corpus-wide queries use dense+BM25+RRF;
 job-scoped report synthesis is byte-identical to today on a retried report.
+
+**Outcome.** All three met, with the third criterion corrected: "byte-identical
+synthesis" is not checkable because synthesis is LLM-driven. The deterministic
+thing underneath it was checked instead — retrieval fingerprinted over the
+ordered `(document_id, chunk_index, score, channels, rrf_score)` list for the
+six largest jobs (360 chunks) under the deployed image and the new one, all
+six digests identical.
+
+Two things the analysis had not anticipated:
+
+- **The filters had to move, not just widen.** `topic_filter`/`tags_filter`
+  were Qdrant payload conditions. Left there, they would have narrowed the
+  dense channel while the lexical channel searched the whole corpus. They now
+  resolve to a document scope from `job_sources`, which is also the more
+  correct source: a page found by two jobs on different topics belongs to
+  both, and only `job_sources` records the second.
+- **Unscoping made row width matter.** `documents_for_job` read whole rows;
+  corpus-wide that meant decoding 44 MB of markdown per query to obtain three
+  identity columns. Both accessors are now projected.
+
+Live: "how does reciprocal rank fusion combine rankings" now draws 64 chunks
+from 33 sources across jobs; "kubernetes observability tracing" 65 from 42.
+Unblocks HUB-044 through HUB-046.
 
 ### HUB-044 — No retrieval-breadth metric; evidence concentrates on few sources
 

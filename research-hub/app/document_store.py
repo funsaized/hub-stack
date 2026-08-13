@@ -19,28 +19,39 @@ LEXICAL_RARITY_FLOOR = 5
 LEXICAL_RARITY_FRACTION = 0.01
 
 
+# What a retrieved chunk needs to be attributed to a source. Reading whole
+# rows instead would decode the corpus's 44MB of markdown on every query.
+RETRIEVAL_COLUMNS = "document_id, canonical_url, title, fetched_at"
+
+
 def lexical_tokens(topic: str) -> list[str]:
     """Alphanumeric tokens only, so FTS5 operators and quotes cannot inject."""
     return [token.lower() for token in re.findall(r"[A-Za-z0-9]+", topic)]
 
 
 def selective_match_terms(
-    db: sqlite3.Connection, topic: str, document_ids: list[str]
+    db: sqlite3.Connection, topic: str, document_ids: list[str] | None = None
 ) -> list[str]:
     """Quoted unigrams and adjacent-bigram phrases rare enough to be needles.
 
-    Rarity is measured within the retrieval scope, not corpus-wide: a term
-    ubiquitous in the retained sources ("consort ai" in a CONSORT-AI job)
-    would flood the lexical list and hand dense candidates dual-channel RRF
-    boosts even though it is rare globally.
+    Rarity is measured within the retrieval scope: a term ubiquitous in the
+    retained sources ("consort ai" in a CONSORT-AI job) would flood the
+    lexical list and hand dense candidates dual-channel RRF boosts even
+    though it is rare globally.
+
+    ``document_ids=None`` scopes to the whole corpus, which is the correct
+    measure for a corpus-wide query -- there the corpus *is* the scope
+    (HUB-043).
     """
     tokens = lexical_tokens(topic)
     if not tokens:
         return []
-    placeholders = ",".join("?" for _ in document_ids)
+    scoped = document_ids is not None
+    placeholders = ",".join("?" for _ in document_ids) if scoped else ""
+    scope_sql = f" WHERE document_id IN ({placeholders})" if scoped else ""
+    scope_args = tuple(document_ids) if scoped else ()
     total = db.execute(
-        f"SELECT COUNT(*) FROM chunk_fts WHERE document_id IN ({placeholders})",
-        document_ids,
+        f"SELECT COUNT(*) FROM chunk_fts{scope_sql}", scope_args,
     ).fetchone()[0]
     if not total:
         return []
@@ -51,10 +62,11 @@ def selective_match_terms(
     ))
     eligible = []
     for phrase in candidates:
+        match_scope = f" AND document_id IN ({placeholders})" if scoped else ""
         frequency = db.execute(
             f"""SELECT COUNT(*) FROM chunk_fts
-                WHERE chunk_fts MATCH ? AND document_id IN ({placeholders})""",
-            (phrase, *document_ids),
+                WHERE chunk_fts MATCH ?{match_scope}""",
+            (phrase, *scope_args),
         ).fetchone()[0]
         if 0 < frequency <= threshold:
             eligible.append((phrase, frequency))
@@ -71,20 +83,27 @@ def selective_match_terms(
 
 
 def search_chunk_index(
-    db: sqlite3.Connection, topic: str, document_ids: list[str], limit: int
+    db: sqlite3.Connection, topic: str, document_ids: list[str] | None,
+    limit: int,
 ) -> list[dict]:
-    """BM25-ranked needle-term search over chunk_fts, scoped and deterministic."""
+    """BM25-ranked needle-term search over chunk_fts, deterministic.
+
+    ``document_ids=None`` searches the whole corpus (HUB-043).
+    """
     terms = selective_match_terms(db, topic, document_ids)
     if not terms or limit < 1:
         return []
-    placeholders = ",".join("?" for _ in document_ids)
+    scoped = document_ids is not None
+    placeholders = ",".join("?" for _ in document_ids) if scoped else ""
+    scope_sql = f" AND document_id IN ({placeholders})" if scoped else ""
+    scope_args = tuple(document_ids) if scoped else ()
     rows = db.execute(
         f"""SELECT document_id, chunk_index, text
             FROM chunk_fts
-            WHERE chunk_fts MATCH ? AND document_id IN ({placeholders})
+            WHERE chunk_fts MATCH ?{scope_sql}
             ORDER BY bm25(chunk_fts), document_id, chunk_index
             LIMIT ?""",
-        (" OR ".join(terms), *document_ids, limit),
+        (" OR ".join(terms), *scope_args, limit),
     ).fetchall()
     return [
         {
@@ -223,15 +242,19 @@ class DocumentStore:
             yield self._decode(row)
 
     def documents_for_job(self, job_id: str) -> list[dict]:
+        """Identity of the sources a job retained, in canonical order."""
+        columns = ", ".join(
+            f"documents.{name}" for name in RETRIEVAL_COLUMNS.split(", ")
+        )
         with self._connect() as db:
             rows = db.execute(
-                """SELECT documents.* FROM job_sources
-                   JOIN documents USING(document_id)
-                   WHERE job_sources.job_id = ?
-                   ORDER BY documents.canonical_url, documents.document_id""",
+                f"""SELECT {columns} FROM job_sources
+                    JOIN documents USING(document_id)
+                    WHERE job_sources.job_id = ?
+                    ORDER BY documents.canonical_url, documents.document_id""",
                 (job_id,),
             ).fetchall()
-        return [self._decode(row) for row in rows]
+        return [dict(row) for row in rows]
 
     def report_status(self, job_id: str) -> str | None:
         with self._connect() as db:
@@ -297,13 +320,69 @@ class DocumentStore:
             )
 
     def search_chunks(
-        self, topic: str, document_ids: list[str], limit: int
+        self, topic: str, document_ids: list[str] | None, limit: int
     ) -> list[dict]:
-        """BM25-ranked lexical candidates scoped to retained document identity."""
-        if not document_ids:
+        """BM25-ranked lexical candidates.
+
+        ``document_ids`` restricts to retained document identity; ``None``
+        searches the whole corpus. An empty list stays an error: it means a
+        caller expected scope and has none, which would silently widen the
+        search instead of returning nothing.
+        """
+        if document_ids is not None and not document_ids:
             raise ValueError("lexical search requires retained source scope")
         with self._connect() as db:
             return search_chunk_index(db, topic, document_ids, limit)
+
+    def all_documents(self) -> list[dict]:
+        """Identity of every retained document, for corpus-wide retrieval.
+
+        Projected rather than ``SELECT *``: retrieval needs only identity and
+        title to attribute a chunk, while the corpus holds 44MB of markdown
+        that a query would otherwise decode on every call (HUB-043).
+        """
+        with self._connect() as db:
+            rows = db.execute(
+                f"""SELECT {RETRIEVAL_COLUMNS} FROM documents
+                    ORDER BY canonical_url, document_id"""
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def documents_matching(
+        self, *, topic: str | None = None, tags: list[str] | None = None,
+    ) -> list[dict]:
+        """Documents observed under a topic and/or any of these tags.
+
+        Reads ``job_sources`` rather than ``documents.research_metadata``: a
+        page found by two jobs on different topics belongs to both, and only
+        ``job_sources`` records the second. Matching is exact on topic and
+        any-of on tags, the semantics the Qdrant payload filter had before
+        these filters moved into scope resolution (HUB-043).
+        """
+        clauses, args = [], []
+        if topic is not None:
+            clauses.append("json_extract(research_metadata, '$.topic') = ?")
+            args.append(topic)
+        if tags:
+            placeholders = ",".join("?" for _ in tags)
+            clauses.append(
+                f"""EXISTS (SELECT 1 FROM json_each(research_metadata, '$.tags')
+                            WHERE json_each.value IN ({placeholders}))"""
+            )
+            args.extend(tags)
+        if not clauses:
+            return self.all_documents()
+        with self._connect() as db:
+            rows = db.execute(
+                f"""SELECT {RETRIEVAL_COLUMNS} FROM documents
+                    WHERE document_id IN (
+                        SELECT document_id FROM job_sources
+                        WHERE {' AND '.join(clauses)}
+                    )
+                    ORDER BY canonical_url, document_id""",
+                tuple(args),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def checkpoint(self, index_name: str, document_id: str, chunker_version: str) -> int:
         with self._connect() as db:

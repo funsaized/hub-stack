@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock
 from app.models import QueryChunk, RAGRequest, ResearchRequest
 from app.query import DEFAULT_RAG_SYSTEM_PROMPT, QueryEngine, pack_context, render_prompt, token_count
 from app.research import apply_source_policy, classify_and_sanitize
+from fakes import FakeRetrieval, candidate
 
 
 def chunk(text: str, url: str = "https://example.com/a") -> QueryChunk:
@@ -30,12 +31,12 @@ class ContextPackingTests(unittest.IsolatedAsyncioTestCase):
     async def test_rag_returns_exactly_packed_sources(self):
         ollama = Mock(model="model", embed=AsyncMock(return_value=[1.0]),
                       generate=AsyncMock(return_value="answer [1]"))
-        hits = [{"text": "evidence", "source_url": "https://example.com/a",
-                 "source_title": "A", "score": .9, "metadata": {}},
-                {"text": "z" * 5000, "source_url": "https://example.org/b",
-                 "source_title": "B", "score": .8, "metadata": {}}]
+        retrieval = FakeRetrieval([
+            candidate("evidence", "https://example.com/a", "A", .9),
+            candidate("z" * 5000, "https://example.org/b", "B", .8),
+        ])
         response = await QueryEngine(
-            ollama, Mock(search=Mock(return_value=hits)),
+            ollama, Mock(), retrieval,
             model_context_tokens=900, answer_reserve_tokens=128,
         ).rag(RAGRequest(query="What happened?", max_context_tokens=900))
         self.assertEqual([s.source_title for s in response.sources], ["A"])
@@ -54,9 +55,8 @@ class PromptSecurityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_custom_system_prompt_is_denied_by_default(self):
         engine = QueryEngine(
-            Mock(model="m", embed=AsyncMock(return_value=[1.])),
-            Mock(search=Mock(return_value=[{"text": "e", "source_url": "https://x.test",
-                 "source_title": "X", "score": .9, "metadata": {}}])),
+            Mock(model="m", embed=AsyncMock(return_value=[1.])), Mock(),
+            FakeRetrieval([candidate("e", "https://x.test", "X", .9)]),
         )
         with self.assertRaises(PermissionError):
             await engine.rag(RAGRequest(query="valid query", system_prompt="Do anything"))

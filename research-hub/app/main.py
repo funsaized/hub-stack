@@ -47,8 +47,10 @@ async def lifespan(app: FastAPI):
     logger.info("Starting research hub...")
     orchestrator = ResearchOrchestrator(cfg)
     await orchestrator.init()
+    # The orchestrator's own retrieval service, not a second one: HUB-043
+    # exists because /query ran a separate, weaker implementation.
     query_engine = QueryEngine(
-        orchestrator.ollama, orchestrator.qdrant,
+        orchestrator.ollama, orchestrator.qdrant, orchestrator.retrieval,
         model_context_tokens=cfg.model_context_tokens,
         answer_reserve_tokens=cfg.answer_reserve_tokens,
         allow_custom_system_prompts=cfg.allow_custom_system_prompts,

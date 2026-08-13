@@ -2,6 +2,61 @@
 
 Last verified: 2026-08-13 on the local Windows 11 workstation.
 
+## One retrieval path: the corpus is queryable as one base (HUB-043, 2026-08-13)
+
+Hybrid dense+BM25+RRF retrieval used to run **only** inside a research job's
+report synthesis. `/query` and `/rag` used a second, dense-only
+implementation, so 679 documents collected across 62 jobs sat physically in
+one index and logically in 62 silos, and the FTS5 needle channel that lifted
+exact-term hit@4 from `0.6923` to `1.0` was unreachable from any corpus-wide
+query.
+
+`ScopedRetrievalService.retrieve` now takes `job_id=None` to mean the whole
+corpus. The job id is a filter, not a mode: the same fusion, per-source caps
+and needle channel run either way. The dense-only path in `app/query.py` is
+deleted, not deprecated.
+
+- **`/query`'s `topic_filter` and `tags_filter` survive, relocated.** They
+  were Qdrant payload conditions; they are now resolved to a document scope
+  from `job_sources` (`documents_matching`). The lexical channel has no
+  payload to filter on, so a payload filter would have narrowed one channel
+  and not the other. Verified against live metadata: "Kubernetes pod
+  autoscaling and resource management" → 122 documents, tag `llm` → 9, an
+  unmatched topic → 0 (not the whole corpus).
+- **Job-scoped retrieval is provably unchanged.** Retrieval was fingerprinted
+  over the ordered `(document_id, chunk_index, score, channels, rrf_score)`
+  list for the six largest jobs — 360 selected chunks — under the deployed
+  image and the new one. All six SHA-256 digests match exactly. (The earlier
+  acceptance wording, "report synthesis is byte-identical", was not
+  checkable: synthesis is LLM-driven. This is the deterministic thing
+  underneath it.)
+- **Corpus scope sends no identity filter.** Enumerating all 679 ids would be
+  equivalent but grows an unbounded query with the corpus. An *empty* list
+  remains an error in both `search_evidence` and `search_chunks` — that means
+  a caller expected a scope and lost it, and silently widening to the corpus
+  is exactly the failure the guard exists to catch.
+- **Retrieval rows are projected, not whole.** The corpus holds 44 MB of
+  markdown; `SELECT *` would have decoded all of it on every query.
+  `documents_for_job` and `all_documents` now select identity and title only.
+- **Scores report the ranking that produced them.** Under fusion `/query`
+  returns the RRF score rather than a cosine — a similarity that contradicts
+  the ordering would be worse. `hub_retrieval_score` still observes only
+  candidates with a real cosine, and query latency moved off
+  `hub_embedding_duration_seconds` (which timed the whole retrieval under a
+  name meaning one part of it) onto `hub_retrieval_duration_seconds`.
+
+Live proof against the real corpus, new image on the deployed Qdrant and
+Ollama with a copy of the document store: "how does reciprocal rank fusion
+combine rankings" selected 64 chunks from **33 sources**, "kubernetes
+observability tracing" 65 from **42 sources**, both channels contributing and
+fusing. Under the old code these queries could reach one job's sources at
+most.
+
+Prerequisite fact confirmed before deploying: all 68,072 Qdrant points carry
+a `document_id` and every one resolves in SQLite, so corpus-wide retrieval
+drops nothing. (33 retained documents have no Qdrant chunks — deduplicated
+sources — and remain lexically reachable.)
+
 ## Live report generated through the deployed judge gate (2026-08-13)
 
 The judge pivot had been proven structurally but no report had ever been
@@ -1010,6 +1065,8 @@ SQLite FTS5 needle channel under deterministic reciprocal rank fusion (`k=60`):
 - `REPORT_HYBRID_RETRIEVAL` (default true) disables the channel; with it off, or when
   no needle term matches, candidate ordering is byte-identical to dense-only.
   `/query` and `/rag` remain dense-only per the PRD regression boundaries.
+  *(Superseded 2026-08-13 by HUB-043: that boundary protected the regression
+  surface that had become the defect. Both endpoints now use this channel.)*
 
 Phase 6 (local reranking) is not entered: hybrid recall on the measured manifest is
 `1.0`, so precision is not the bottleneck.

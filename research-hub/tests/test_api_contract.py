@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from app import main
 from app.models import QueryRequest, RAGRequest, ResearchRequest
 from app.query import QueryEngine
+from fakes import FakeRetrieval, candidate
 
 
 class RequestValidationTests(unittest.TestCase):
@@ -60,31 +61,70 @@ class RequestValidationTests(unittest.TestCase):
 
 
 class QueryConstructionTests(unittest.IsolatedAsyncioTestCase):
+    """The filters survived HUB-043; what changed is where they are applied.
+
+    They used to be Qdrant payload conditions on a dense-only search. They are
+    now a source scope, because the lexical channel has no payload to filter
+    and both channels must see the same corpus.
+    """
+
+    def engine(self, retrieval, **kwargs):
+        ollama = Mock(model="model", embed=AsyncMock(return_value=[1.0]),
+                      generate=AsyncMock(return_value="answer"))
+        return QueryEngine(ollama, Mock(), retrieval, **kwargs)
+
     async def test_filters_and_context_are_constructed_from_results(self):
-        ollama = Mock(embed=AsyncMock(return_value=[1.0]))
-        qdrant = Mock(search=Mock(return_value=[{
-            "text": "Evidence", "source_url": "https://example.com",
-            "source_title": "Source", "score": .9, "metadata": {},
-        }]))
-        response = await QueryEngine(ollama, qdrant).search(QueryRequest(
+        retrieval = FakeRetrieval([
+            candidate("Evidence", "https://example.com", "Source", .9),
+        ])
+        response = await self.engine(retrieval).search(QueryRequest(
             query="valid question", topic_filter="topic", tags_filter=["tag"]
         ))
-        qdrant.search.assert_called_once_with(
-            [1.0], 5, {"topic": "topic", "tags": ["tag"]}
-        )
+        self.assertEqual(retrieval.calls, [{
+            "job_id": None, "query": "valid question",
+            "source_topic": "topic", "source_tags": ["tag"],
+        }])
         self.assertIn("[1] Source (https://example.com)\nEvidence", response.context)
 
     async def test_rag_passes_tag_filter_to_retrieval(self):
-        ollama = Mock(model="model", embed=AsyncMock(return_value=[1.0]),
-                      generate=AsyncMock(return_value="answer"))
-        qdrant = Mock(search=Mock(return_value=[{
-            "text": "Evidence", "source_url": "https://example.com",
-            "source_title": "Source", "score": .9, "metadata": {},
-        }]))
-        await QueryEngine(ollama, qdrant).rag(RAGRequest(
+        retrieval = FakeRetrieval([
+            candidate("Evidence", "https://example.com", "Source", .9),
+        ])
+        await self.engine(retrieval).rag(RAGRequest(
             query="valid question", tags_filter=["tag"]
         ))
-        qdrant.search.assert_called_once_with([1.0], 5, {"tags": ["tag"]})
+        self.assertEqual(retrieval.calls[0]["source_tags"], ["tag"])
+        self.assertIsNone(retrieval.calls[0]["source_topic"])
+
+    async def test_query_never_scopes_itself_to_a_single_job(self):
+        """HUB-043: /query searches the corpus, not one job's sources."""
+        retrieval = FakeRetrieval()
+        await self.engine(retrieval).search(QueryRequest(query="a question"))
+        self.assertIsNone(retrieval.calls[0]["job_id"])
+
+    async def test_top_k_bounds_what_a_wider_candidate_pool_returns(self):
+        """The pool is sized for fusion quality; top_k is the caller's cut."""
+        retrieval = FakeRetrieval([
+            candidate(f"Evidence {index}", f"https://example.com/{index}",
+                      f"Source {index}", 0.9 - index / 100)
+            for index in range(10)
+        ])
+        response = await self.engine(retrieval).search(
+            QueryRequest(query="a question", top_k=3)
+        )
+        self.assertEqual(len(response.chunks), 3)
+        self.assertEqual(response.chunks[0].text, "Evidence 0")
+
+    async def test_fused_rank_score_is_reported_not_a_contradicting_cosine(self):
+        retrieval = FakeRetrieval([
+            candidate("Evidence", "https://example.com", "Source", 0.0,
+                      metadata={"rrf_score": 0.0312,
+                                "retrieval_channels": ["lexical"]}),
+        ])
+        response = await self.engine(retrieval).search(
+            QueryRequest(query="a question")
+        )
+        self.assertEqual(response.chunks[0].score, 0.0312)
 
 
 class RetryLifecycleTests(unittest.IsolatedAsyncioTestCase):
