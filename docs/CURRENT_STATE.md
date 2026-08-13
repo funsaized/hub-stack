@@ -151,6 +151,77 @@ diagnostic is emitted only after a batch completes, the failed attempt logged
 no `served_model` values, so served-model auditing has a gap on failed
 batches.
 
+## Eight-topic evaluation campaign (2026-08-13) — one blocking defect found
+
+A deliberately varied campaign against the deployed stack: six topics chosen
+to stress different failure modes, plus a depth sweep. 8 jobs, 158 retained
+sources. Raw per-job records were collected by a harness reading only the
+public API.
+
+| Topic class | depth | Facets | Sources / domains | Findings | Report |
+|---|---|---|---|---|---|
+| narrow (Redis `appendfsync`) | 6 | 4 | 21 / 18 | 12 | ok |
+| broad (K8s autoscaling) | 6 | 3 | 17 / — | — | **failed** |
+| contested (microservices vs monolith) | 6 | 3 | 15 / 13 | 7 | ok |
+| ambiguous ("transformer efficiency") | 6 | 2 | 9 / — | — | **failed** |
+| thin (OCaml effect handlers) | 6 | 3 | 11 / — | — | **failed** |
+| cross-domain (detecting p-hacking) | 6 | 4 | 19 / 18 | 12 | ok |
+| K8s autoscaling | 3 | 4 | 10 / 9 | 12 | ok |
+| K8s autoscaling | 12 | 6 | 56 / 45 | 12 | ok |
+
+**Blocking defect — 3 of 8 reports failed (37.5%), all one root cause.**
+MiniMax M3 leaks the opening of its JSON verdict *into* its reasoning block:
+
+```
+<think>
+…reasoning…{"
+</think>
+accepted": true, "reason": null, "refs": [{"id": "R1", "necessary": true}]}
+```
+
+`_THINK_BLOCK` strips `<think>…</think>` and takes the `{"` with it, leaving
+`accepted": true…`, which cannot parse. The earlier `Extra data: line 1
+column 11` failures were the same leak splitting at a different point. The
+gate fails closed and the report stays retryable, so nothing unsupported is
+ever published — but roughly a third of reports need a retry. **Not fixed:**
+the claim gate is out of scope for HUB-024, and patching it mid-campaign
+would have destroyed comparability. This is the single highest-value
+reliability fix available and is recorded as such in the backlog.
+
+**`PLAN_FACET_RELEVANCE = 0.55` is well calibrated and transfers.** Across 21
+admitted facets the topic cosines ran 0.550–0.818 (median 0.695); the nine
+facets refused `off_topic` ran 0.425–0.536. The threshold sits exactly in a
+clean empirical gap, and it held on the non-CS cross-domain topic too. This
+closes the PRD's transfer question with evidence rather than assumption.
+
+**Two acceptance claims do not hold in practice:**
+
+- *Collapse never fired* — 0 of 8 jobs collapsed, including the deliberately
+  narrow Redis `appendfsync` topic, which admitted 4 facets and retained 21
+  sources across 18 domains. The claimed "a narrow topic issues exactly one
+  search and behaves as it did before planning" is not what the deployed
+  system does; the planner always finds distinct-enough angles.
+- *The multi-round machinery never engages* — all 8 jobs stopped
+  `coverage_complete` in round 1. Under a per-facet crawl allowance, round 1
+  always covers the plan, so the gap pass, plateau detection and
+  `PLAN_MAX_ROUNDS` are effectively dead code at current settings.
+
+**Source-level relevance is unguarded.** The relevance floor admits *facets*,
+not *sources*. A relevant facet can still return off-topic documents: the
+Redis corpus pulled Couchbase and Databricks docs, and the Kubernetes corpus
+pulled an NIH paper. Breadth is real but not uniformly on-topic.
+
+**Depth scales cleanly and roughly linearly** in `depth × facets`: 10 sources
+at depth 3, 56 sources across 45 domains at depth 12, the latter in 190 s.
+
+**Report quality is bounded by span selection, not by the gate.** All five
+successful reports hit the 12-finding display cap with 3–4 further verified
+claims withheld, so the cap now binds. But the contested topic surfaced
+findings like a market-size statistic irrelevant to architecture tradeoffs,
+and **zero verified source disagreements appeared across all eight jobs** —
+notable for a topic set that included one chosen specifically to elicit them.
+The judge verifies faithfulness, not informativeness or topicality.
+
 ## Query planning measured at scale — acceptance met (HUB-024, 2026-08-13)
 
 Five live runs on one fixed topic (`depth=6`, `max_sources=12`,
