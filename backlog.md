@@ -1191,7 +1191,11 @@ were retrieved, the budget, the reserve, and that raising or omitting
 
 ### HUB-042 — Search engines exhaust under sustained job volume
 
-**Status:** 🟡 MITIGATED 2026-08-13 by widening the engine pool and surfacing
+**Status:** ✅ DONE 2026-08-13 — ADR-002 stages 1 and 2 deployed and verified.
+Pacing and pre-crawl ranking cut wasted crawls (36 fetched for 4 kept became
+17 for 17 on the worst topic), and a keyed Serper fallback now covers a fully
+blocked engine pool, proven by stopping SearXNG and watching a job complete on
+`{"serper": 4}`. Previously: 🟡 MITIGATED 2026-08-13 by widening the engine pool and surfacing
 suspension. Not closed: the underlying quota problem is unsolved, and one
 follow-up is now open (see the calibration note below).
 

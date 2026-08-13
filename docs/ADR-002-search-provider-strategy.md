@@ -1,7 +1,7 @@
 # ADR-002 — Search provider strategy for research acquisition
 
 Date: 2026-08-13
-Status: Stage 1 Accepted and deployed 2026-08-13; stage 2 deferred pending an operator spend decision
+Status: Accepted — stages 1 and 2 deployed and verified 2026-08-13
 Item: HUB-042 (`backlog.md`)
 
 ## Context
@@ -155,6 +155,32 @@ survived the screen. The retained domains are `tokio.rs`, `docs.rs`,
 
 The post-crawl screen is not redundant — it remains the guard for documents
 whose snippet flatters them — but it now has little left to remove.
+
+## Stage 2 outcome (2026-08-13)
+
+Serper deployed as a fallback behind SearXNG, keyed from `SERPER_API_KEY` and
+inert when unset.
+
+**Verified by taking SearXNG away.** With the container stopped, a job
+recorded `search_providers: {"serper": 4}` — all four facet queries served by
+the fallback — retained 17 sources and completed its report, drawing on
+`kubernetes.io`, `docs.cloud.google.com`, `datadoghq.com` and `signoz.io`.
+With SearXNG restored the next job recorded `{"searxng": 3}`, so primacy
+returns automatically and the paid path stays insurance rather than default.
+The key appears in no log line.
+
+**The live contract exposed a defect no mock could.** Serper returns dates as
+`"Oct 31, 2019"`, which neither ISO nor RFC-2822 parsing accepts, so every
+Serper result parsed as undated. Any job setting `freshness_days` would have
+rejected all of them as `stale_or_undated` — silently, since the results
+would simply be absent. `parse_source_date` now accepts human-readable
+formats after the existing two, leaving previously-parsing shapes untouched.
+
+Two earlier attempts to force the fallback failed instructively and are worth
+recording: pointing `SEARXNG_ENGINES` at a nonexistent engine did nothing
+because SearXNG falls back to its category defaults, and overriding
+`SEARXNG_URL` in `.env` did nothing because `docker-compose.yml` hardcodes it.
+Stopping the container is the honest simulation.
 
 ## Acceptance
 

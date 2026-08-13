@@ -251,6 +251,32 @@ per report.
 Findings across the ten retries ranged 3–40, tracking corpus quality rather
 than corpus size.
 
+## Keyed search fallback deployed (ADR-002 stage 2, 2026-08-13)
+
+Serper runs behind SearXNG, engaging only when a query returns nothing — what
+a fully blocked engine pool looks like. Keyed from `SERPER_API_KEY` and inert
+when unset, so acquisition is unchanged without it. It returns URLs and
+snippets only; this stack does its own crawling, so providers bundling page
+content would be paid for output it discards.
+
+**Verified by removing SearXNG.** With the container stopped a job recorded
+`search_providers: {"serper": 4}`, retained 17 sources and completed its
+report on `kubernetes.io`, `docs.cloud.google.com` and `datadoghq.com`. With
+SearXNG restored the next job recorded `{"searxng": 3}` — primacy returns
+automatically. The key reaches no log line and is excluded from the config
+repr.
+
+Failure is legible rather than silent: a quota error or transport failure
+returns no results and is logged with its cause, unlike the CAPTCHAs this
+exists to survive. Fallback URLs pass through the unchanged source policy and
+SSRF vetting.
+
+**The live contract exposed a defect mocks could not.** Serper returns dates
+as `"Oct 31, 2019"`; neither ISO nor RFC-2822 parsing accepts that, so every
+result parsed as undated and any job setting `freshness_days` would have
+silently rejected all of them. `parse_source_date` now handles human-readable
+formats.
+
 ## Search stage 1: pacing and pre-crawl ranking (ADR-002, 2026-08-13)
 
 Two free changes, both previously untried, decided in
