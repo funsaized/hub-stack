@@ -151,20 +151,39 @@ diagnostic is emitted only after a batch completes, the failed attempt logged
 no `served_model` values, so served-model auditing has a gap on failed
 batches.
 
-## Findings display cap raised (2026-08-13)
+## Report drafting scaled to the evidence ceiling (2026-08-13)
 
-`REPORT_MAX_FINDINGS` 12 → 20. Every successful report in the evaluation
-campaign hit the 12-finding cap with 3–4 verified claims withheld, so the cap
-rather than the evidence was deciding how much a report could say. Costs
-nothing at the gate: drafting volume, and therefore metered call count, is
-unchanged — this only stops discarding claims the judge already verified and
-was already paid for.
+Two successive raises, each sized from measurement rather than guessed, on the
+same Postgres topic:
 
-Verified live on the Postgres topic: 15 findings displayed and the "withheld
-by the report display limits" line is gone, so the cap no longer binds. With
-28 claims drafted per report (16 spans + 12 pairs) and roughly 15 verifying,
-**drafting volume is now the next lever** — raising `REPORT_MAX_SPAN_CLAIMS`
-would add verified findings at a proportional increase in metered calls.
+| | Before | Display cap 20 | Drafting 24+16 |
+|---|---|---|---|
+| Spans offered / drafted | 25 / 16 | 25 / 16 | **23 / 23** |
+| Findings displayed | 12 (capped) | 15 | **18** |
+| Cross-source pair findings | 1 | 1 | **3** |
+| Verified claims withheld | 3–4 | 0 | **0** |
+| Report | ok, 1st | ok, 1st | **ok, 1st** |
+
+`REPORT_MAX_FINDINGS` 12 → 20 → 30 removed the display cap as the limiter;
+`REPORT_MAX_SPAN_CLAIMS` 16 → 24 and `REPORT_MAX_PAIR_CLAIMS` 12 → 16 then
+consumed the evidence that was already being retrieved and discarded. Neither
+change touched the gate's judging contract.
+
+**The ceiling is now span supply, not any cap.** `drafted_span_count` equals
+`span_count` at 23, so every offered span is drafted. Supply is set upstream by
+`pack_evidence` fitting evidence into the 8K model context less a 2048-token
+answer reserve, which is why only 7 chunks are selected from 120 retrieval
+candidates. Raising the drafting caps further buys nothing.
+
+**The next lever, and its cost.** More spans requires a larger
+`MODEL_CONTEXT_TOKENS`, which must move together with Ollama's own context or
+the client fails closed on prompt truncation. That risks the GPU-placement
+gate `qwen3.5:9b` currently passes at 8K (~102 tok/s fully on GPU; Qwen3.6 at
+45% CPU managed 3–4 tok/s and failed the interactive gate). It is a deliberate
+operator decision, not a config nudge.
+
+Metered cost rose with drafting — roughly 40 drafted claims per report against
+28 — and every cap is env-tunable to walk back without a rebuild.
 
 ## Source screening built but not enabled (HUB-038, 2026-08-13)
 
