@@ -2,6 +2,111 @@
 
 Last verified: 2026-08-13 on the local Windows 11 workstation.
 
+## Retrieval breadth measured: source coverage at k (HUB-044, 2026-08-13)
+
+**No deployed module changed.** This item adds a number and touches nothing
+under `app/`; the running containers are the HUB-043 build. Everything below
+was measured read-only against the live Qdrant, Ollama and document store.
+
+Breadth was already counted — `RetrievalDiagnostics.sources_represented`, in
+job progress and in `hub_report_retrieval_items` — but as one post-cap total.
+Taken after `max_chunks_per_source` has forced diversity, it cannot separate
+breadth the ranking found from breadth the cap manufactured, says nothing
+about how breadth grows with k, and never covered the corpus-wide path.
+
+`tests/coverage_at_k.py` is now the single definition, reported beside recall
+in `benchmark_report_retrieval.py` and `benchmark_retrieval_exact_terms.py`,
+with `benchmark_retrieval_coverage.py` as the live baseline over both scopes.
+
+- **The unit is the document.** SecCov@k counts sections; chunking here is a
+  fixed 800/100 split, so `chunk_index` marks position rather than structure
+  and section coverage would restate `chunks_selected`. Documents are also
+  what `max_chunks_per_source`, `[S#]` citations and acquisition already use.
+- **Denominators are named, never assumed.** `saturation_at_k` divides by what
+  the ranking could reach at that k (the fused pool); `scope_coverage_at_k`
+  divides by the scope and is reported as `null` for the unfiltered corpus,
+  where dividing by 679 would make every k ≤ 120 look like failure by
+  arithmetic. Job-scoped the denominator is sources with embedded chunks, not
+  retained rows — job `48c9247e` shows 56 retained, 55 embedded.
+- **Coverage gates nothing, anywhere.** It is maximised by one chunk per
+  source, which strands every multi-chunk argument. A test asserts the report
+  benchmark's gate set is still exactly `citation_validity` and
+  `critical_recall_at_k`, and the live commands exit non-zero only on fixture
+  drift.
+
+**Baseline, 2026-08-13**, six real jobs (query = the job's own topic, the only
+query a report issues) and five corpus-wide queries, at the deployed
+`candidate_limit=120`, `max_chunks_per_source=3`, `rrf_k=60`:
+
+| Scope | k=4 | k=8 | k=16 | k=40 |
+|---|---|---|---|---|
+| Job, capped | 0.750 | 0.604 | 0.583 | 0.795 |
+| Job, uncapped | 0.750 | 0.583 | 0.524 | 0.692 |
+| Corpus, capped | 0.700 | 0.675 | 0.712 | 0.701 |
+| Corpus, uncapped | 0.650 | 0.575 | 0.562 | 0.535 |
+
+(Pooled `saturation_at_k`: distinct sources shown, over the most the pool
+could have shown at that k. Counts are summed across cases, never averaged as
+rates, so a short ranking cannot contribute a free 1.0.)
+
+Three things the measurement said that the tracked total could not:
+
+- **The candidate pool is the binding ceiling, not the cap or the ranking.**
+  Five of six jobs reach fewer sources than they have embedded: p-hacking **8
+  of 19**, kafka 13 of 20, microservices 15 of 22, kubernetes 39 of 55, redis
+  18 of 20. Only Postgres (24 of 24) saturates. No selection policy recovers a
+  source the pool never proposed — which is where HUB-045 should look first.
+- **The paper's failure mode reproduces exactly, corpus-wide.** On "how does
+  reciprocal rank fusion combine rankings" the uncapped fused ranking takes
+  its first **eleven** chunks from one document; coverage@8 is 1 source
+  uncapped against 5 capped. Corpus-wide the cap is doing most of the breadth
+  work (0.712 vs 0.562 at k=16); job-scoped it is doing much less.
+- **Recall and coverage move independently, as intended.** On the exact-term
+  manifest, adding the lexical channel lifts needle hit@4 from `0.6923` to
+  `1.0` while pooled breadth is *identical* dense and hybrid (28/48 at k=4).
+  A change that moved only one of the two numbers would have looked like a
+  win under either metric alone.
+
+Two backlog claims were corrected against the code before any of this was
+built: breadth was not untracked, and the motivating case no longer
+reproduces — job `bc3e5297` was recorded at 15 chunks from 7 of 22 sources and
+now selects **44 chunks from 15 of 22**.
+
+Job `48c9247e` reproduces HUB-043's recorded figure exactly (93 chunks from 39
+of 56), confirming the read-only mirror follows the production path.
+
+Re-run it read-only against the live stack (PowerShell; Git Bash rewrites the
+container-side paths). No judge key is needed — this command spends no metered
+calls:
+
+```powershell
+docker run --rm --network hub_default `
+  -v hub_research_hub_data:/app/data:ro `
+  -v "${PWD}\research-hub\tests:/app/tests:ro" -w /app `
+  -e QDRANT_URL=http://hub-qdrant:6333 -e OLLAMA_URL=http://hub-ollama:11434 `
+  -e REPORT_RETRIEVAL_CANDIDATES=120 -e REPORT_MAX_CHUNKS_PER_SOURCE=3 `
+  hub-research-hub python -m tests.benchmark_retrieval_coverage
+```
+
+State audited after the runs and unchanged: Qdrant 68,072 points (`green`),
+679 documents / 758 observations / 71,125 lexical rows, attempt-11 report
+still `068d60b2…`, v4 seal still `762e7a19…`. The probes read the store
+through an immutable URI on a read-only volume mount and issue no upsert; the
+deployed containers were never recreated.
+
+**Re-baseline watch: not tripped, and one thing to know about it.** No report
+has been generated since the HUB-043 rebuild (worker started
+`2026-08-13T21:58Z`; the newest report is `20:25Z`), so the served-model
+trigger has nothing new to check and the v4 seal stays valid. Noted while
+looking: `served_model` is emitted only in the worker's
+`judge_verification_diagnostic` log records, and those live in the container's
+json-file log, so **a rebuild erases the evidence for every report that
+preceded it** — the five reports from `18:30Z`–`20:25Z` can no longer be
+audited. Neither the report row nor the Redis job progress carries the served
+model. Not fixed here (out of scope for a measurement item); recorded so the
+next deploy knows to audit before rebuilding, or so persisting the field
+becomes its own item.
+
 ## One retrieval path: the corpus is queryable as one base (HUB-043, 2026-08-13)
 
 Hybrid dense+BM25+RRF retrieval used to run **only** inside a research job's

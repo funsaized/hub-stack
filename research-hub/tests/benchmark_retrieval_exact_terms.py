@@ -23,6 +23,14 @@ dense-only and once through the hybrid FTS5+RRF path, so the Phase 5
 acceptance comparison runs on identical queries. Exit code 1 means fixture
 drift (a term no longer occurs in the corpus) or a malformed manifest -
 never a retrieval miss; misses are the measurement, not a failure.
+
+Source coverage at k rides alongside (HUB-044), on the same queries and the
+same two channels, so a needle-recall number is never read without the
+breadth number beside it. It gates nothing here either: this command's only
+non-zero exit is fixture drift. Each channel's reachable-source denominator
+comes from the pool it actually drew on - the raw Qdrant hits for dense,
+those plus the BM25 hits for hybrid - so no extra embedding is spent to
+measure breadth.
 """
 
 import argparse
@@ -36,6 +44,7 @@ from pathlib import Path
 from app.clients import OllamaClient, QdrantClient
 from app.document_store import search_chunk_index
 from app.retrieval import ScopedRetrievalService
+from tests.coverage_at_k import DEFAULT_KS, coverage_at_k, micro_average
 
 
 DEFAULT_MANIFEST = Path(__file__).parent / "fixtures" / "retrieval_exact_term_cases.json"
@@ -152,6 +161,10 @@ def scroll_job_chunks(qdrant: QdrantClient, document_ids: list[str]) -> list[dic
             return chunks
 
 
+def _at(curve: list[dict], k: int) -> dict:
+    return next(point for point in curve if point["k"] == k)
+
+
 def sentinel_matches(candidate, case: dict) -> bool:
     if candidate.document_id != case["expected_document_id"]:
         return False
@@ -187,10 +200,17 @@ async def evaluate(manifest: dict) -> dict:
     job_id = manifest["job_id"]
     top_k = manifest["top_k"]
     retained = documents.documents_for_job(job_id)
-    chunks = scroll_job_chunks(qdrant, sorted({doc["document_id"] for doc in retained}))
+    retained_ids = sorted({doc["document_id"] for doc in retained})
+    chunks = scroll_job_chunks(qdrant, retained_ids)
+    # The job's real breadth ceiling: retained sources that own at least one
+    # embedded chunk. Deduplicated sources retain a row and no chunks
+    # (HUB-043), so `len(retained)` overstates what retrieval can reach.
+    sources_with_chunks = len({chunk["document_id"] for chunk in chunks})
 
+    coverage_ks = sorted({*DEFAULT_KS, top_k})
     drift = []
     results = []
+    curves: list[tuple[list[dict], list[dict]]] = []
     try:
         for case in manifest["cases"]:
             lexical = [
@@ -205,6 +225,15 @@ async def evaluate(manifest: dict) -> dict:
 
             dense_retrieved = await dense_service.retrieve(job_id, case["query"])
             dense_selected = dense_retrieved.candidates[:top_k]
+            dense_pool = {
+                hit.get("document_id") for hit in recorder.last_hits
+            } & set(retained_ids)
+            lexical_pool = {
+                hit["document_id"]
+                for hit in documents.search_chunks(
+                    case["query"], retained_ids, limits["candidate_limit"]
+                )
+            } & set(retained_ids)
             pool_hit = any(
                 hit.get("document_id") == case["expected_document_id"]
                 and (
@@ -226,6 +255,16 @@ async def evaluate(manifest: dict) -> dict:
                 rank for rank, candidate in enumerate(hybrid_selected, 1)
                 if sentinel_matches(candidate, case)
             ]
+            dense_curve = coverage_at_k(
+                dense_retrieved.candidates, coverage_ks,
+                sources_reachable=max(len(dense_pool), 1),
+                sources_in_scope=sources_with_chunks,
+            )
+            hybrid_curve = coverage_at_k(
+                hybrid_retrieved.candidates, coverage_ks,
+                sources_reachable=max(len(dense_pool | lexical_pool), 1),
+                sources_in_scope=sources_with_chunks,
+            )
             results.append({
                 "id": case["id"],
                 "category": case["category"],
@@ -236,7 +275,12 @@ async def evaluate(manifest: dict) -> dict:
                 "rank": dense_ranks[0] if dense_ranks else None,
                 "hybrid_hit_at_k": bool(hybrid_ranks),
                 "hybrid_rank": hybrid_ranks[0] if hybrid_ranks else None,
+                "dense_sources_reachable": len(dense_pool),
+                "hybrid_sources_reachable": len(dense_pool | lexical_pool),
+                "dense_coverage_at_top_k": _at(dense_curve, top_k),
+                "hybrid_coverage_at_top_k": _at(hybrid_curve, top_k),
             })
+            curves.append((dense_curve, hybrid_curve))
     finally:
         await ollama.close()
 
@@ -260,8 +304,16 @@ async def evaluate(manifest: dict) -> dict:
         "job_id": job_id,
         "top_k": top_k,
         "chunks_scanned": len(chunks),
+        "sources_with_chunks": sources_with_chunks,
+        "sources_retained": len(retained),
         "cases": results,
         "fixture_drift": drift,
+        "coverage": {
+            "unit": "document",
+            "gates": "none — reported beside recall, never instead of it (HUB-044)",
+            "dense": micro_average([curve for curve, _ in curves]),
+            "hybrid": micro_average([curve for _, curve in curves]),
+        },
         "summary": {
             "total_cases": len(results),
             "dense_hit_at_k": hits,
