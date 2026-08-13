@@ -39,6 +39,15 @@ class Config:
     report_retrieval_min_score: float | None = None
     report_hybrid_retrieval: bool = True
     report_rrf_k: int = 60
+    # Adaptive query planning (HUB-024). Off by default: with the master switch
+    # false the acquisition path is byte-identical to the single-query path.
+    # PLAN_MAX_FACETS is a safety rail against a pathological planner, never
+    # the mechanism that decides breadth -- that is PLAN_FACET_DISTINCT.
+    report_query_planning: bool = False
+    plan_facet_distinct: float = 0.85
+    plan_max_facets: int = 8
+    plan_search_budget: int = 12
+    plan_crawl_budget: int = 40
     # The claim gate is the MiniMax M3 judge (HUB-034; sealed v4 final passed).
     judge_base_url: str = "https://api.minimax.io/v1"
     judge_model: str = "MiniMax-M3"
@@ -62,6 +71,14 @@ class Config:
             raise ValueError("JUDGE_TIMEOUT_SECONDS must be positive and finite")
         if self.crawl_max_markdown_chars < 1:
             raise ValueError("CRAWL_MAX_MARKDOWN_CHARS must be positive")
+        if not 0.0 < self.plan_facet_distinct <= 1.0:
+            raise ValueError("PLAN_FACET_DISTINCT must be in (0.0, 1.0]")
+        if not 1 <= self.plan_max_facets <= 32:
+            raise ValueError("PLAN_MAX_FACETS must be between 1 and 32")
+        if not 1 <= self.plan_search_budget <= 64:
+            raise ValueError("PLAN_SEARCH_BUDGET must be between 1 and 64")
+        if not 1 <= self.plan_crawl_budget <= 500:
+            raise ValueError("PLAN_CRAWL_BUDGET must be between 1 and 500")
 
 
 def load_config() -> Config:
@@ -108,6 +125,13 @@ def load_config() -> Config:
             "REPORT_HYBRID_RETRIEVAL", "true"
         ).lower() in {"1", "true", "yes"},
         report_rrf_k=int(os.environ.get("REPORT_RRF_K", "60")),
+        report_query_planning=os.environ.get(
+            "REPORT_QUERY_PLANNING", "false"
+        ).lower() in {"1", "true", "yes"},
+        plan_facet_distinct=float(os.environ.get("PLAN_FACET_DISTINCT", "0.85")),
+        plan_max_facets=int(os.environ.get("PLAN_MAX_FACETS", "8")),
+        plan_search_budget=int(os.environ.get("PLAN_SEARCH_BUDGET", "12")),
+        plan_crawl_budget=int(os.environ.get("PLAN_CRAWL_BUDGET", "40")),
         judge_base_url=os.environ.get("JUDGE_BASE_URL", "https://api.minimax.io/v1"),
         judge_model=os.environ.get("JUDGE_MODEL", "MiniMax-M3"),
         judge_api_key=os.environ.get("MINIMAX_SUBSCRIPTION_KEY", ""),

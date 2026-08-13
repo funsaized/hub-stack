@@ -848,9 +848,36 @@ the deployed image.
 
 ### HUB-024 — Adaptive query planning and iterative research
 
-**Status:** 🔴 OPEN — revisit trigger tripped and item opened by the operator
-2026-08-13. Design: `PRDs/hub-024-query-planning.md` (grounded in 16 arXiv
-abstracts fetched and read 2026-08-13; citations in the PRD).
+**Status:** 🟡 IN PROGRESS — stage 1 (facet admission, cross-facet dedup,
+budget rails, single round) implemented behind `REPORT_QUERY_PLANNING=false`
+on 2026-08-13; stages 2 (gap-driven rounds) and 3 (measurement) not started.
+Design: `PRDs/hub-024-query-planning.md` (grounded in 16 arXiv abstracts
+fetched and read 2026-08-13; citations in the PRD).
+
+**Stage 1 as built.** `app/query_plan.py` proposes candidate facets in one
+bounded local-LLM call, embeds `[topic, *candidates]` in a single
+`embed_batch`, and greedily admits a candidate only while its max cosine to
+the admitted set is below `PLAN_FACET_DISTINCT`. The topic is always facet 0,
+so a plan can only widen the pre-planning search, never replace it. Facet
+results are round-robin interleaved (concatenating would let facet 1 consume
+the whole `depth` cap) and passed through the existing `apply_source_policy`
+in **one** pass — which is what makes cross-facet canonical dedup, allow/block
+lists, per-domain limits and freshness apply to every sub-query by
+construction rather than by reimplementation. SSRF vetting is per-URL in
+`crawl_one` and therefore unchanged. Crawl count is still bounded by `depth`,
+so breadth arrives at constant crawl and judge cost.
+
+Every planner failure mode — dead Ollama, malformed JSON, wrong embedding
+count, bad admission input — degrades to the single-query plan with the
+reason recorded (`planner_unavailable`), never a failed job. 249 tests pass
+in-container (44 new, offline and deterministic), including direct assertions
+that the flag-off path issues exactly one search and never calls the planner.
+
+**Not yet done:** gap-driven rounds, novelty saturation stopping,
+`PLAN_NOVELTY_MIN`, and the breadth measurement against the single-query
+baseline recorded in `docs/CURRENT_STATE.md` (job `24a8a471`: 6 sources / 6
+distinct domains). Enabling the flag in the deployed stack is a separate
+operator decision and has not been taken.
 
 **Trigger record:** a research job issues exactly one SearXNG query, so the
 retained corpus for a report contains only what that phrasing surfaced. The
@@ -1027,9 +1054,11 @@ HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HU
 
 ### Milestone 5 — Expansion only when earned
 
-HUB-024 🔴 (trigger tripped 2026-08-13; opened with a researched design — see
-`PRDs/hub-024-query-planning.md`). HUB-025 through HUB-030 remain deferred
-behind their explicit revisit triggers; none tripped.
+HUB-024 🟡 (trigger tripped 2026-08-13; design in
+`PRDs/hub-024-query-planning.md`; stage 1 implemented behind
+`REPORT_QUERY_PLANNING=false`, stages 2–3 open). HUB-025 through HUB-030
+remain deferred behind their explicit revisit triggers; none tripped as of
+2026-08-13.
 
 ### Recommended order for the remaining open work (2026-08-12, post-pivot)
 
@@ -1041,6 +1070,6 @@ behind their explicit revisit triggers; none tripped.
 
 The pivot sequence is complete; Milestone 4 is closed.
 
-6. **HUB-024** — adaptive query planning and iterative research (opened 2026-08-13, trigger tripped; design in `PRDs/hub-024-query-planning.md`, implementation not started).
+6. **HUB-024** — adaptive query planning and iterative research (opened 2026-08-13, trigger tripped; design in `PRDs/hub-024-query-planning.md`). Stage 1 built 2026-08-13 behind `REPORT_QUERY_PLANNING=false`; next is stage 2 (gap-driven rounds with novelty-saturation stopping), then stage 3 measurement against the job-`24a8a471` single-query baseline.
 
 **Exit condition:** each expansion is justified by measured usage or a documented limitation, not by architectural possibility.
