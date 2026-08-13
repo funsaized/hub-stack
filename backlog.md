@@ -1027,49 +1027,67 @@ topics re-run clean.
 
 ### HUB-038 — Facet relevance is guarded; source relevance is not
 
-**Status:** 🔴 OPEN — measured 2026-08-13.
+**Status:** ✅ DONE 2026-08-13 — source screening implemented, deployed and
+measured.
 
-`PLAN_FACET_RELEVANCE` admits *facets*, not *sources*. A perfectly on-topic
-facet can still return off-topic documents: the Redis `appendfsync` corpus
-retained Couchbase and Databricks documentation, and the Kubernetes
-autoscaling corpus retained an NIH paper. Breadth is real but not uniformly
-on-topic, and every off-topic document is a candidate for span drafting and
-therefore for metered judge calls.
+**Defect.** `PLAN_FACET_RELEVANCE` admits *queries*, not the documents they
+return, so an entirely on-topic facet could still retain off-topic sources:
+the Redis `appendfsync` corpus kept Couchbase and Databricks documentation and
+the Kubernetes corpus kept an NIH paper. Every stray document was a candidate
+for span drafting and therefore for metered judge calls.
 
-**Also observed:** zero verified source disagreements across all eight
-campaign jobs, including a topic chosen specifically to elicit them, and
-findings such as a market-size statistic surfacing for an architecture
-tradeoffs question. The judge verifies faithfulness, not informativeness or
-topicality, so **span selection is now the binding quality constraint** — all
-five successful reports hit the 12-finding cap with further verified claims
-withheld.
+**Fix.** `ResearchOrchestrator._screen_sources` scores each retained
+document's title plus opening text against the topic with the already-deployed
+embedding model — one extra local batch call — and drops anything below
+`PLAN_SOURCE_RELEVANCE`. It runs *before* ingestion, so it saves embedding,
+drafting slots and metered calls rather than only tidying the source list, and
+only when planning is enabled, preserving the flag-off equivalence guarantee.
 
-**Revisit trigger:** already tripped. Candidate approaches: score retained
-documents against the topic embedding before span drafting; or rank spans by
-topic similarity rather than retrieval score alone.
+Two deliberate fail-safe properties, both tested: a screening failure keeps
+every document, because losing a corpus to a flaky embed call is far worse
+than a few stray sources; and a screen that would empty the job keeps
+everything too, because that means the threshold is wrong for the topic rather
+than that the research found nothing. Every document's cosine is recorded in
+job progress whether kept or dropped.
+
+`PLAN_SOURCE_RELEVANCE` ships permissive at `0.30` and fully recorded —
+the same discipline that moved `PLAN_FACET_RELEVANCE` from a guessed 0.35 to a
+measured 0.55. Document-versus-topic cosines are a different distribution from
+query-versus-query, so the value is explicitly uncalibrated until the next
+campaign.
 
 ### HUB-039 — Collapse and multi-round machinery do not engage in practice
 
-**Status:** 🔴 OPEN — measured 2026-08-13; a claim-versus-reality gap, not a
-malfunction.
+**Status:** ✅ RESOLVED 2026-08-13 by correcting the documentation rather than
+forcing the behavior. Both observations were real; neither turned out to be a
+defect worth engineering around.
 
-Two HUB-024 acceptance claims do not describe deployed behavior:
+**Collapse — claim withdrawn.** Collapse fired in 0 of 8 evaluation jobs,
+including a deliberately narrow topic that admitted 4 facets and retained 21
+sources. A planner asked for distinct information needs reliably finds some,
+whatever the topic's breadth, so tightening `PLAN_FACET_DISTINCT` far enough
+to force collapse would cost breadth on exactly the topics planning exists to
+serve. The PRD acceptance bullet claiming narrow topics issue exactly one
+search is struck through and annotated with the measurement.
 
-- **Collapse never fired** in 8 of 8 jobs, including a deliberately narrow
-  topic ("Redis AOF appendfsync configuration options") that admitted 4
-  facets and retained 21 sources across 18 domains. The documented property
-  "a narrow topic issues exactly one search and is equivalent to the
-  pre-planning path" is not what the system does.
-- **Rounds never engage.** All 8 jobs stopped `coverage_complete` in round 1,
-  because a per-facet crawl allowance covers the whole plan in one pass. The
-  gap pass, plateau detection and `PLAN_MAX_ROUNDS` are effectively dead code
-  at current settings.
+What genuinely holds, and stays tested: `REPORT_QUERY_PLANNING=false` is
+byte-identical to the pre-planning path including crawl cost, and a plan that
+*does* collapse issues exactly one search and never opens a second round.
+Those are the properties the equivalence guarantee actually needs.
 
-Neither costs correctness, and the breadth results are good, but the docs
-should either describe what happens or the behavior should be changed to
-match the docs. Options: raise `PLAN_FACET_DISTINCT` so narrow topics really
-do collapse; or delete the round machinery as unused; or keep it and document
-it as a safety net that current settings never reach.
+**Rounds — kept as a documented safety net.** All 8 jobs stopped
+`coverage_complete` in round 1, so the gap pass and `PLAN_MAX_ROUNDS` never
+executed. They are not dead code: they fire when a facet's own search returns
+nothing, which the unit suite exercises directly
+(`test_an_uncovered_facet_opens_a_gap_driven_second_round`,
+`test_a_round_that_covers_nothing_new_stops_the_research`). At a generous
+crawl allowance round 1 simply covers the plan, which is the desired outcome.
+Deleting the machinery would remove recovery for the thin-coverage case for no
+benefit, so it stays — now documented as rarely-reached rather than as the
+normal path.
+
+**No code change.** The fix was that the docs claimed more than the system
+does.
 
 ### HUB-025 — Add scheduled research jobs
 

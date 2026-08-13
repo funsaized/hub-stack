@@ -57,6 +57,11 @@ class Config:
     # topic cosine is recorded so a real threshold can be measured rather than
     # guessed (the novelty metric was guessed once already).
     plan_facet_relevance: float = 0.55
+    # HUB-038: the facet floor admits queries, not the documents they return.
+    # Screens retained documents against the topic before ingestion. Shipped
+    # permissive and fully recorded, exactly as the facet floor was before
+    # measurement moved it from 0.35 to 0.55.
+    plan_source_relevance: float = 0.30
     plan_max_facets: int = 12
     plan_max_rounds: int = 4
     plan_search_budget: int = 24
@@ -93,6 +98,8 @@ class Config:
             raise ValueError("PLAN_FACET_DISTINCT must be in (0.0, 1.0]")
         if not 0.0 <= self.plan_facet_relevance < 1.0:
             raise ValueError("PLAN_FACET_RELEVANCE must be in [0.0, 1.0)")
+        if not 0.0 <= self.plan_source_relevance < 1.0:
+            raise ValueError("PLAN_SOURCE_RELEVANCE must be in [0.0, 1.0)")
         if self.plan_facet_relevance >= self.plan_facet_distinct:
             raise ValueError(
                 "PLAN_FACET_RELEVANCE must be below PLAN_FACET_DISTINCT, "
@@ -164,6 +171,9 @@ def load_config() -> Config:
         ).lower() in {"1", "true", "yes"},
         plan_facet_distinct=float(os.environ.get("PLAN_FACET_DISTINCT", "0.85")),
         plan_facet_relevance=float(os.environ.get("PLAN_FACET_RELEVANCE", "0.55")),
+        plan_source_relevance=float(
+            os.environ.get("PLAN_SOURCE_RELEVANCE", "0.30")
+        ),
         plan_max_facets=int(os.environ.get("PLAN_MAX_FACETS", "12")),
         plan_max_rounds=int(os.environ.get("PLAN_MAX_ROUNDS", "4")),
         plan_search_budget=int(os.environ.get("PLAN_SEARCH_BUDGET", "24")),

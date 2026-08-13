@@ -25,6 +25,7 @@ from .url_policy import DestinationNotAllowed, vet_destination_async
 from .query_plan import (
     RoundRecord,
     acquisition_provenance,
+    cosine,
     facet_coverage,
     interleave,
     novelty_ratio,
@@ -430,6 +431,64 @@ class ResearchOrchestrator:
         from .synthesis import generate_report
         return await generate_report(self, job_id)
 
+    async def _screen_sources(
+        self, topic: str, results: list[dict], *, job_id: str | None = None,
+    ) -> tuple[list[dict], dict]:
+        """Drop retained documents that are not about the topic.
+
+        Scores each document's title plus opening text against the topic with
+        the already-deployed embedding model — one extra local batch call.
+
+        Two deliberate safety properties. A screening failure keeps every
+        document, because losing the corpus to a flaky embed call is far worse
+        than a few off-topic sources. And a screen that would empty the job
+        keeps everything too: that means the threshold is wrong for this
+        topic, not that the research found nothing.
+        """
+        floor = getattr(self.cfg, "plan_source_relevance", 0.0)
+        probes = [topic] + [
+            f"{r.get('title') or ''}\n{(r.get('markdown') or '')[:600]}"
+            for r in results
+        ]
+        try:
+            vectors = await self.ollama.embed_batch(probes)
+            if len(vectors) != len(probes):
+                raise RuntimeError("embedding count mismatch")
+        except Exception as exc:
+            logger.warning("source_screening_unavailable", extra={
+                "job_id": job_id, "failure_reason": type(exc).__name__,
+            })
+            return results, {"applied": False, "reason": "embedding_unavailable",
+                             "kept": len(results), "dropped": 0, "scores": []}
+
+        topic_vector = vectors[0]
+        scored = [
+            (result, cosine(vector, topic_vector))
+            for result, vector in zip(results, vectors[1:])
+        ]
+        kept = [result for result, score in scored if score >= floor]
+        scores = [
+            {"url": (r.get("policy_metadata") or {}).get("canonical_url")
+             or r.get("url", ""),
+             "topic_cosine": round(score, 4), "kept": score >= floor}
+            for r, score in scored
+        ]
+        if not kept:
+            logger.warning("source_screening_would_empty_job", extra={
+                "job_id": job_id, "floor": floor,
+            })
+            return results, {"applied": False, "reason": "would_empty_job",
+                             "kept": len(results), "dropped": 0,
+                             "floor": floor, "scores": scores}
+
+        logger.info("source_screening_completed", extra={
+            "job_id": job_id, "kept": len(kept),
+            "dropped": len(results) - len(kept),
+        })
+        return kept, {"applied": True, "reason": "screened", "floor": floor,
+                      "kept": len(kept), "dropped": len(results) - len(kept),
+                      "scores": scores}
+
     async def run_job(self, job_id: str):
         """Execute a claimed job. Queue ownership and retries belong to IngestionWorker."""
         phase = "load"
@@ -742,6 +801,22 @@ class ResearchOrchestrator:
                 "job_id": job_id, "phase": "crawl",
                 "duration_seconds": round(crawl_phase_elapsed, 4),
             })
+            # HUB-038: the facet relevance floor admits QUERIES, not the
+            # documents they return, so an entirely on-topic facet can still
+            # retain off-topic sources (measured 2026-08-13: Couchbase and
+            # Databricks docs in a Redis corpus, an NIH paper in a Kubernetes
+            # one). Screen documents against the topic before ingestion, where
+            # it saves embedding, drafting slots and metered judge calls rather
+            # than only tidying the source list.
+            if planning_enabled and crawl_results:
+                crawl_results, screening = await self._screen_sources(
+                    topic, crawl_results, job_id=job_id,
+                )
+                await self._update_job(job_id, progress={
+                    "phase": "source_screening",
+                    "source_screening": screening,
+                })
+
             await self._update_job(job_id, sources_count=len(crawl_results))
 
             if not crawl_results:

@@ -135,9 +135,17 @@ judged); any change to judge-call volume per report.
 - On a fixed topic set, planned jobs retain **more distinct domains and more
   represented sources** per report than the single-query baseline on the same
   topics; the comparison is recorded, not asserted.
-- A topic whose candidates collapse to one facet issues exactly one search:
+- ~~A topic whose candidates collapse to one facet issues exactly one search:
   no planning overhead on simple topics, and the resulting job is equivalent
-  to today's path.
+  to today's path.~~ **Withdrawn 2026-08-13 — measured false.** Collapse fired
+  in 0 of 8 evaluation jobs, including a deliberately narrow topic ("Redis AOF
+  appendfsync configuration options") that admitted 4 facets and retained 21
+  sources across 18 domains. A planner asked for distinct information needs
+  reliably finds some, whatever the topic's breadth. The mechanism still works
+  where it matters — `REPORT_QUERY_PLANNING=false` is byte-identical to the
+  pre-planning path, and a plan that *does* collapse issues exactly one search
+  (both covered by tests) — but collapse must not be relied on as a
+  cost-control property of narrow topics. See HUB-039.
 - Every sub-query inherits the full HUB-020/021 source policy (allowed/blocked
   domains, per-domain limit, freshness) and SSRF vetting (HUB-006); canonical
   URLs are deduplicated across facets and rounds before crawling, so no
