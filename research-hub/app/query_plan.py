@@ -352,10 +352,15 @@ class RoundRecord:
 
     index: int
     queries: list[str]
+    #: Size of the novelty window -- the round's top-`depth` candidates, i.e.
+    #: the documents it would actually fetch. NOT the whole candidate pool.
     candidates: int
     new_candidates: int
     novelty: float
     crawled: int
+    #: Full count of policy-accepted candidates, kept for auditability so the
+    #: window can be read in context.
+    pool: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -365,16 +370,21 @@ class RoundRecord:
             "new_candidates": self.new_candidates,
             "novelty": round(self.novelty, 4),
             "crawled": self.crawled,
+            "pool": self.pool,
         }
 
 
 def novelty_ratio(new_candidates: int, candidates: int) -> float:
-    """Fraction of a round's policy-accepted candidates never seen before.
+    """Fraction of a round's fetch window never seen before.
 
-    Measured on candidates rather than on retained documents (the PRD's
-    original wording) because the signal is identical and available *before*
-    the crawl: a round whose searches mostly resurface known URLs has
-    saturated, and there is no reason to spend the fetches to discover that.
+    The window is the round's top-`depth` policy-accepted candidates -- the
+    documents it would actually fetch -- and never the full candidate pool.
+    Measured against the pool the ratio is meaningless: a round surfaces far
+    more candidates than it can crawl, so almost all of them are unseen and
+    novelty pins near 1.0 whether or not the research has saturated (the
+    2026-08-13 live measurement recorded 1.0 / 1.0 / 0.983 across three rounds
+    that had visibly stopped finding relevant material). Bounding the
+    denominator by the crawl allowance restores the signal the PRD intended.
     """
     if candidates <= 0:
         return 0.0

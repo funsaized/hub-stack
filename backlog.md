@@ -848,12 +848,41 @@ the deployed image.
 
 ### HUB-024 — Adaptive query planning and iterative research
 
-**Status:** 🟡 IN PROGRESS — stages 1 and 2 implemented behind
-`REPORT_QUERY_PLANNING=false` on 2026-08-13. Stage 3 (breadth measurement
-against the single-query baseline) is **blocked on the operator's decision to
-enable the flag in the deployed stack**, which has not been taken. Design:
-`PRDs/hub-024-query-planning.md` (grounded in 16 arXiv abstracts fetched and
-read 2026-08-13; citations in the PRD).
+**Status:** 🟡 IN PROGRESS — stages 1–3 done 2026-08-13. Operator approved
+enabling the flag; planning is deployed and measured. The breadth acceptance
+criterion is **met** (6 → 15 sources, 6 → 14 distinct domains on the same
+topic and parameters). Two findings remain open, one fixed and one not — see
+below. Design: `PRDs/hub-024-query-planning.md` (grounded in 16 arXiv
+abstracts fetched and read 2026-08-13; citations in the PRD).
+
+**Stage 3 measurement (job `b379fb3e` vs baseline `24a8a471`).** Same topic,
+`depth=6`, `max_sources=12`, `per_domain_limit=2`. Twelve queries over three
+rounds retained 15 sources across 14 domains against the baseline's 6/6. Not
+cost-neutral on crawls: `depth` is a per-round allowance, so the planned cap
+was 18 crawls to the baseline's 6. Judge calls stayed inside the unchanged
+drafting caps. Admission discriminated at the margin (one candidate refused
+`redundant` at cosine 0.8549 against the 0.85 bar).
+
+**Finding 1 — novelty metric was mis-specified; fixed.** Rounds measured
+novelty 1.0 / 1.0 / 0.983 and stopped on the `max_rounds` rail, never on
+saturation. Novelty was computed over the whole policy-accepted candidate pool
+(59–93 URLs/round) while a round fetches only `depth` documents, so the ratio
+pins near 1.0 whatever the true saturation. The denominator is now the round's
+top-`depth` fetch window, with the full pool kept in provenance as `pool`.
+`PLAN_NOVELTY_MIN = 0.2` is still uncalibrated — the corrected metric has not
+been observed live, so the next planned run is still a calibration run.
+
+**Finding 2 — relevance drift across rounds; OPEN, no fix attempted.** The
+planner proposed queries naming non-existent tools (`crdb-migration-tools`,
+`luupgtool`), and later facets pulled in HAProxy docs, pgBackRest release
+notes, a Barman manual and Datadog/Netdata monitoring pages that do not
+address the topic. Breadth rose while relevance fell, and the planned report's
+verified findings are thinner and less on-topic than the baseline's.
+Marginal-distinctness admission selects for *divergence*; at the tail the most
+distinct candidate is often the least relevant. Indicated fix: admit on a
+relevance floor (cosine to the topic above a minimum) **as well as** the
+distinctness ceiling, so a facet must be both new and on-topic. This is the
+PRD's named load-bearing risk, now observed rather than hypothesised.
 
 **Stage 1 as built.** `app/query_plan.py` proposes candidate facets in one
 bounded local-LLM call, embeds `[topic, *candidates]` in a single
@@ -892,12 +921,11 @@ plan or ends the rounds with the reason recorded, never a failed job. 274
 tests pass in-container (69 new, offline and deterministic), ten of which
 drive `run_job`'s acquisition directly.
 
-**Not yet done (stage 3):** the breadth measurement against the single-query
-baseline recorded in `docs/CURRENT_STATE.md` (job `24a8a471`: 6 sources / 6
-distinct domains). It needs planned jobs to actually run, which needs the flag
-enabled in the deployed stack — a separate operator decision that has not been
-taken. `PLAN_NOVELTY_MIN = 0.2` is still the design default and the first
-measurement calibrates it rather than validating the design.
+**Next, in order:** (1) add the relevance floor for Finding 2 and re-measure
+on the same topic; (2) calibrate `PLAN_NOVELTY_MIN` against the corrected
+metric; (3) decide whether `depth` should remain a per-round allowance or
+become a job-wide budget, since that choice is what makes the breadth
+comparison non-cost-neutral.
 
 **Trigger record:** a research job issues exactly one SearXNG query, so the
 retained corpus for a report contains only what that phrasing surfaced. The
