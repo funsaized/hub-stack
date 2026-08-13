@@ -17,7 +17,9 @@ from typing import Any
 import redis.asyncio as redis_async
 
 from .config import Config
-from .clients import OllamaClient, QdrantClient, SearXNGClient, Crawl4AIClient
+from .clients import (
+    Crawl4AIClient, OllamaClient, QdrantClient, SearXNGClient, SerperClient,
+)
 from .context import classify_and_sanitize
 from .models import JobStatus, ResearchRequest
 from .document_store import DocumentStore
@@ -316,6 +318,10 @@ class ResearchOrchestrator:
         self.searxng = SearXNGClient(
             cfg.searxng_url, getattr(cfg, "searxng_engines", None)
         )
+        self.serper = SerperClient(
+            getattr(cfg, "serper_api_key", ""),
+            getattr(cfg, "serper_base_url", "https://google.serper.dev"),
+        )
         self.crawl4ai = Crawl4AIClient(cfg.crawl4ai_url, cfg.crawl4ai_token or None)
         self.documents = DocumentStore(cfg.document_store_path)
         self.retrieval = ScopedRetrievalService(
@@ -337,6 +343,7 @@ class ResearchOrchestrator:
     async def close(self):
         await self.ollama.close()
         await self.searxng.close()
+        await self.serper.close()
         await self.crawl4ai.close()
         await self.claim_verifier.close()
         if self._redis:
@@ -665,6 +672,7 @@ class ResearchOrchestrator:
             issued_vectors = list(plan.vectors)
             search_pacing = getattr(self.cfg, "search_pacing_seconds", 0.0)
             snippet_ranking: dict | None = None
+            search_providers: Counter = Counter()
             query_results: dict[str, set[str]] = {}
             covered_facets = 0
             issued_facets = 0
@@ -754,9 +762,30 @@ class ResearchOrchestrator:
                     for index, query in enumerate(round_queries):
                         if index and search_pacing > 0:
                             await asyncio.sleep(search_pacing)
-                        results_by_facet.append(await self.searxng.search(
+                        facet_results = await self.searxng.search(
                             query, max_results=max_sources, language=language
-                        ))
+                        )
+                        # SearXNG stays primary. The keyed fallback engages
+                        # only when a query returns nothing -- which is what a
+                        # fully blocked engine pool looks like -- so the
+                        # private path remains the default and the paid path
+                        # is insurance (ADR-002 stage 2).
+                        if not facet_results and self.serper.configured:
+                            facet_results = await self.serper.search(
+                                query, max_results=max_sources, language=language
+                            )
+                            search_providers["serper" if facet_results
+                                             else "none"] += 1
+                            if facet_results:
+                                logger.info("search_fallback_used", extra={
+                                    "job_id": job_id, "phase": "search",
+                                    "diagnostic": {"provider": "serper",
+                                                   "results": len(facet_results)},
+                                })
+                        else:
+                            search_providers[
+                                "searxng" if facet_results else "none"] += 1
+                        results_by_facet.append(facet_results)
                 # Spend the crawl cap on the most relevant candidates rather
                 # than on whatever the engine happened to rank first.
                 if planning_enabled:
@@ -1083,6 +1112,7 @@ class ResearchOrchestrator:
                     "robots_respected": respect_robots,
                     "source_screening": source_screening,
                     "snippet_ranking": snippet_ranking,
+                    "search_providers": dict(search_providers),
                     "query_plan": acquisition_provenance(
                         plan, issued_queries=issued_queries,
                         decisions=plan_decisions, rounds=rounds,

@@ -10,6 +10,7 @@ search.
 """
 
 import asyncio
+import json
 
 import pytest
 
@@ -431,6 +432,15 @@ def _acquisition_probe(monkeypatch, *, planning, plan_reply=None, vectors=None,
                                      reply_queue=reply_queue,
                                      vector_queue=vector_queue)
     orchestrator.searxng = Searx()
+
+    class NoFallback:
+        """The keyed fallback is unset in tests: SearXNG-only behaviour."""
+        configured = False
+
+        async def search(self, *_args, **_kwargs):
+            return []
+
+    orchestrator.serper = NoFallback()
     orchestrator.crawl4ai = Crawler()
     orchestrator.documents = Documents()
 
@@ -1213,3 +1223,74 @@ def test_search_pacing_default_is_set_and_bounded():
         _config(search_pacing_seconds=-1.0)
     with pytest.raises(ValueError):
         _config(search_pacing_seconds=99.0)
+
+
+# --- ADR-002 stage 2: the keyed search fallback -----------------------------
+
+def _serper(handler, key="test-serper-key"):
+    import httpx
+    from app.clients import SerperClient
+    subject = SerperClient(key)
+    subject._client = httpx.AsyncClient(
+        base_url="https://google.serper.dev",
+        transport=httpx.MockTransport(handler),
+    )
+    return subject
+
+
+def test_serper_maps_organic_results_to_the_shared_shape():
+    import httpx
+
+    def handler(request):
+        assert request.headers["X-API-KEY"] == "test-serper-key"
+        body = json.loads(request.content)
+        assert body["q"] == "a query"
+        return httpx.Response(200, json={"organic": [
+            {"title": "T", "link": "https://a.example", "snippet": "S",
+             "date": "2026-01-02", "position": 1},
+            {"title": "U", "link": "https://b.example", "snippet": "V"},
+        ]})
+
+    results = run(_serper(handler).search("a query", max_results=10))
+    assert results == [
+        {"url": "https://a.example", "title": "T", "snippet": "S",
+         "published_at": "2026-01-02"},
+        {"url": "https://b.example", "title": "U", "snippet": "V",
+         "published_at": None},
+    ]
+
+
+def test_serper_is_inert_without_a_key():
+    """Unset means acquisition behaves exactly as it did before."""
+    from app.clients import SerperClient
+    subject = SerperClient("")
+    assert subject.configured is False
+    assert run(subject.search("a query")) == []
+
+
+def test_serper_quota_error_returns_no_results_rather_than_raising():
+    import httpx
+    subject = _serper(lambda _r: httpx.Response(429, json={"message": "quota"}))
+    assert run(subject.search("a query")) == []
+
+
+def test_serper_transport_failure_returns_no_results():
+    import httpx
+
+    def handler(request):
+        raise httpx.ConnectError("down", request=request)
+
+    assert run(_serper(handler).search("a query")) == []
+
+
+def test_serper_drops_entries_without_a_link():
+    import httpx
+    subject = _serper(lambda _r: httpx.Response(200, json={"organic": [
+        {"title": "no link"}, {"title": "ok", "link": "https://c.example"},
+    ]}))
+    assert [r["url"] for r in run(subject.search("q"))] == ["https://c.example"]
+
+
+def test_serper_key_is_excluded_from_config_repr():
+    """The key must never reach a log through a Config repr."""
+    assert "shhh" not in repr(_config(serper_api_key="shhh"))

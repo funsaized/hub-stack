@@ -25,6 +25,13 @@ class Config:
     # succession is what triggers a CAPTCHA; SearXNG's own guidance is to back
     # off. Seconds per job against a ~180s job is a rounding error (ADR-002).
     search_pacing_seconds: float = 2.0
+    # Keyed fallback for when every SearXNG engine is blocked (ADR-002 stage
+    # 2). SearXNG stays primary: this engages only when a query returns
+    # nothing, so the private path remains the default and the paid path is
+    # insurance. Unset means disabled, and acquisition behaves exactly as
+    # before. Excluded from repr so the key can never reach a log.
+    serper_base_url: str = "https://google.serper.dev"
+    serper_api_key: str = field(default="", repr=False)
     qdrant_collection: str = "research_corpus"
     embedding_dimension: int = 768
     chunk_size: int = 800
@@ -153,6 +160,9 @@ def load_config() -> Config:
         llm_model=os.environ.get("LLM_MODEL", "qwen3.5:9b"),
         embedding_model=os.environ.get("EMBEDDING_MODEL", "nomic-embed-text"),
         searxng_url=os.environ.get("SEARXNG_URL", "http://localhost:8080"),
+        serper_base_url=os.environ.get("SERPER_BASE_URL",
+                                       "https://google.serper.dev"),
+        serper_api_key=os.environ.get("SERPER_API_KEY", ""),
         search_pacing_seconds=float(
             os.environ.get("SEARCH_PACING_SECONDS", "2.0")
         ),

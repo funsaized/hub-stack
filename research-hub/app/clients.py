@@ -424,6 +424,73 @@ class SearXNGClient:
             return []
 
 
+class SerperClient:
+    """Keyed Google-results fallback for when every SearXNG engine is blocked.
+
+    Deliberately a fallback, not a replacement: SearXNG stays the default so
+    the private path is the normal one and the paid path is insurance
+    (ADR-002). Returns URLs and snippets only -- this stack does its own
+    crawling, so a provider bundling page content would be paid for output it
+    discards.
+
+    Never raises: a failure returns no results, exactly as SearXNG does, so a
+    dead fallback degrades acquisition rather than failing the job.
+    """
+
+    def __init__(self, api_key: str, base_url: str = "https://google.serper.dev",
+                 timeout: float = 30.0):
+        self._api_key = api_key
+        self._configured = bool(api_key)
+        self._client = httpx.AsyncClient(base_url=base_url.rstrip("/"),
+                                         timeout=timeout)
+
+    @property
+    def configured(self) -> bool:
+        return self._configured
+
+    async def close(self):
+        await self._client.aclose()
+
+    async def search(self, query: str, max_results: int = 20,
+                     language: str = "en") -> list[dict]:
+        if not self._configured:
+            return []
+        try:
+            response = await self._client.post(
+                "/search",
+                headers={"X-API-KEY": self._api_key,
+                         "Content-Type": "application/json"},
+                json={"q": query, "hl": language,
+                      "num": max(1, min(int(max_results), 100))},
+            )
+            if response.status_code != 200:
+                # A quota error is a documented, legible failure -- unlike the
+                # silent CAPTCHA this exists to survive.
+                logger.warning("serper_search_failed", extra={"diagnostic": {
+                    "status_code": response.status_code,
+                }})
+                return []
+            payload = response.json()
+        except Exception as exc:
+            logger.warning("serper_search_failed", extra={"diagnostic": {
+                "failure_type": type(exc).__name__,
+            }})
+            return []
+
+        results = []
+        for item in payload.get("organic") or []:
+            url = item.get("link")
+            if not url:
+                continue
+            results.append({
+                "url": url,
+                "title": item.get("title", ""),
+                "snippet": item.get("snippet", ""),
+                "published_at": item.get("date"),
+            })
+        return results
+
+
 def crawl_markdown_text(value: Any) -> str:
     """Normalize Crawl4AI markdown across string and structured responses."""
     if isinstance(value, str):
