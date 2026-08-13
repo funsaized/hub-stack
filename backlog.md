@@ -1158,6 +1158,55 @@ possible.
 say "No material source disagreements were identified", which reads as a
 finding about the sources. It is presently a statement about the drafter.
 
+### HUB-041 — `/rag` returns nothing at its default context budget
+
+**Status:** 🔴 OPEN — found 2026-08-13 while smoke-testing the context raise.
+Pre-existing; not caused by it.
+
+`RAGRequest.max_context_tokens` defaults to **3000** while
+`answer_reserve_tokens` is **2048**, so a default `/rag` call has under 1000
+tokens left for the system prompt, the question and the evidence combined.
+Evidence never fits and the endpoint answers "No relevant information fits
+within the model context budget" with zero sources.
+
+Measured on one question: `max_context_tokens=3000` → 0 sources; `6000` → 3
+sources and a real answer; `12000` → 4 sources. Retrieval is fine (`/query`
+returns four chunks); only the packing budget is wrong.
+
+Raising `MODEL_CONTEXT_TOKENS` does not help, because the budget is
+`min(req.max_context_tokens, model_context_tokens)` — the request default caps
+it either way.
+
+**Fix:** make the default track the model context, or simply raise it well
+above the answer reserve. One line, but it changes `/rag` behavior, which the
+HUB-024 PRD held out of scope, so it is recorded rather than taken.
+
+### HUB-042 — Search engines exhaust under sustained job volume
+
+**Status:** 🔴 OPEN — observed 2026-08-13 after roughly 30 research jobs in a
+day.
+
+Every SearXNG upstream rate-limited or CAPTCHA-blocked at once:
+
+```
+brave      Suspended: too many requests
+duckduckgo CAPTCHA
+startpage  Suspended: CAPTCHA
+google cse Suspended: too many requests
+```
+
+Jobs then fail with "No search results found" after three attempts. The
+failure is clean and retryable, but acquisition is fully blocked until the
+suspensions lapse, and nothing backs off, rotates engines, or surfaces the
+cause — the job error says only that no results were found.
+
+This is the practical ceiling on throughput, and query planning raises the
+pressure by issuing 3–6 searches per job instead of one.
+
+**Directions:** report engine suspension distinctly from a genuine empty
+result; back off between jobs; widen the engine list; or add API-keyed
+engines for sustained use.
+
 ### HUB-025 — Add scheduled research jobs
 
 Add recurring jobs only after the durable worker, idempotency, and notification paths are complete.

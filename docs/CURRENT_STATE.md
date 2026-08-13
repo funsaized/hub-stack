@@ -151,6 +151,37 @@ diagnostic is emitted only after a batch completes, the failed attempt logged
 no `served_model` values, so served-model auditing has a gap on failed
 batches.
 
+## Model context raised to 16K — the evidence ceiling lifted (2026-08-13)
+
+`OLLAMA_CONTEXT_LENGTH` and `MODEL_CONTEXT_TOKENS` both 8192 → 16384. They
+must move together: the client fails closed on prompt truncation if the app
+packs more than Ollama will accept.
+
+**The GPU gate holds.** `qwen3.5:9b` stays **100% GPU** at 16384, 6.0 GB (up
+from 5.7), warm throughput **104.0–104.4 tok/s** against a 104.6 baseline at
+8K. The interactive deployment gate that Qwen3.6 failed is not threatened.
+
+**Measured on one job re-synthesised three times over identical evidence**
+(job `bc3e5297`, 22 sources; report retry runs synthesis only, no re-crawl):
+
+| Context / drafting cap | Chunks selected | Spans offered | Drafted | Findings |
+|---|---|---|---|---|
+| 8K, 24 spans | 7 | 23 | 23 | 15 |
+| 16K, 24 spans | 15 | 64 | 24 | 19 |
+| **16K, 40 spans** | **15** | **64** | **40** | **30** |
+
+Findings doubled, 15 → 30, on the same corpus. Doubling the context let
+`pack_evidence` select 15 chunks instead of 7, raising span supply from 23 to
+64; `REPORT_MAX_SPAN_CLAIMS` 40 then converted that supply into verified
+claims. Pairs are 20 and the findings cap 40, which no longer binds at 30.
+
+Drafting binds again (40 of 64 spans) at a ~50% verification rate, so further
+raises have diminishing returns at proportional metered cost.
+
+`/query` and `/rag` were smoke-tested after the change and behave as before —
+see HUB-041 for a pre-existing `/rag` default-budget defect the smoke test
+exposed.
+
 ## Report drafting scaled to the evidence ceiling (2026-08-13)
 
 Two successive raises, each sized from measurement rather than guessed, on the
