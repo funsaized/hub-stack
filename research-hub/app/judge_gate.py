@@ -1,7 +1,7 @@
 """MiniMax M3 LLM-as-judge claim-faithfulness gate (HUB-035).
 
-Opt-in via ``CLAIM_GATE=judge``; the sealed v2 NLI verifier remains the
-deployed default until HUB-034 flips it after the v4 blind final passes.
+This is the deployed claim gate: HUB-034 flipped it after the v4 blind final
+passed, and the NLI verifier it replaced has been decommissioned.
 
 Design constraints, in order:
 
@@ -250,6 +250,7 @@ class JudgeClaimVerifier:
             # Sealed evaluations re-baseline on served-model change, so a
             # verdict without a version string is not trustworthy.
             raise VerifierUnavailable("malformed_output")
+        content: Any = None
         try:
             content = data["choices"][0]["message"]["content"]
             if not isinstance(content, str):
@@ -258,6 +259,25 @@ class JudgeClaimVerifier:
         except VerifierUnavailable:
             raise
         except Exception as exc:
+            # Diagnostic only — the verdict contract is untouched, this path
+            # still fails closed. Without it a parse failure is undebuggable:
+            # the per-claim diagnostic is emitted only after a whole batch
+            # succeeds, so a failed batch previously recorded nothing at all.
+            # The reply is judge output, never the Subscription Key, which is
+            # only ever sent as a header and never echoed back.
+            logger.warning("judge_malformed_output", extra={"diagnostic": {
+                "served_model": served_model,
+                "failure_type": type(exc).__name__,
+                "failure_detail": str(exc)[:200],
+                "content_chars": len(content) if isinstance(content, str) else None,
+                "content_sha256": (
+                    hashlib.sha256(content.encode()).hexdigest()
+                    if isinstance(content, str) else None
+                ),
+                "content_preview": (
+                    content[:2048] if isinstance(content, str) else repr(content)[:200]
+                ),
+            }})
             raise VerifierUnavailable("malformed_output") from exc
         return served_model, parsed
 
