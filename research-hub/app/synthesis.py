@@ -485,6 +485,24 @@ async def generate_report(orchestrator, job_id: str) -> dict:
                         orchestrator, pair_drafted, rejected_reasons, failure_details,
                     )
                     verified.extend(pair_verified)
+                    # Cross-source DISAGREEMENTS have never once appeared in a
+                    # live report, and until now nothing recorded whether the
+                    # planner never proposes them, the gate always rejects
+                    # them, or pair selection never surfaces a conflict. The
+                    # claim `kind` was invisible. Record it so "no
+                    # disagreements" becomes a diagnosable outcome rather than
+                    # an unfalsifiable one.
+                    logger.info("report_pair_diagnostic", extra={
+                        "job_id": job_id, "phase": "synthesis",
+                        "diagnostic": {
+                            "pairs_offered": len(pairs),
+                            "drafted_by_kind": dict(Counter(
+                                kind for kind, _claim in pair_drafted)),
+                            "verified_by_kind": dict(Counter(
+                                kind for kind, _claim in pair_verified)),
+                            "draft_rejections": dict(pair_rejections),
+                        },
+                    })
             finally:
                 REPORT_GENERATION_LATENCY.observe(time.monotonic() - generation_started)
             verified_findings = [claim for kind, claim in verified if kind == "finding"]
