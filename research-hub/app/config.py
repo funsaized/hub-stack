@@ -34,9 +34,16 @@ class Config:
     allow_custom_system_prompts: bool = False
     respect_robots_txt: bool = True
     crawl_max_markdown_chars: int = 2_000_000
-    report_retrieval_candidates: int = 40
+    report_retrieval_candidates: int = 120
     report_max_chunks_per_source: int = 3
     report_retrieval_min_score: float | None = None
+    # Synthesis breadth. With a planned corpus of 30+ sources the drafting
+    # caps, not the corpus, become the limit on how much a report can say.
+    report_max_span_claims: int = 16
+    report_max_pair_claims: int = 12
+    report_max_findings: int = 12
+    report_max_disagreements: int = 4
+    report_max_corrections: int = 6
     report_hybrid_retrieval: bool = True
     report_rrf_k: int = 60
     # Adaptive query planning (HUB-024). Off by default: with the master switch
@@ -49,11 +56,11 @@ class Config:
     # half only rejects the clearly-unrelated tail today, and every candidate's
     # topic cosine is recorded so a real threshold can be measured rather than
     # guessed (the novelty metric was guessed once already).
-    plan_facet_relevance: float = 0.35
-    plan_max_facets: int = 8
-    plan_max_rounds: int = 3
-    plan_search_budget: int = 12
-    plan_crawl_budget: int = 40
+    plan_facet_relevance: float = 0.55
+    plan_max_facets: int = 12
+    plan_max_rounds: int = 4
+    plan_search_budget: int = 24
+    plan_crawl_budget: int = 150
     # The claim gate is the MiniMax M3 judge (HUB-034; sealed v4 final passed).
     judge_base_url: str = "https://api.minimax.io/v1"
     judge_model: str = "MiniMax-M3"
@@ -75,6 +82,11 @@ class Config:
             raise ValueError("MINIMAX_SUBSCRIPTION_KEY is required (judge claim gate)")
         if not math.isfinite(self.judge_timeout_seconds) or self.judge_timeout_seconds <= 0:
             raise ValueError("JUDGE_TIMEOUT_SECONDS must be positive and finite")
+        for name in ("report_max_span_claims", "report_max_pair_claims",
+                     "report_max_findings", "report_max_disagreements",
+                     "report_max_corrections"):
+            if not 1 <= getattr(self, name) <= 64:
+                raise ValueError(f"{name.upper()} must be between 1 and 64")
         if self.crawl_max_markdown_chars < 1:
             raise ValueError("CRAWL_MAX_MARKDOWN_CHARS must be positive")
         if not 0.0 < self.plan_facet_distinct <= 1.0:
@@ -130,12 +142,19 @@ def load_config() -> Config:
             os.environ.get("CRAWL_MAX_MARKDOWN_CHARS", "2000000")
         ),
         report_retrieval_candidates=int(
-            os.environ.get("REPORT_RETRIEVAL_CANDIDATES", "40")
+            os.environ.get("REPORT_RETRIEVAL_CANDIDATES", "120")
         ),
         report_max_chunks_per_source=int(
             os.environ.get("REPORT_MAX_CHUNKS_PER_SOURCE", "3")
         ),
         report_retrieval_min_score=float(min_score) if min_score else None,
+        report_max_span_claims=int(os.environ.get("REPORT_MAX_SPAN_CLAIMS", "16")),
+        report_max_pair_claims=int(os.environ.get("REPORT_MAX_PAIR_CLAIMS", "12")),
+        report_max_findings=int(os.environ.get("REPORT_MAX_FINDINGS", "12")),
+        report_max_disagreements=int(
+            os.environ.get("REPORT_MAX_DISAGREEMENTS", "4")
+        ),
+        report_max_corrections=int(os.environ.get("REPORT_MAX_CORRECTIONS", "6")),
         report_hybrid_retrieval=os.environ.get(
             "REPORT_HYBRID_RETRIEVAL", "true"
         ).lower() in {"1", "true", "yes"},
@@ -144,11 +163,11 @@ def load_config() -> Config:
             "REPORT_QUERY_PLANNING", "false"
         ).lower() in {"1", "true", "yes"},
         plan_facet_distinct=float(os.environ.get("PLAN_FACET_DISTINCT", "0.85")),
-        plan_facet_relevance=float(os.environ.get("PLAN_FACET_RELEVANCE", "0.35")),
-        plan_max_facets=int(os.environ.get("PLAN_MAX_FACETS", "8")),
-        plan_max_rounds=int(os.environ.get("PLAN_MAX_ROUNDS", "3")),
-        plan_search_budget=int(os.environ.get("PLAN_SEARCH_BUDGET", "12")),
-        plan_crawl_budget=int(os.environ.get("PLAN_CRAWL_BUDGET", "40")),
+        plan_facet_relevance=float(os.environ.get("PLAN_FACET_RELEVANCE", "0.55")),
+        plan_max_facets=int(os.environ.get("PLAN_MAX_FACETS", "12")),
+        plan_max_rounds=int(os.environ.get("PLAN_MAX_ROUNDS", "4")),
+        plan_search_budget=int(os.environ.get("PLAN_SEARCH_BUDGET", "24")),
+        plan_crawl_budget=int(os.environ.get("PLAN_CRAWL_BUDGET", "150")),
         judge_base_url=os.environ.get("JUDGE_BASE_URL", "https://api.minimax.io/v1"),
         judge_model=os.environ.get("JUDGE_MODEL", "MiniMax-M3"),
         judge_api_key=os.environ.get("MINIMAX_SUBSCRIPTION_KEY", ""),

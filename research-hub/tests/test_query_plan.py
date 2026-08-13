@@ -756,6 +756,53 @@ def test_a_collapsed_plan_never_opens_a_second_round(monkeypatch):
     assert len(progress["query_plan"]["rounds"]) == 1
 
 
+def test_crawl_allowance_scales_with_the_number_of_facets(monkeypatch):
+    """Breadth has to buy fetches or it buys nothing.
+
+    Regression for the 2026-08-13 run 4, where a five-facet plan saw 100
+    candidates and crawled 6 -- the single-query budget -- so planning bought
+    query diversity and no additional sources at all.
+    """
+    def results_for(query, facet_index):
+        return [f"https://f{facet_index}-r{i}.example.com/p" for i in range(8)]
+
+    _searched, progress = _acquisition_probe(
+        monkeypatch, planning=True, results_for=results_for,
+        reply_queue=['{"facets": ["facet alpha here", "facet beta here"]}'],
+        vector_queue=[[E1, E2, E3]],
+    )
+    # depth is 10 per facet across 3 facets, so the round may fetch far more
+    # than one query's worth.
+    assert progress["query_plan"]["rounds"][0]["crawled"] == 24
+
+
+def test_a_collapsed_plan_keeps_the_single_query_crawl_budget(monkeypatch):
+    """The equivalence guarantee covers cost, not just query count."""
+    def results_for(query, facet_index):
+        return [f"https://f{facet_index}-r{i}.example.com/p" for i in range(30)]
+
+    _searched, progress = _acquisition_probe(
+        monkeypatch, planning=True, results_for=results_for,
+        reply_queue=['{"facets": ["one paraphrase of it"]}'],
+        vector_queue=[[E1, E1]],
+    )
+    # depth is 10 and the plan collapsed, so exactly one query's budget.
+    assert progress["query_plan"]["rounds"][0]["crawled"] == 10
+
+
+def test_the_job_wide_crawl_rail_still_binds(monkeypatch):
+    def results_for(query, facet_index):
+        return [f"https://f{facet_index}-r{i}.example.com/p" for i in range(20)]
+
+    _searched, progress = _acquisition_probe(
+        monkeypatch, planning=True, results_for=results_for,
+        reply_queue=['{"facets": ["facet alpha here", "facet beta here"]}'],
+        vector_queue=[[E1, E2, E3]],
+        plan_crawl_budget=7,
+    )
+    assert progress["query_plan"]["rounds"][0]["crawled"] == 7
+
+
 def test_every_facet_covered_in_one_round_never_opens_a_second(monkeypatch):
     """The normal case: one round answers the plan, so the research ends."""
     searched, progress = _acquisition_probe(
@@ -950,10 +997,11 @@ def test_query_planning_defaults_are_off_and_inert():
     cfg = _config()
     assert cfg.report_query_planning is False
     assert cfg.plan_facet_distinct == 0.85
-    assert cfg.plan_max_facets == 8
-    assert cfg.plan_max_rounds == 3
-    assert cfg.plan_search_budget == 12
-    assert cfg.plan_crawl_budget == 40
+    assert cfg.plan_facet_relevance == 0.55
+    assert cfg.plan_max_facets == 12
+    assert cfg.plan_max_rounds == 4
+    assert cfg.plan_search_budget == 24
+    assert cfg.plan_crawl_budget == 150
 
 
 @pytest.mark.parametrize("overrides", [

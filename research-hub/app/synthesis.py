@@ -403,7 +403,9 @@ async def generate_report(orchestrator, job_id: str) -> dict:
                 for span in candidate.metadata["exact_spans"]
             ), 1)
         ]
-        drafted_sources = span_sources[:MAX_SPAN_CANDIDATES]
+        cfg = orchestrator.cfg
+        drafted_sources = span_sources[:getattr(
+            cfg, "report_max_span_claims", MAX_SPAN_CANDIDATES)]
         logger.info("report_evidence_diagnostic", extra={
             "job_id": job_id,
             "diagnostic": {
@@ -453,7 +455,8 @@ async def generate_report(orchestrator, job_id: str) -> dict:
                 if failed:
                     correction_requested = True
                     REPORT_CORRECTION.labels("requested").inc()
-                    repairs = failed[:MAX_CORRECTION_CLAIMS]
+                    repairs = failed[:getattr(
+                        cfg, "report_max_corrections", MAX_CORRECTION_CLAIMS)]
                     corrected, correction_rejections = await _draft_claims(
                         orchestrator, [by_span[span_id] for span_id, _ in repairs],
                         stage="report_correction", rejections=dict(repairs),
@@ -470,7 +473,8 @@ async def generate_report(orchestrator, job_id: str) -> dict:
                 # Cross-source assessment (HUB-032): bounded pairs of spans from
                 # different documents, each drafted once and verified under the
                 # multi-ref rule (union entails, every ref load-bearing).
-                pairs = _pair_candidates(drafted_sources, MAX_DISAGREEMENT_PAIRS)
+                pairs = _pair_candidates(drafted_sources, getattr(
+                    cfg, "report_max_pair_claims", MAX_DISAGREEMENT_PAIRS))
                 if pairs:
                     pair_assessed = True
                     pair_drafted, pair_rejections = await _draft_pair_claims(
@@ -488,11 +492,13 @@ async def generate_report(orchestrator, job_id: str) -> dict:
                 claim for kind, claim in verified if kind == "disagreement"
             ]
             findings = [
-                _render_claim(claim) for claim in verified_findings[:MAX_GENERATED_FINDINGS]
+                _render_claim(claim) for claim in verified_findings[:getattr(
+                    cfg, "report_max_findings", MAX_GENERATED_FINDINGS)]
             ]
             disagreements = [
                 _render_claim(claim)
-                for claim in verified_disagreements[:MAX_GENERATED_DISAGREEMENTS]
+                for claim in verified_disagreements[:getattr(
+                    cfg, "report_max_disagreements", MAX_GENERATED_DISAGREEMENTS)]
             ]
             withheld = (
                 len(verified_findings) - len(findings)
