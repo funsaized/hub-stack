@@ -1023,7 +1023,19 @@ closed.
 **Verified:** 303 tests green in-container; v4 seal byte-identical
 (`762e7a19…`) with every recorded hash intact and 130/130 annotations
 well-formed; attempt-11 artifacts byte-identical; three previously-failing
-topics re-run clean.
+topics re-run clean, with zero `malformed_output` across 27 verdicts.
+
+**Follow-up, same day — the fix introduced a second failure mode.** With
+reasoning routed to its own field, a reply can carry `reasoning_content` and
+no `content` at all when deliberation consumes the token budget; the code
+assumed content always exists and raised `KeyError`, surfacing as another
+`malformed_output`. It only appeared under the HUB-038 campaign, after this
+item had been marked done. Missing or blank content now fails closed under a
+distinct `empty_content` reason logging `finish_reason` and reasoning length,
+and `RESPONSE_MAX_TOKENS` rose 2048 → 4096 because reasoning counts against
+the budget even when split out. Two further live reports completed first
+attempt. The lesson worth keeping: "three clean runs" was not enough evidence
+to close a probabilistic failure.
 
 ### HUB-038 — Source relevance screening: calibrated and ENABLED
 
