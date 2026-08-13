@@ -108,15 +108,31 @@ def domain_matches(hostname: str, configured: set[str]) -> bool:
     return any(hostname == domain or hostname.endswith(f".{domain}") for domain in configured)
 
 
+# Human-readable shapes that ISO and RFC-2822 parsing both miss. Serper
+# returns "Oct 31, 2019"; without these its results parse as undated, and a
+# job with freshness_days set would reject every one as stale_or_undated.
+SOURCE_DATE_FORMATS = ("%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%d %B %Y")
+
+
 def parse_source_date(value: Any) -> datetime | None:
     if not value:
         return None
+    text = str(value).strip()
     try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         try:
-            parsed = parsedate_to_datetime(str(value))
+            parsed = parsedate_to_datetime(text)
         except (TypeError, ValueError):
+            parsed = None
+        if parsed is None:
+            for fmt in SOURCE_DATE_FORMATS:
+                try:
+                    parsed = datetime.strptime(text, fmt)
+                    break
+                except ValueError:
+                    continue
+        if parsed is None:
             return None
     return parsed.replace(tzinfo=parsed.tzinfo or timezone.utc).astimezone(timezone.utc)
 

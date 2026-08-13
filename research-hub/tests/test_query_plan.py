@@ -1294,3 +1294,18 @@ def test_serper_drops_entries_without_a_link():
 def test_serper_key_is_excluded_from_config_repr():
     """The key must never reach a log through a Config repr."""
     assert "shhh" not in repr(_config(serper_api_key="shhh"))
+
+
+def test_human_readable_search_dates_parse():
+    """Regression: Serper returns "Oct 31, 2019". Parsed as undated, every one
+    of its results is rejected as stale_or_undated whenever a job sets
+    freshness_days -- a defect no mocked response would have exposed."""
+    from app.research import parse_source_date
+    assert parse_source_date("Oct 31, 2019").year == 2019
+    assert parse_source_date("Dec 14, 2023").month == 12
+    assert parse_source_date("27 January 2025").day == 27
+    # The shapes that already worked must keep working.
+    assert parse_source_date("2026-01-02").year == 2026
+    assert parse_source_date("Thu, 31 Oct 2019 00:00:00 +0000").year == 2019
+    assert parse_source_date("not a date at all") is None
+    assert parse_source_date(None) is None
