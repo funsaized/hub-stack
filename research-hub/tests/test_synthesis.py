@@ -1,6 +1,7 @@
 """HUB-022 persisted synthesis coverage."""
 
 import json
+from collections import Counter
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +14,7 @@ from app import main
 from app.document_store import DocumentStore
 from app.judge_gate import VerifierUnavailable
 from app.retrieval import ScopedRetrievalService
-from app.synthesis import ClaimValidationError, _resolve_claim, generate_report
+from app.synthesis import ClaimValidationError, _resolve_claim, generate_report, _draft_pair_claims
 
 
 EVIDENCE = "Supported retained evidence shows the reporting guideline covers evaluation."
@@ -21,6 +22,16 @@ EVIDENCE = "Supported retained evidence shows the reporting guideline covers eva
 
 def drafted(claim, kind="finding", usable=True):
     return json.dumps({"usable": usable, "kind": kind, "claim": claim})
+
+
+def pair_drafted(claim, usable=True):
+    """A pair draft: kind comes from the conflict stage, not from the model."""
+    return json.dumps({"usable": usable, "claim": claim})
+
+
+def conflict(verdict):
+    """The conflict-detection call that now precedes every pair draft."""
+    return json.dumps({"conflict": verdict})
 
 
 def sentences(*bodies):
@@ -468,7 +479,7 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         )
         self.orchestrator.ollama.generate.side_effect = [
             drafted("First finding"), drafted("Second finding"),
-            drafted("Guideline coverage conflicts", kind="disagreement"),
+            conflict(True), pair_drafted("Guideline coverage conflicts"),
         ]
 
         report = await generate_report(self.orchestrator, "job-1")
@@ -495,7 +506,7 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
         )
         self.orchestrator.ollama.generate.side_effect = [
             drafted("First finding"), drafted("Second finding"),
-            drafted("Padded pair claim", kind="disagreement"),
+            conflict(True), pair_drafted("Padded pair claim"),
         ]
         self.orchestrator.claim_verifier.verify.side_effect = [
             [None, None], ["padding_reference"],
@@ -561,3 +572,85 @@ class SynthesisTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConflictFirstPairDraftingTests(unittest.IsolatedAsyncioTestCase):
+    """HUB-040: conflict is decided before drafting, not offered as a choice.
+
+    Across every job ever run, the drafter proposed zero disagreements: asked
+    to pick between "a conflict" and "one combined fact" in one call, it always
+    took the easier branch, so no disagreement could ever be verified or
+    displayed. The decision is now made first and the claim's kind comes from
+    it, never from the drafting call.
+    """
+
+    def orchestrator(self, replies):
+        subject = SimpleNamespace()
+        subject.ollama = AsyncMock()
+        subject.ollama.generate.side_effect = replies
+        return subject
+
+    @staticmethod
+    def pair(first_span, second_span):
+        def source(index, span):
+            return {
+                **span_source(span),
+                "span_id": f"P{index}", "evidence_id": f"E{index}",
+                "source_id": f"S{index}", "source_title": f"Source {index}",
+                "url": f"https://example.com/{index}",
+                "document_id": f"doc-{index}",
+            }
+        return (source(1, first_span), source(2, second_span))
+
+    async def test_a_conflicting_pair_is_drafted_as_a_disagreement(self):
+        subject = self.orchestrator([
+            json.dumps({"conflict": True}),
+            json.dumps({"usable": True, "claim": "One says A, the other says B"}),
+        ])
+        drafted, rejected = await _draft_pair_claims(
+            subject, [self.pair("Source one says A.", "Source two says B.")],
+            stage="test",
+        )
+        self.assertEqual([kind for kind, _claim in drafted], ["disagreement"])
+        self.assertEqual(rejected, Counter())
+
+    async def test_a_non_conflicting_pair_is_drafted_as_a_finding(self):
+        subject = self.orchestrator([
+            json.dumps({"conflict": False}),
+            json.dumps({"usable": True, "claim": "A combined fact"}),
+        ])
+        drafted, _rejected = await _draft_pair_claims(
+            subject,
+            [self.pair("Source one says A.", "Source two adds detail.")],
+            stage="test",
+        )
+        self.assertEqual([kind for kind, _claim in drafted], ["finding"])
+
+    async def test_each_branch_gets_its_own_rules(self):
+        subject = self.orchestrator([
+            json.dumps({"conflict": True}),
+            json.dumps({"usable": True, "claim": "One says A, the other says B"}),
+        ])
+        await _draft_pair_claims(
+            subject, [self.pair("Source one says A.", "Source two says B.")],
+            stage="test",
+        )
+        conflict_prompt = subject.ollama.generate.await_args_list[0].args[0]
+        draft_prompt = subject.ollama.generate.await_args_list[1].args[0]
+        self.assertIn("Decide whether they CONFLICT", conflict_prompt)
+        self.assertIn("judged to conflict", draft_prompt)
+        # The drafting call must not offer the combined-fact escape hatch.
+        self.assertNotIn("one atomic material fact", draft_prompt)
+
+    async def test_a_failed_conflict_call_falls_back_to_a_finding(self):
+        """A broken judgement must not lose the pair entirely."""
+        subject = self.orchestrator([
+            "not json at all",
+            json.dumps({"usable": True, "claim": "A combined fact"}),
+        ])
+        drafted, _rejected = await _draft_pair_claims(
+            subject,
+            [self.pair("Source one says A.", "Source two adds detail.")],
+            stage="test",
+        )
+        self.assertEqual([kind for kind, _claim in drafted], ["finding"])
