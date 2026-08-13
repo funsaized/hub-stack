@@ -1,8 +1,10 @@
 # HUB-024 — Adaptive query planning and iterative research
 
-Status: stage 1 implemented 2026-08-13 behind `REPORT_QUERY_PLANNING=false`;
-stages 2–3 open. Operator-opened 2026-08-13 (revisit trigger tripped — reports
-are built from whatever a single search phrasing surfaced).
+Status: DONE 2026-08-13 — stages 1–3 implemented, deployed with
+`REPORT_QUERY_PLANNING=true`, and measured at scale (25 sources / 23 domains
+against a 6/6 single-query baseline, zero off-topic acquisition). Opened
+2026-08-13 (revisit trigger tripped — reports were built from whatever a
+single search phrasing surfaced).
 Prior art reviewed: 16 arXiv abstracts, fetched and read 2026-08-13 (citations
 at the end; every claim below is attributed to a fetched abstract or marked as
 this design's own choice).

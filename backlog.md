@@ -848,12 +848,12 @@ the deployed image.
 
 ### HUB-024 — Adaptive query planning and iterative research
 
-**Status:** 🟡 IN PROGRESS — stages 1–3 done 2026-08-13. Operator approved
-enabling the flag; planning is deployed and measured. The breadth acceptance
-criterion is **met** (6 → 15 sources, 6 → 14 distinct domains on the same
-topic and parameters). Two findings remain open, one fixed and one not — see
-below. Design: `PRDs/hub-024-query-planning.md` (grounded in 16 arXiv
-abstracts fetched and read 2026-08-13; citations in the PRD).
+**Status:** 🟢 DONE — 2026-08-13. Stages 1–3 complete, deployed, and measured
+at scale. **Acceptance met**: 25 retained sources across 23 distinct domains
+against the single-query baseline's 6/6 on the same topic and parameters, with
+zero off-topic acquisition and 12 displayed findings against the baseline's 6.
+Design: `PRDs/hub-024-query-planning.md` (16 arXiv abstracts for the original
+design, 11 more for the stopping/query-quality redesign; citations in the PRD).
 
 **Stage 3 measurement (job `b379fb3e` vs baseline `24a8a471`).** Same topic,
 `depth=6`, `max_sources=12`, `per_domain_limit=2`. Twelve queries over three
@@ -941,13 +941,13 @@ Every planner failure mode degrades to the single-query plan or ends the
 rounds with the reason recorded, never a failed job. 293 tests pass
 in-container, zero skips.
 
-**Next, in order:** (1) re-measure on the same topic with the two-sided bar,
-pre-issue QPP and coverage stopping in place, and check whether the drift is
-actually gone rather than assumed gone; (2) calibrate `PLAN_FACET_RELEVANCE`
-from the recorded topic cosines — it is the one remaining guessed threshold;
-(3) decide whether `depth` should stay a per-round allowance or become a
-job-wide budget, since that choice is what makes the breadth comparison
-non-cost-neutral.
+**Remaining, none blocking:** (1) the whole measurement is one topic — a
+second topic would test whether `PLAN_FACET_RELEVANCE = 0.55` transfers;
+(2) span selection, not the claim gate, is now the quality lever: one
+displayed finding was promotional filler that passed the gate because it is
+faithfully entailed, and the judge verifies faithfulness rather than
+informativeness; (3) facet coverage grades its own homework — a facet nobody
+proposed is invisible to the stop signal (recorded as the PRD's open thread).
 
 **Trigger record:** a research job issues exactly one SearXNG query, so the
 retained corpus for a report contains only what that phrasing surfaced. The
@@ -1123,10 +1123,10 @@ HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HU
 
 ### Milestone 5 — Expansion only when earned
 
-HUB-024 🟡 (trigger tripped 2026-08-13; design in
-`PRDs/hub-024-query-planning.md`; stage 1 implemented behind
-`REPORT_QUERY_PLANNING=false`, stages 2–3 open). HUB-025 through HUB-030
-remain deferred behind their explicit revisit triggers; none tripped as of
+HUB-024 ✅ (2026-08-13 — deployed and measured: 25 sources / 23 domains
+against the 6/6 single-query baseline, zero off-topic acquisition; design and
+citations in `PRDs/hub-024-query-planning.md`). HUB-025 through HUB-030 remain
+deferred behind their explicit revisit triggers; none tripped as of
 2026-08-13.
 
 ### Recommended order for the remaining open work (2026-08-12, post-pivot)
@@ -1139,6 +1139,6 @@ remain deferred behind their explicit revisit triggers; none tripped as of
 
 The pivot sequence is complete; Milestone 4 is closed.
 
-6. **HUB-024** — adaptive query planning and iterative research (opened 2026-08-13, trigger tripped; design in `PRDs/hub-024-query-planning.md`). Stages 1 and 2 built 2026-08-13 behind `REPORT_QUERY_PLANNING=false`. Stage 3 (breadth measurement against the job-`24a8a471` single-query baseline of 6 sources / 6 distinct domains) is blocked on the operator's decision to enable the flag in the deployed stack.
+6. **HUB-024** — ✅ done 2026-08-13 (operator-approved and enabled; stages 1–3 complete, deployed and measured at scale — 25 sources / 23 domains against the 6/6 baseline with zero off-topic acquisition).
 
 **Exit condition:** each expansion is justified by measured usage or a documented limitation, not by architectural possibility.
