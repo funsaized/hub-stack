@@ -234,6 +234,44 @@ class JudgeGateTests(unittest.IsolatedAsyncioTestCase):
                     await subject.verify([material()])
                 self.assertEqual(raised.exception.reason, reason)
 
+    async def test_malformed_reply_is_logged_before_failing_closed(self):
+        """Regression for the 2026-08-13 live failures.
+
+        Two production reports failed on `malformed_output` at an identical
+        byte offset and the raw reply was nowhere in the logs, because the
+        per-claim diagnostic is only emitted after a whole batch succeeds.
+        A parse failure must record what the judge actually sent.
+        """
+        # A bare "thinking" key with no enclosing braces: json.loads reads the
+        # 10-character string as a complete value, then trips on the colon --
+        # the exact shape the deployed failures reported.
+        broken = '"thinking": {"accepted": true}'
+        subject = self.client(lambda _request: verdict_response(content=broken))
+        with self.assertLogs("app.judge_gate", level="WARNING") as logs:
+            with self.assertRaises(VerifierUnavailable) as raised:
+                await subject.verify([material()])
+        self.assertEqual(raised.exception.reason, "malformed_output")
+        record = next(r for r in logs.records if r.msg == "judge_malformed_output")
+        diagnostic = record.diagnostic
+        self.assertEqual(diagnostic["content_preview"], broken)
+        self.assertEqual(diagnostic["content_chars"], len(broken))
+        self.assertEqual(diagnostic["served_model"], "MiniMax-M3-20260801")
+        self.assertEqual(diagnostic["failure_type"], "JSONDecodeError")
+        # The Subscription Key must never reach a diagnostic.
+        self.assertNotIn("test-subscription-key", json.dumps(diagnostic))
+
+    async def test_non_string_content_is_logged_without_crashing_the_logger(self):
+        subject = self.client(lambda _request: httpx.Response(200, json={
+            "id": "chat-1", "model": "MiniMax-M3",
+            "choices": [{"message": {"role": "assistant", "content": None}}],
+        }))
+        with self.assertLogs("app.judge_gate", level="WARNING") as logs:
+            with self.assertRaises(VerifierUnavailable):
+                await subject.verify([material()])
+        record = next(r for r in logs.records if r.msg == "judge_malformed_output")
+        self.assertIsNone(record.diagnostic["content_chars"])
+        self.assertIsNone(record.diagnostic["content_sha256"])
+
     async def test_health_reports_configuration_without_a_metered_call(self):
         subject = self.client(lambda _request: verdict_response())
         self.assertTrue(await subject.health())
