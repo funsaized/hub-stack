@@ -1113,43 +1113,60 @@ normal path.
 **No code change.** The fix was that the docs claimed more than the system
 does.
 
-### HUB-040 — Cross-source disagreements: drafting fixed, selection is the remaining cause
+### HUB-040 — Cross-source disagreements: the corpora contain no conflicts
 
-**Status:** 🟡 PARTIAL — the drafting escape hatch is closed and deployed; no
-disagreement has still ever been produced. The cause is now narrowed to pair
-selection with evidence rather than suspicion.
+**Status:** 🟡 REFRAMED 2026-08-13. The drafting fix is deployed and correct.
+The remaining cause is **not** pair selection — that diagnosis was stated
+twice and is wrong. Measurement shows the corpora simply contain nothing to
+find, which makes this an acquisition problem, not a synthesis one.
 
-**What was wrong and is now fixed.** Pair drafting asked the model, in one
-call, to produce either a conflict or a combined fact. It took the easier
-branch every time: across every job ever run it proposed zero disagreements,
-so none could reach the gate. Conflict is now decided first, in its own
-bounded local call, and the claim is drafted on the decided branch with no
-alternative offered; the claim's kind comes from the decision, not the
-drafting call. A failed judgement falls back to the finding branch, so a
-broken judgement costs a disagreement rather than the pair.
+**What was fixed and stays fixed.** Pair drafting used to ask, in one call,
+for either a conflict or a combined fact, and always took the easier branch.
+Conflict is now decided first in its own bounded call and the claim is drafted
+on the decided branch. That was a real defect and is resolved.
 
-**Measured after the fix: still zero.** Across five corpora and **95 offered
-pairs**, including a topic chosen specifically to be contested
-("Microservices versus monolithic architecture tradeoffs", 20 pairs), the
-conflict detector returned "no conflict" every time. The detector is running —
-75 calls were logged across the four end-to-end jobs, one per pair — so this
-is a judgement, not a plumbing failure.
+**The detector works.** Checked against hand-written cases it scored 5 of 5,
+correctly flagging a negation ("sequences are replicated" vs "does not
+transfer sequence values"), an inverted claim, and conflicting numbers, while
+correctly rejecting two merely-related pairs.
 
-**The remaining cause is pair selection.** `_pair_candidates` still ranks by
-shared vocabulary, which selects pairs that *combine easily* rather than pairs
-that *conflict*. Two sources that disagree share a subject but diverge in the
-assertion, and lexical overlap does not favour that. Removing the drafting
-escape hatch was necessary and insufficient: with the easy branch gone, the
-pairs on offer simply contain no conflicts to find.
+**The corpora contain no conflicts.** Cross-document span pairs were sampled
+**uniformly at random** — deliberately ignoring the production ranking, so the
+estimate carries no selection bias:
 
-**Next, and unvalidated:** select pairs for contrast rather than overlap —
-high subject similarity with low assertion similarity — or over-generate pairs
-and let the conflict pass filter them. Both remain guesses; the instrumentation
-now in place is what would measure either.
+| Corpus | Sampled pairs | Conflicts |
+|---|---|---|
+| Microservices versus monolith (chosen as contested) | 250 | 1, and that one a false positive |
+| Postgres logical replication | 200 | 0 |
 
-**Reports still say "No material source disagreements were identified."** That
-reads as a claim about the sources. It remains a statement about what the
-pipeline can currently surface.
+The single positive paired "microservices don't reduce the complexity of an
+application" with "one of the biggest advantages … is simplicity" — both
+saying microservices are more complex. They agree.
+
+**So pair selection was never the bottleneck.** No selector can surface a
+conflict from a corpus that does not contain one, and building a
+contrast-based selector would have changed nothing. The earlier reasoning —
+that shared-vocabulary ranking picks combinable pairs — is plausible and still
+unrefuted, but it is not what is stopping disagreements, because the pairs it
+passes over do not conflict either.
+
+**The likely real cause: acquisition seeks consensus.** A search engine ranks
+by relevance to a query, so the top results reflect the dominant framing of a
+topic. Every facet asks about the topic; none asks for the minority view.
+The corpus is assembled to be representative, and disagreement requires it to
+be adversarial.
+
+**Testable next step, unvalidated:** have the planner admit a deliberately
+contrarian facet — criticism of, arguments against, when it fails — so the
+corpus contains the dissenting source by construction. This fits the existing
+facet architecture rather than adding machinery, and the base-rate probe
+(`conflict_base_rate` methodology above) is exactly how to tell whether it
+worked: rerun it on a corpus built with a contrarian facet and see whether the
+rate moves off zero.
+
+**Report wording is now actively misleading.** "No material source
+disagreements were identified" reads as a finding about the sources. It is a
+statement about a corpus assembled not to contain any.
 
 ### HUB-041 — `/rag` returned nothing at its default context budget
 

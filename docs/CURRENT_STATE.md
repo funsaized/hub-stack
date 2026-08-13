@@ -290,6 +290,34 @@ Findings ranged 3–31 per report, tracking corpus quality rather than corpus
 size: job 6 retained 11 sources but yielded 3 findings, job 5 retained 9 and
 yielded 31.
 
+## Why cross-source disagreements never fire (HUB-040, 2026-08-13)
+
+Two hypotheses had opposite fixes, and they had been conflated: either the
+corpora genuinely agree, or conflicts exist and pair selection never surfaces
+them. Measurement settled it.
+
+- **The detector works** — 5 of 5 on hand-written cases, correctly flagging a
+  negation, an inverted claim and conflicting numbers.
+- **The corpora contain no conflicts** — 450 cross-document span pairs sampled
+  *uniformly at random*, bypassing the production ranking: 0 of 200 on the
+  Postgres corpus, and 1 of 250 on the deliberately contested microservices
+  corpus which on inspection is a false positive (both spans say microservices
+  are more complex).
+
+**Pair selection was never the bottleneck.** A contrast-based selector would
+have changed nothing, because the pairs it would have promoted do not conflict
+either. The earlier diagnosis recorded here was wrong.
+
+**The likely cause is acquisition.** Search ranks by relevance, so results
+reflect the dominant framing of a topic; every facet asks about the topic and
+none asks for the minority view. The corpus is assembled to be representative,
+and disagreement needs it to be adversarial. The untested fix is a
+deliberately contrarian facet, and the base-rate probe is the instrument for
+judging whether it works.
+
+Until then, "No material source disagreements were identified" should be read
+as a statement about the corpus, not about the sources.
+
 ## End-to-end validation of the assembled stack (2026-08-13)
 
 Every component had been validated in isolation; none had been validated
