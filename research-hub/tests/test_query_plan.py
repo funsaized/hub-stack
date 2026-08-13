@@ -980,6 +980,80 @@ def test_plan_vectors_never_reach_provenance():
     )
 
 
+# --- HUB-038: source relevance screening ------------------------------------
+
+def _screener(monkeypatch, vectors=None, embed_error=None, floor=0.30):
+    from app.research import ResearchOrchestrator
+    orchestrator = object.__new__(ResearchOrchestrator)
+    orchestrator.cfg = _config(plan_source_relevance=floor)
+    orchestrator.ollama = StubOllama(vectors=vectors, embed_error=embed_error)
+    return orchestrator
+
+
+def _doc(url, title="t", markdown="body"):
+    return {"url": url, "title": title, "markdown": markdown,
+            "policy_metadata": {"canonical_url": url}}
+
+
+def test_off_topic_documents_are_dropped_before_ingestion(monkeypatch):
+    """The measured case: an on-topic facet still returned Couchbase docs."""
+    subject = _screener(monkeypatch, vectors=[E1, E1, E2])
+    kept, screening = run(subject._screen_sources(
+        "a topic", [_doc("https://on-topic.example"), _doc("https://off.example")],
+    ))
+    assert [d["url"] for d in kept] == ["https://on-topic.example"]
+    assert screening["applied"] is True
+    assert (screening["kept"], screening["dropped"]) == (1, 1)
+
+
+def test_every_document_score_is_recorded_for_calibration(monkeypatch):
+    subject = _screener(monkeypatch, vectors=[E1, E1, E2])
+    _kept, screening = run(subject._screen_sources(
+        "a topic", [_doc("https://a.example"), _doc("https://b.example")],
+    ))
+    assert screening["scores"] == [
+        {"url": "https://a.example", "topic_cosine": 1.0, "kept": True},
+        {"url": "https://b.example", "topic_cosine": 0.0, "kept": False},
+    ]
+
+
+def test_screening_failure_keeps_every_document(monkeypatch):
+    """Losing the corpus to a flaky embed call is worse than a stray source."""
+    subject = _screener(monkeypatch, embed_error=RuntimeError("embed down"))
+    docs = [_doc("https://a.example"), _doc("https://b.example")]
+    kept, screening = run(subject._screen_sources("a topic", docs))
+    assert kept == docs
+    assert screening["applied"] is False
+    assert screening["reason"] == "embedding_unavailable"
+
+
+def test_a_screen_that_would_empty_the_job_is_not_applied(monkeypatch):
+    """That means the threshold is wrong here, not that nothing was found."""
+    subject = _screener(monkeypatch, vectors=[E1, E2, E2])
+    docs = [_doc("https://a.example"), _doc("https://b.example")]
+    kept, screening = run(subject._screen_sources("a topic", docs))
+    assert kept == docs
+    assert screening["applied"] is False
+    assert screening["reason"] == "would_empty_job"
+    # The scores are still recorded, so the bad threshold is visible.
+    assert all(s["kept"] is False for s in screening["scores"])
+
+
+def test_a_wrong_embedding_count_keeps_every_document(monkeypatch):
+    subject = _screener(monkeypatch, vectors=[E1, E1])
+    docs = [_doc("https://a.example"), _doc("https://b.example")]
+    kept, screening = run(subject._screen_sources("a topic", docs))
+    assert kept == docs
+    assert screening["applied"] is False
+
+
+def test_a_zero_floor_screens_nothing(monkeypatch):
+    subject = _screener(monkeypatch, vectors=[E1, E1, E2], floor=0.0)
+    docs = [_doc("https://a.example"), _doc("https://b.example")]
+    kept, _screening = run(subject._screen_sources("a topic", docs))
+    assert kept == docs
+
+
 # --- config surface ---------------------------------------------------------
 
 def _config(**overrides):
@@ -998,6 +1072,7 @@ def test_query_planning_defaults_are_off_and_inert():
     assert cfg.report_query_planning is False
     assert cfg.plan_facet_distinct == 0.85
     assert cfg.plan_facet_relevance == 0.55
+    assert cfg.plan_source_relevance == 0.30
     assert cfg.plan_max_facets == 12
     assert cfg.plan_max_rounds == 4
     assert cfg.plan_search_budget == 24
@@ -1012,6 +1087,8 @@ def test_query_planning_defaults_are_off_and_inert():
     {"plan_search_budget": 0},
     {"plan_crawl_budget": 0},
     {"plan_max_rounds": 0},
+    {"plan_source_relevance": -0.1},
+    {"plan_source_relevance": 1.0},
     {"plan_max_rounds": 50},
 ])
 def test_planning_config_rejects_out_of_range_rails(overrides):
