@@ -1,0 +1,78 @@
+{
+  "schema_version": "1.0.0",
+  "provenance": "HUB-044 coverage baseline. Job cases are the six largest completed jobs in the deployed store as of 2026-08-13 (679 documents, 758 observations, 71125 lexical rows), each queried with its own topic because that is the only query a report's retrieval ever issues. bc3e5297 is the backlog's motivating case, recorded there as 15 chunks from 7 of 22 sources before HUB-024. Corpus cases are the queries HUB-043 used as live proof, plus one topic-filtered and one tag-filtered scope so the filtered path is measured rather than assumed.",
+  "extra_ks": [6, 12, 24, 64, 120],
+  "job_cases": [
+    {
+      "id": "job-kubernetes-autoscaling-56",
+      "job_id": "48c9247e-35bf-4d69-84e0-9792edf225c9",
+      "topic": "Kubernetes pod autoscaling and resource management",
+      "query": "Kubernetes pod autoscaling and resource management",
+      "note": "Largest job in the corpus: 56 retained sources."
+    },
+    {
+      "id": "job-postgres-logical-replication-25",
+      "job_id": "70a0de86-16b9-4ba6-a8e3-3e08097b9238",
+      "topic": "Postgres logical replication for major version upgrades with minimal downtime",
+      "query": "Postgres logical replication for major version upgrades with minimal downtime",
+      "note": "25 retained sources."
+    },
+    {
+      "id": "job-redis-appendfsync-23",
+      "job_id": "d81a18e0-d0ad-4827-982f-54090df95227",
+      "topic": "Redis AOF appendfsync configuration options",
+      "query": "Redis AOF appendfsync configuration options",
+      "note": "23 retained sources."
+    },
+    {
+      "id": "job-microservices-tradeoffs-22",
+      "job_id": "bc3e5297-a641-4f21-8be6-b952369251ae",
+      "topic": "Microservices versus monolithic architecture tradeoffs",
+      "query": "Microservices versus monolithic architecture tradeoffs",
+      "note": "The backlog's motivating case: 22 retained sources, reported as 15 chunks from 7 of them before HUB-024's breadth work."
+    },
+    {
+      "id": "job-kafka-rebalancing-20",
+      "job_id": "8505df01-0a77-4c3a-a297-30523ec1c9e3",
+      "topic": "Kafka consumer group rebalancing strategies",
+      "query": "Kafka consumer group rebalancing strategies",
+      "note": "20 retained sources."
+    },
+    {
+      "id": "job-p-hacking-19",
+      "job_id": "a3f7ecd0-f556-41b6-8896-34993b64edb9",
+      "topic": "Statistical methods for detecting p-hacking in published research",
+      "query": "Statistical methods for detecting p-hacking in published research",
+      "note": "19 retained sources; academic PDFs rather than documentation pages."
+    }
+  ],
+  "corpus_cases": [
+    {
+      "id": "corpus-reciprocal-rank-fusion",
+      "query": "how does reciprocal rank fusion combine rankings",
+      "note": "HUB-043 live proof: 64 chunks from 33 sources across jobs."
+    },
+    {
+      "id": "corpus-kubernetes-observability",
+      "query": "kubernetes observability tracing",
+      "note": "HUB-043 live proof: 65 chunks from 42 sources across jobs."
+    },
+    {
+      "id": "corpus-microservices-vs-monoliths",
+      "query": "microservices versus monoliths tradeoffs",
+      "note": "The deployed /rag case; overlaps job-microservices-tradeoffs-22 so the two scopes are comparable on one subject."
+    },
+    {
+      "id": "corpus-filtered-topic-kubernetes",
+      "query": "horizontal pod autoscaler custom metrics",
+      "topic_filter": "Kubernetes pod autoscaling and resource management",
+      "note": "Filtered corpus scope: a bounded denominator, unlike the unfiltered corpus."
+    },
+    {
+      "id": "corpus-filtered-tag-llm",
+      "query": "transformer attention efficiency",
+      "tags": ["llm"],
+      "note": "Tag-filtered scope; HUB-043 measured this tag at 9 documents."
+    }
+  ]
+}

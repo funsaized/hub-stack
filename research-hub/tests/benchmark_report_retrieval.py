@@ -1,4 +1,17 @@
-"""Deterministic Phase 4 retrieval and citation evaluation command."""
+"""Deterministic Phase 4 retrieval and citation evaluation command.
+
+Source coverage at k is reported beside recall (HUB-044) but gates nothing:
+the two gates stay `citation_validity` and `critical_recall_at_k`. Coverage is
+maximised by returning one chunk per source, so a gate on it would reward
+shredding every multi-chunk argument. Note the pre-existing `source_coverage`
+metric is a different thing — recall of the sources a case *expected* — while
+`coverage` is breadth over the sources the ranking could have reached.
+
+Each case is retrieved twice: once under the manifest's
+`max_chunks_per_source` (production behaviour) and once with that cap lifted.
+The second run supplies the reachable-source denominator and shows how much
+of the observed breadth the cap manufactures rather than the ranking earning.
+"""
 
 import argparse
 import asyncio
@@ -7,6 +20,7 @@ from pathlib import Path
 import re
 
 from app.retrieval import ScopedRetrievalService, pack_evidence
+from tests.coverage_at_k import DEFAULT_KS, coverage_at_k, coverage_summary, micro_average
 
 
 DEFAULT_MANIFEST = Path(__file__).parent / "fixtures" / "report_retrieval_cases.json"
@@ -48,14 +62,21 @@ def valid_legacy_citations(claim: str, represented: set[int]) -> bool:
 async def evaluate_case(manifest: dict, case: dict) -> tuple[dict, dict]:
     documents = FixtureDocuments(manifest["documents"])
     retained = documents.documents_for_job(case["job_id"])
-    service = ScopedRetrievalService(
-        FixtureOllama(),
-        FixtureQdrant(case["candidates"]),
-        documents,
-        candidate_limit=manifest["candidate_limit"],
-        max_chunks_per_source=manifest["max_chunks_per_source"],
-    )
+
+    def build(max_chunks_per_source: int) -> ScopedRetrievalService:
+        return ScopedRetrievalService(
+            FixtureOllama(),
+            FixtureQdrant(case["candidates"]),
+            documents,
+            candidate_limit=manifest["candidate_limit"],
+            max_chunks_per_source=max_chunks_per_source,
+        )
+
+    service = build(manifest["max_chunks_per_source"])
     retrieved = await service.retrieve(case["job_id"], case["topic"])
+    uncapped = await build(
+        max(manifest["candidate_limit"], len(case["candidates"]), 1)
+    ).retrieve(case["job_id"], case["topic"])
     selected = retrieved.candidates[:manifest["top_k"]]
     expected = case["expected_sentinels"]
 
@@ -101,6 +122,21 @@ async def evaluate_case(manifest: dict, case: dict) -> tuple[dict, dict]:
         for claim in case["unsupported_claims"]
     )
 
+    reachable = max(
+        len({candidate.document_id for candidate in uncapped.candidates}), 1
+    )
+    coverage = coverage_summary(
+        retrieved.candidates,
+        sources_reachable=reachable,
+        sources_in_scope=retrieved.diagnostics.sources_available,
+    )
+    uncapped_curve = coverage_at_k(
+        uncapped.candidates,
+        DEFAULT_KS,
+        sources_reachable=reachable,
+        sources_in_scope=uncapped.diagnostics.sources_available,
+    )
+
     counts = {
         "citation_total": len(case["valid_claims"]),
         "citation_valid": valid_citations,
@@ -124,7 +160,13 @@ async def evaluate_case(manifest: dict, case: dict) -> tuple[dict, dict]:
         "source_coverage": ratio(len(represented_expected_sources), len(expected_sources)),
         "unsupported_claim_rejection_count": counts["unsupported_rejections"],
     }
-    return metrics, counts
+    breadth = {
+        "id": case["id"],
+        "selected": coverage,
+        "uncapped_curve": uncapped_curve,
+        "max_chunks_per_source": manifest["max_chunks_per_source"],
+    }
+    return metrics, counts, breadth
 
 
 async def evaluate(manifest: dict) -> dict:
@@ -141,6 +183,7 @@ async def evaluate(manifest: dict) -> dict:
     evaluated = [await evaluate_case(manifest, case) for case in manifest["cases"]]
     cases = [item[0] for item in evaluated]
     counts = [item[1] for item in evaluated]
+    breadth = [item[2] for item in evaluated]
     total = lambda name: sum(item[name] for item in counts)
     critical = [
         item for item, case in zip(counts, manifest["cases"]) if case["critical"]
@@ -168,6 +211,12 @@ async def evaluate(manifest: dict) -> dict:
     gates["passed"] = all(gates.values())
     return {
         "cases": cases,
+        # Reported, never gated: `gates` above is built from `metrics` only.
+        "coverage": {
+            "cases": breadth,
+            "selected": micro_average([item["selected"]["curve"] for item in breadth]),
+            "uncapped": micro_average([item["uncapped_curve"] for item in breadth]),
+        },
         "gates": gates,
         "metrics": metrics,
         "schema_version": 1,

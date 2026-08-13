@@ -1314,13 +1314,33 @@ Live: "how does reciprocal rank fusion combine rankings" now draws 64 chunks
 from 33 sources across jobs; "kubernetes observability tracing" 65 from 42.
 Unblocks HUB-044 through HUB-046.
 
-### HUB-044 — No retrieval-breadth metric; evidence concentrates on few sources
+### HUB-044 — Retrieval breadth is a single post-cap total, not a curve
 
-**Status:** 🔴 OPEN — measured, unmeasured.
+**Status:** ✅ DONE — measured and baselined 2026-08-13. See
+`docs/CURRENT_STATE.md`, "Retrieval breadth measured".
 
-A synthesis run selected 15 chunks drawn from only **7 of 22 available
-sources**. Breadth is bought expensively during acquisition and then partly
-discarded at retrieval, and nothing tracks it.
+**Two corrections to this entry, made before the work started.**
+
+*Breadth was not untracked.* `RetrievalDiagnostics` has computed
+`sources_available` and `sources_represented` since HUB-024; `app/synthesis.py`
+writes both into job progress and `hub_report_retrieval_items` carries both as
+labelled histogram observations. The original wording ("nothing tracks it")
+was wrong.
+
+*The motivating case no longer reproduces.* "15 chunks from 7 of 22 sources"
+was job `bc3e5297` before HUB-024's breadth work and the 120-chunk candidate
+limit. Re-measured on the same job with the same query: **44 chunks from 15 of
+22** sources. The concentration cited as the reason for this item had already
+been roughly halved by other work — which is exactly why the item was worth
+doing as a *measurement* rather than as a fix.
+
+**What was actually missing.** The tracked number is a single post-cap total.
+It is taken after `max_chunks_per_source` has already forced diversity, so it
+cannot distinguish breadth the ranking found from breadth the cap
+manufactured; it says nothing about how breadth grows with k; and it never
+existed at all for the corpus-wide path HUB-043 opened one day earlier.
+Neither retrieval benchmark reported breadth, so no chunking or retrieval
+change could be judged on it.
 
 Graph-Aware Late Chunking (arXiv 2603.22633) argues ranking metrics
 systematically undervalue breadth: content-similarity methods scored the
@@ -1328,14 +1348,56 @@ highest MRR while always retrieving from a single document section, and
 structure-aware methods reached up to 15.6x more sections. It proposes
 coverage metrics (SecCov@k, CS Recall) alongside MRR/Recall@k.
 
-**Approach.** Track source coverage at k next to recall in the retrieval
-benchmark. Without this number, changes to chunking or retrieval cannot be
-judged — which is why it precedes HUB-045.
+**Approach.** One shared metric (`tests/coverage_at_k.py`) reported beside
+recall in both retrieval benchmarks, plus a live read-only baseline command
+over both scopes. The unit is the **document**, not the paper's section:
+chunking is a fixed 800/100 split, so `chunk_index` marks position rather than
+structure and section coverage would restate `chunks_selected`. Every case is
+retrieved twice — at the deployed cap and with the cap lifted — because the
+gap between those two curves is the question the existing number cannot
+answer.
+
+**Acceptance:** coverage@k reported next to recall in both benchmarks;
+a baseline recorded on real jobs and real corpus-wide queries; retrieval
+behaviour unchanged.
+
+**Outcome.** All three met. Nothing under `app/` changed — this item adds a
+number and touches no deployed module. Coverage gates nothing anywhere, and a
+test asserts the gate set is still exactly the two relevance gates: coverage
+is maximised by returning one chunk per source, so a target on it would reward
+shredding every multi-chunk argument.
+
+Three findings the entry had not anticipated:
+
+- **The candidate pool, not the cap or the ranking, is the binding ceiling.**
+  In five of six jobs the 120-candidate dense+BM25 pool reaches fewer sources
+  than the job has embedded: p-hacking **8 of 19**, kafka 13 of 20,
+  microservices 15 of 22, kubernetes 39 of 55, redis 18 of 20. No selection
+  policy can recover a source the pool never proposed. That reframes HUB-045.
+- **The cap is load-bearing corpus-wide, and the paper's failure mode
+  reproduces exactly.** On "how does reciprocal rank fusion combine rankings"
+  the uncapped fused ranking draws its first **eleven** chunks from a *single*
+  document; coverage@8 is 1 source uncapped and 5 capped. Pooled corpus-wide
+  saturation@16 is `0.712` capped against `0.562` uncapped.
+- **`sources_available` is not the ceiling it looks like.** It counts retained
+  rows including deduplicated sources with no Qdrant chunks (HUB-043), so job
+  `48c9247e` shows 56 available where only 55 are reachable in principle and
+  39 in practice.
+
+Unblocks HUB-045 with a number it can be judged on — and points it at pool
+composition first.
 
 ### HUB-045 — Chunk embeddings lose their document context
 
-**Status:** 🔴 OPEN — deferred behind HUB-044, which would prove whether
-chunking is actually the bottleneck.
+**Status:** 🔴 OPEN — unblocked by HUB-044, and redirected by it. The coverage
+baseline says the binding ceiling is **candidate-pool composition**, not the
+per-source cap: in five of six real jobs the 120-candidate dense+BM25 pool
+proposes chunks from fewer sources than the job has embedded (p-hacking 8 of
+19). Chunking may still be the cause — isolated 800/100 chunks from one
+document can crowd a pool — but that is now a hypothesis with a measurement
+attached rather than an assumption. Judge any change on coverage@k *and* the
+exact-term recall numbers together; coverage alone is maximised by returning
+one chunk per source.
 
 Chunking is a fixed 800/100 recursive split applied identically to API
 reference tables, Q&A pages, marketing copy and academic PDFs, and each chunk
@@ -1540,8 +1602,10 @@ HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HU
 
 ### Milestone 5 — Expansion only when earned
 
-HUB-043 🔴 (corpus-wide retrieval — the highest-value open item), HUB-044 🔴
-(retrieval-breadth metric), HUB-045 🔴 (late chunking), HUB-046 🔴
+HUB-043 ✅ (2026-08-13 — one retrieval path; the corpus is queryable as one
+base), HUB-044 ✅ (2026-08-13 — source coverage at k reported beside recall in
+both retrieval benchmarks and baselined live over both scopes; the entry's own
+claims were corrected first), HUB-045 🔴 (late chunking), HUB-046 🔴
 (bridge-entity cross-document linking), HUB-047 🔴 (end-to-end retrieval
 evaluation set), HUB-048 🔴 (knowledge-graph go/no-go by measurement).
 HUB-024 ✅ (2026-08-13 — deployed and measured: 25 sources / 23 domains

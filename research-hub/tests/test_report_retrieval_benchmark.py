@@ -47,6 +47,49 @@ class ReportRetrievalBenchmarkTests(unittest.TestCase):
             "passed": True,
         })
 
+    def test_coverage_is_reported_beside_recall_and_gates_nothing(self):
+        report = json.loads(run_benchmark().stdout)
+
+        coverage = report["coverage"]
+        self.assertEqual(len(coverage["cases"]), len(report["cases"]))
+        # Breadth never becomes a pass/fail: the gate keys are exactly the two
+        # relevance gates (HUB-044). Coverage@k is maximised by one chunk per
+        # source, so gating on it would reward shredding arguments.
+        self.assertEqual(
+            set(report["gates"]), {"citation_validity", "critical_recall_at_k", "passed"}
+        )
+        for case in coverage["cases"]:
+            selected = case["selected"]
+            self.assertGreaterEqual(
+                selected["sources_in_scope"], selected["sources_represented"]
+            )
+            for point in selected["curve"]:
+                self.assertLessEqual(
+                    point["sources_at_k"], point["attainable_sources_at_k"]
+                )
+                self.assertLessEqual(point["sources_at_k"], point["chunks_at_k"])
+        for name in ("selected", "uncapped"):
+            self.assertEqual(
+                [point["k"] for point in coverage[name]],
+                sorted(point["k"] for point in coverage[name]),
+            )
+            self.assertTrue(all(point["cases"] == len(report["cases"])
+                                for point in coverage[name]))
+
+    def test_lifting_the_per_source_cap_cannot_lower_breadth(self):
+        report = json.loads(run_benchmark().stdout)
+
+        # The comparison that says whether the cap or the ranking produced the
+        # breadth. On the synthetic manifest the cap never binds, so the two
+        # curves coincide — which is exactly why the live probe exists.
+        for capped, uncapped in zip(
+            report["coverage"]["selected"], report["coverage"]["uncapped"]
+        ):
+            self.assertEqual(capped["k"], uncapped["k"])
+            self.assertGreaterEqual(
+                uncapped["chunks_at_k"], capped["chunks_at_k"]
+            )
+
     def test_command_fails_each_critical_gate(self):
         original = json.loads(MANIFEST.read_text(encoding="utf-8"))
         mutations = {
