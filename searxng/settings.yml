@@ -36,3 +36,9 @@ engines:
     disabled: false
   - name: google
     disabled: true
+  # Cannot work: SearXNG's google_cse engine takes no API key and scrapes the
+  # JSONP CSE-element endpoint using a hardcoded third-party CX shared by every
+  # SearXNG install, so it is permanently rate-limited. It reported
+  # "too many requests" on every search we ever made (HUB-042).
+  - name: google cse
+    disabled: true
