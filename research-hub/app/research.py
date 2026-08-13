@@ -483,11 +483,17 @@ class ResearchOrchestrator:
             # collapsed plan must issue exactly one search, which is what keeps
             # a simple topic equivalent to the pre-planning path.
             rounds_enabled = planning_enabled and not plan.collapsed
-            total_crawl_cap = depth
-            if rounds_enabled:
-                total_crawl_cap = min(
-                    depth * self.cfg.plan_max_rounds, self.cfg.plan_crawl_budget
-                )
+            # Breadth has to buy fetches or it buys nothing. `depth` is the
+            # per-FACET allowance for a planned job, so a five-facet plan can
+            # retain five facets' worth of sources in one round instead of
+            # interleaving them into a single-query budget -- which is what
+            # made the 2026-08-13 run 4 collapse back to baseline breadth
+            # (100 candidates seen, 6 crawled). PLAN_CRAWL_BUDGET is the
+            # job-wide rail. A collapsed plan keeps the single-query budget
+            # exactly.
+            total_crawl_cap = (
+                self.cfg.plan_crawl_budget if rounds_enabled else depth
+            )
 
             crawl_results = []
             policy_decisions: list[dict] = []
@@ -611,7 +617,12 @@ class ResearchOrchestrator:
                 fresh = [
                     r for r in accepted if r["canonical_url"] not in seen_canonical
                 ]
-                round_cap = max(0, min(depth, total_crawl_cap - crawls_attempted))
+                round_allowance = (
+                    depth * max(1, len(round_queries)) if rounds_enabled else depth
+                )
+                round_cap = max(
+                    0, min(round_allowance, total_crawl_cap - crawls_attempted)
+                )
                 selected_results = fresh[:round_cap]
                 for result in selected_results:
                     seen_canonical.add(result["canonical_url"])
