@@ -592,6 +592,18 @@ class ResearchOrchestrator:
                 # deduplication across rounds, so no document is fetched twice.
                 accepted, decisions = apply_source_policy(merged, request)
                 policy_decisions.extend(decisions)
+                # Saturation is measured over the documents this round would
+                # actually fetch -- its top `depth` results -- not over the
+                # whole candidate pool. A round surfaces far more candidates
+                # than it can crawl, so a pool-wide denominator pins novelty
+                # near 1.0 and the signal can never fire (measured 2026-08-13:
+                # 1.0 / 1.0 / 0.983 over three rounds that had plainly
+                # saturated). Computed before `seen_canonical` is updated.
+                novelty_window = accepted[:depth]
+                new_in_window = [
+                    r for r in novelty_window
+                    if r["canonical_url"] not in seen_canonical
+                ]
                 fresh = [
                     r for r in accepted if r["canonical_url"] not in seen_canonical
                 ]
@@ -633,9 +645,12 @@ class ResearchOrchestrator:
                 ])
                 rounds.append(RoundRecord(
                     index=round_index, queries=list(round_queries),
-                    candidates=len(accepted), new_candidates=len(fresh),
-                    novelty=novelty_ratio(len(fresh), len(accepted)),
+                    candidates=len(novelty_window),
+                    new_candidates=len(new_in_window),
+                    novelty=novelty_ratio(len(new_in_window),
+                                          len(novelty_window)),
                     crawled=len(crawl_results) - crawled_before,
+                    pool=len(accepted),
                 ))
 
                 round_queries = []
@@ -645,7 +660,8 @@ class ResearchOrchestrator:
                 # evidence running dry whenever both would have fired.
                 continue_rounds, reason = should_continue(
                     round_index=round_index,
-                    new_candidates=len(fresh), candidates=len(accepted),
+                    new_candidates=len(new_in_window),
+                    candidates=len(novelty_window),
                     max_rounds=self.cfg.plan_max_rounds,
                     novelty_min=self.cfg.plan_novelty_min,
                 )

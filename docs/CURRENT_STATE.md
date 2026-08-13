@@ -83,14 +83,77 @@ Rider changes deployed with the same rebuild:
   must be present (compose `${VAR:?}` and config validation); judged
   evidence spans leave the machine (see `docs/NETWORKING.md`).
 
-## Query planning stages 1–2 merged, not deployed (HUB-024)
+## Query planning deployed and measured — breadth met, two findings (HUB-024)
 
-Merged 2026-08-13. The repository now contains `app/query_plan.py`, the
-adaptive query planner: facet admission by marginal distinctness, cross-facet
-and cross-round canonical dedup, budget rails (stage 1), and gap-driven rounds
-that stop on novelty saturation with the reason recorded (stage 2). **The
-deployed stack was not rebuilt and no deployed container was recreated**, so
-live acquisition still issues exactly one SearXNG query per job.
+Operator-approved and deployed 2026-08-13: `REPORT_QUERY_PLANNING=true` in
+`.env`, both application images rebuilt from the clean tree, research-hub and
+research-worker recreated (no other container touched). Deploy verified:
+`query_plan.py`, `research.py`, `config.py`, `judge_gate.py` and
+`synthesis.py` SHA-256-identical across hub, worker and HEAD; `/readyz`
+all-true at capability `all`; attempt-11 report and registry byte-identical
+(`068d60b2…`, `d6748d76…`); v4 seal unchanged (`762e7a19…`); Redis queues
+empty.
+
+**Stage-3 measurement.** Job `b379fb3e`, same topic and same parameters as the
+`24a8a471` baseline (`depth=6`, `max_sources=12`, `per_domain_limit=2`):
+
+| | Baseline (1 query) | Planned (12 queries, 3 rounds) |
+|---|---|---|
+| Retained sources | 6 | 15 |
+| Distinct domains | 6 | 14 |
+
+The breadth acceptance criterion is met. Note the comparison is not
+cost-neutral on the crawl axis: `depth` is a per-round allowance, so the
+planned job's cap was 18 crawls against the baseline's 6. Judge calls stayed
+inside the unchanged drafting caps.
+
+Admission behaved as designed — six facets admitted at cosine 0.58–0.83, one
+refused `redundant` at 0.8549 (the threshold discriminating at the margin),
+one refused by the search-budget rail.
+
+**Finding 1 — `PLAN_NOVELTY_MIN` could never fire, and is now fixed.**
+Round novelty measured 1.0 / 1.0 / 0.983 and the run stopped on the
+`max_rounds` rail, never on saturation. Cause: novelty was measured over the
+whole policy-accepted candidate pool (59–93 URLs per round) while a round only
+fetches `depth` documents, so almost every candidate is unseen and the ratio
+pins near 1.0 regardless of real saturation. The denominator is now the
+round's top-`depth` fetch window; the full pool is retained in provenance as
+`pool` for auditability. **The threshold `0.2` remains uncalibrated** — the
+corrected metric has not yet been observed live.
+
+**Finding 2 — facets drift off-topic as rounds progress (open).** The planner
+proposed queries naming tools that do not exist (`crdb-migration-tools`,
+`luupgtool`), and later-round facets pulled in HAProxy management docs,
+pgBackRest release notes, a Barman manual and Datadog/Netdata monitoring pages
+— none of which address Postgres major-version upgrades. Breadth rose while
+relevance fell. Marginal-distinctness admission selects for *divergence*, and
+at the tail the most distinct candidate is often the least relevant; a
+relevance floor (not just a distinctness ceiling) is the indicated fix. This
+is the PRD's named load-bearing risk, observed.
+
+Report quality reflects the drift: the planned report's verified findings are
+thinner and less on-topic than the baseline's, and no cross-document pair
+verified. Per the PRD's acceptance framing (DeepWeb-Bench: retrieval is 12–14%
+of errors) this does not fail the breadth criterion, and the judge gate held
+throughout — nothing unsupported was accepted.
+
+**Judge behavior during the measurement.** The first synthesis attempt failed
+closed with `malformed_output`: MiniMax returned content that was not a single
+JSON object (`Extra data: line 1 column 11`). The gate refused it rather than
+guessing, the report stayed retryable, and one authorized retry produced the
+completed attempt-2 report. The claim gate and its v4 seal were not modified
+(out of scope). One consequence worth recording: because the per-claim
+diagnostic is emitted only after a batch completes, the failed attempt logged
+no `served_model` values, so served-model auditing has a gap on failed
+batches.
+
+## Query planning mechanism (HUB-024 stages 1–2)
+
+Built 2026-08-13, deployed the same day (see the section above).
+`app/query_plan.py` holds the adaptive query planner: facet admission by
+marginal distinctness, cross-facet and cross-round canonical dedup, budget
+rails (stage 1), and gap-driven rounds that stop on novelty saturation with
+the reason recorded (stage 2).
 
 `REPORT_QUERY_PLANNING` defaults to `false` in config, compose and
 `.env.example`; with it false the acquisition path issues the single search
@@ -109,12 +172,11 @@ refusals, each round's novelty yield, and the stop reason (`single_round`,
 a degenerate plan is visible in provenance rather than inferred from a thin
 report.
 
-Verified before merge: 274 tests green in-container with zero skips (69 new,
-offline and deterministic), `ruff --select E9,F` clean, `compileall` clean,
-`docker compose config` valid. Enabling the flag in the deployed stack is a
-separate operator decision that has not been taken; stage 3 (breadth
-measurement against the job-`24a8a471` baseline above) is blocked on it, since
-measuring breadth requires planned jobs to actually run.
+Verified: 275 tests green in-container with zero skips (70 new, offline and
+deterministic), `ruff --select E9,F` clean, `compileall` clean, `docker
+compose config` valid. With the flag false the acquisition path issues the
+single search it always did and never invokes the planner, so reverting is a
+one-line `.env` change plus a container recreate — no rebuild.
 
 ## Deployment model
 

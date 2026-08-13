@@ -696,6 +696,48 @@ def test_no_document_is_fetched_twice_across_rounds(monkeypatch):
     assert round_two["novelty"] == pytest.approx(0.5)
 
 
+def test_novelty_is_measured_over_the_fetch_window_not_the_whole_pool(
+        monkeypatch):
+    """Regression for the 2026-08-13 live finding.
+
+    A round surfaces far more candidates than it can crawl. Measured against
+    the whole pool, novelty pins near 1.0 and saturation can never fire --
+    which is exactly what the first live planned job did (1.0 / 1.0 / 0.983
+    over three saturated rounds). The denominator must be the round's
+    top-`depth` window.
+    """
+    retained = [f"https://shared{i}.example.com/p" for i in range(10)]
+
+    def results_for(query, facet_index):
+        if facet_index < 3:
+            # Round 1's three facets converge on the same ten sources, all of
+            # which fit the depth-10 allowance and are fetched.
+            return retained
+        # Round 2 re-surfaces exactly those ten at the top, then drags in a
+        # long tail of unseen URLs it will never reach.
+        return retained + [f"https://tail{i}.example.com/p" for i in range(40)]
+
+    searched, progress = _acquisition_probe(
+        monkeypatch, planning=True, results_for=results_for,
+        reply_queue=[
+            '{"facets": ["facet alpha here", "facet beta here"]}',
+            '{"facets": ["the gap query here"]}',
+        ],
+        vector_queue=[[E1, E2, E3], [E4]],
+        plan_max_rounds=5,
+    )
+    round_two = progress["query_plan"]["rounds"][1]
+    # The pool is huge and almost entirely unseen...
+    assert round_two["pool"] == 50
+    # ...but the window this round would actually fetch is entirely known.
+    assert round_two["candidates"] == 10
+    assert round_two["new_candidates"] == 0
+    assert round_two["novelty"] == 0.0
+    # So the research stops on saturation, three rounds below the rail.
+    assert progress["query_plan"]["acquisition_stop_reason"] == "saturation"
+    assert len(searched) == 4
+
+
 def test_planning_disabled_records_a_single_round_and_no_gap_pass(monkeypatch):
     searched, progress = _acquisition_probe(monkeypatch, planning=False)
     assert searched == ["a research topic"]
@@ -714,8 +756,8 @@ def test_acquisition_provenance_records_rounds_and_the_stop_reason():
     provenance = acquisition_provenance(
         plan, issued_queries=["topic", "facet a", "gap q"],
         decisions=list(plan.decisions),
-        rounds=[RoundRecord(1, ["topic", "facet a"], 10, 10, 1.0, 8),
-                RoundRecord(2, ["gap q"], 6, 1, 1 / 6, 1)],
+        rounds=[RoundRecord(1, ["topic", "facet a"], 10, 10, 1.0, 8, 40),
+                RoundRecord(2, ["gap q"], 6, 1, 1 / 6, 1, 55)],
         stop_reason="saturation",
     )
     assert provenance["queries"] == ["topic", "facet a", "gap q"]
@@ -723,7 +765,7 @@ def test_acquisition_provenance_records_rounds_and_the_stop_reason():
     assert provenance["acquisition_stop_reason"] == "saturation"
     assert provenance["rounds"][1] == {
         "index": 2, "queries": ["gap q"], "candidates": 6,
-        "new_candidates": 1, "novelty": 0.1667, "crawled": 1,
+        "new_candidates": 1, "novelty": 0.1667, "crawled": 1, "pool": 55,
     }
 
 

@@ -173,15 +173,22 @@ acceptance criteria true by construction rather than by assertion:
 
 Stage 2 adds a round loop around **search and crawl only**; ingestion still
 runs once, unchanged, over the accumulated crawl results. This deliberately
-departs from the PRD's "after each round's ingestion" wording, for two
-reasons. Restructuring the ingest block would put the worker's lease,
-heartbeat and idempotency semantics at risk for no gain — the acceptance
-criteria require those unchanged. And novelty measured on *policy-accepted
-candidates* rather than retained documents is the same signal available one
-step earlier: a round whose searches mostly resurface known canonical URLs has
-saturated, and there is no reason to spend the fetches to find that out.
-`should_continue` checks saturation before the round rail, so a stop is
-attributed to the evidence running dry whenever both would have fired.
+departs from the "after each round's ingestion" wording above: restructuring
+the ingest block would put the worker's lease, heartbeat and idempotency
+semantics at risk for no gain, and the acceptance criteria require those
+unchanged. `should_continue` checks saturation before the round rail, so a
+stop is attributed to the evidence running dry whenever both would have fired.
+
+Novelty is measured over the round's **top-`depth` fetch window** — the
+documents it would actually crawl. Stage 2 originally used the full
+policy-accepted candidate pool on the reasoning that it was "the same signal
+one step earlier"; the 2026-08-13 measurement proved that wrong. A round
+surfaces 59–93 candidates and fetches at most `depth`, so a pool-wide
+denominator leaves nearly every candidate unseen and pins novelty near 1.0 —
+observed 1.0 / 1.0 / 0.983 across three rounds that had visibly stopped
+finding relevant material, with the run stopping on the `max_rounds` rail
+instead. Bounding the denominator by the crawl allowance restores the signal.
+The full pool count is retained in provenance as `pool`.
 
 Gap queries are admitted by the same `greedy_admit` used for opening facets,
 compared against **every query the job has already issued** rather than just
@@ -229,6 +236,26 @@ transfers across topic domains — whether `PLAN_NOVELTY_MIN = 0.2` means the
 same thing for a niche clinical question as for a broad engineering topic.
 Treat the first measurement as calibration of that threshold, not as
 validation of the design.
+
+**Resolved and superseded by the 2026-08-13 measurement.** The threshold was
+never reached, because the *metric* was wrong before the threshold could
+matter: novelty measured over the full candidate pool pins near 1.0 (observed
+1.0 / 1.0 / 0.983 across three saturated rounds). Fixed by bounding the
+denominator to the round's fetch window. The transfer question is still open,
+and now genuinely testable.
+
+**New open thread: distinctness alone is the wrong admission criterion.** The
+measurement showed facets drifting off-topic as rounds progress — the planner
+proposed non-existent tool names, and later facets acquired HAProxy,
+pgBackRest, Barman and monitoring-vendor pages that do not address the topic.
+Marginal-distinctness admission maximises divergence from what is already
+admitted, and nothing in it pulls back toward the topic; the most distinct
+candidate available is frequently the least relevant one. ScoreGate's
+threshold-not-top-K principle transfers, but it presumed a relevance-ranked
+candidate set underneath. The indicated fix is a two-sided bar: admit a facet
+only if cosine-to-the-admitted-set is below `PLAN_FACET_DISTINCT` **and**
+cosine-to-the-topic is above a new `PLAN_FACET_RELEVANCE` floor. Not
+implemented; measure before and after.
 
 ## Citations (fetched from arXiv 2026-08-13)
 
