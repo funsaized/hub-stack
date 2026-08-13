@@ -308,6 +308,26 @@ class JudgeGateTests(unittest.IsolatedAsyncioTestCase):
             await subject.verify([material()])
         self.assertEqual(raised.exception.reason, "malformed_output")
 
+    async def test_reasoning_without_a_verdict_fails_closed_distinctly(self):
+        """Introduced by reasoning_split: the message can carry reasoning and
+        no content at all when deliberation consumes the token budget. That is
+        a missing answer, not a malformed one, and must not raise KeyError."""
+        subject = self.client(lambda _request: httpx.Response(200, json={
+            "id": "chat-1", "model": "MiniMax-M3",
+            "choices": [{"finish_reason": "length", "message": {
+                "role": "assistant", "reasoning_content": "thinking at length",
+            }}],
+        }))
+        with self.assertRaises(VerifierUnavailable) as raised:
+            await subject.verify([material()])
+        self.assertEqual(raised.exception.reason, "empty_content")
+
+    async def test_blank_content_is_treated_as_no_verdict(self):
+        subject = self.client(lambda _request: verdict_response(content="   "))
+        with self.assertRaises(VerifierUnavailable) as raised:
+            await subject.verify([material()])
+        self.assertEqual(raised.exception.reason, "empty_content")
+
     async def test_malformed_reply_is_logged_before_failing_closed(self):
         """Regression for the 2026-08-13 live failures.
 
@@ -334,17 +354,19 @@ class JudgeGateTests(unittest.IsolatedAsyncioTestCase):
         # The Subscription Key must never reach a diagnostic.
         self.assertNotIn("test-subscription-key", json.dumps(diagnostic))
 
-    async def test_non_string_content_is_logged_without_crashing_the_logger(self):
+    async def test_null_content_is_reported_as_no_verdict_not_malformed(self):
+        """A null content field is an absent answer, not an unparseable one."""
         subject = self.client(lambda _request: httpx.Response(200, json={
             "id": "chat-1", "model": "MiniMax-M3",
-            "choices": [{"message": {"role": "assistant", "content": None}}],
+            "choices": [{"finish_reason": "stop", "message": {
+                "role": "assistant", "content": None}}],
         }))
         with self.assertLogs("app.judge_gate", level="WARNING") as logs:
-            with self.assertRaises(VerifierUnavailable):
+            with self.assertRaises(VerifierUnavailable) as raised:
                 await subject.verify([material()])
-        record = next(r for r in logs.records if r.msg == "judge_malformed_output")
-        self.assertIsNone(record.diagnostic["content_chars"])
-        self.assertIsNone(record.diagnostic["content_sha256"])
+        self.assertEqual(raised.exception.reason, "empty_content")
+        record = next(r for r in logs.records if r.msg == "judge_empty_content")
+        self.assertEqual(record.diagnostic["finish_reason"], "stop")
 
     async def test_health_reports_configuration_without_a_metered_call(self):
         subject = self.client(lambda _request: verdict_response())

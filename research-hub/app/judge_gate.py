@@ -58,7 +58,11 @@ def _bounded_text(value: Any) -> dict[str, Any]:
 JUDGE_REJECTION_REASONS = ("unsupported", "contradiction", "padding_reference")
 MAX_JUDGE_EVIDENCE_CHARS = 8000
 MAX_JUDGE_CLAIM_CHARS = 2000
-RESPONSE_MAX_TOKENS = 2048
+# Reasoning counts against this budget even when reasoning_split routes it to
+# its own field, so the allowance has to cover thinking AND the verdict. At
+# 2048 a long deliberation could consume the whole budget and return a message
+# carrying reasoning_content but no content at all (observed 2026-08-13).
+RESPONSE_MAX_TOKENS = 4096
 # MiniMax platform codes that mean the Token Plan window or balance is spent
 # (1002: rate limit, 1008: insufficient quota/balance).
 QUOTA_STATUS_CODES = {1002, 1008}
@@ -305,9 +309,21 @@ class JudgeClaimVerifier:
             raise VerifierUnavailable("malformed_output")
         content: Any = None
         try:
-            content = data["choices"][0]["message"]["content"]
-            if not isinstance(content, str):
-                raise TypeError("content is not a string")
+            choice = data["choices"][0]
+            message = choice["message"]
+            content = message.get("content")
+            if not isinstance(content, str) or not content.strip():
+                # With reasoning_split the model can return reasoning and no
+                # verdict at all. That is a missing answer, not a malformed
+                # one, and it is worth telling apart in the logs.
+                logger.warning("judge_empty_content", extra={
+                    "job_id": None, "diagnostic": {
+                        "served_model": served_model,
+                        "finish_reason": choice.get("finish_reason"),
+                        "reasoning_chars": len(message.get("reasoning_content") or ""),
+                    },
+                })
+                raise VerifierUnavailable("empty_content")
             parsed = _extract_json_object(content)
         except VerifierUnavailable:
             raise
