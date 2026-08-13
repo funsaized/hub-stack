@@ -85,7 +85,12 @@ class RAGRequest(ContractModel):
     top_k: int = Field(default=5, ge=1, le=50)
     topic_filter: Optional[str] = None
     tags_filter: Optional[list[str]] = None
-    max_context_tokens: int = Field(default=3000, ge=128, le=128000)
+    # Omit to use the model's full context. A fixed default cannot be
+    # correct: it has to exceed the answer reserve, which is deployment
+    # configuration, and the old 3000 sat close enough to a 2048 reserve
+    # that evidence never fit and every default call returned nothing
+    # (HUB-041).
+    max_context_tokens: Optional[int] = Field(default=None, ge=128, le=128000)
     system_prompt: Optional[str] = None
 
 

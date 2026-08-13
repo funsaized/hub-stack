@@ -352,7 +352,7 @@ async def root():
             "DELETE /documents?url={source_url}",
             "GET /documents/{document_id}",
             "POST /query {query, top_k, topic_filter, tags_filter}",
-            "POST /rag {query, top_k, topic_filter, tags_filter, max_context_tokens}",
+            "POST /rag {query, top_k, topic_filter, tags_filter, max_context_tokens?}",
             "GET /v1/models",
             "POST /v1/chat/completions",
         ],

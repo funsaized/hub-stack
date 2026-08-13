@@ -1158,28 +1158,26 @@ possible.
 say "No material source disagreements were identified", which reads as a
 finding about the sources. It is presently a statement about the drafter.
 
-### HUB-041 — `/rag` returns nothing at its default context budget
+### HUB-041 — `/rag` returned nothing at its default context budget
 
-**Status:** 🔴 OPEN — found 2026-08-13 while smoke-testing the context raise.
-Pre-existing; not caused by it.
+**Status:** ✅ DONE 2026-08-13.
 
-`RAGRequest.max_context_tokens` defaults to **3000** while
-`answer_reserve_tokens` is **2048**, so a default `/rag` call has under 1000
-tokens left for the system prompt, the question and the evidence combined.
-Evidence never fits and the endpoint answers "No relevant information fits
-within the model context budget" with zero sources.
+`RAGRequest.max_context_tokens` defaulted to **3000** while
+`answer_reserve_tokens` is **2048**, leaving under 1000 tokens for the system
+prompt, the question and the evidence combined. Evidence never fit, so a
+default `/rag` call always answered "No relevant information fits within the
+model context budget" with zero sources. Measured: 0 sources at 3000, 3 at
+6000, 4 at 12000, with retrieval healthy throughout.
 
-Measured on one question: `max_context_tokens=3000` → 0 sources; `6000` → 3
-sources and a real answer; `12000` → 4 sources. Retrieval is fine (`/query`
-returns four chunks); only the packing budget is wrong.
+**Fix.** The default is now `None`, meaning the model's full context, and the
+budget is `min(requested or model_context, model_context)`. A fixed default
+could never be correct, because it has to exceed an answer reserve that is
+deployment configuration. Explicit values, including deliberately small ones,
+are still honoured.
 
-Raising `MODEL_CONTEXT_TOKENS` does not help, because the budget is
-`min(req.max_context_tokens, model_context_tokens)` — the request default caps
-it either way.
-
-**Fix:** make the default track the model context, or simply raise it well
-above the answer reserve. One line, but it changes `/rag` behavior, which the
-HUB-024 PRD held out of scope, so it is recorded rather than taken.
+The failure message now names the numbers and the way out — how many passages
+were retrieved, the budget, the reserve, and that raising or omitting
+`max_context_tokens` fixes it — instead of stating only that nothing fit.
 
 ### HUB-042 — Search engines exhaust under sustained job volume
 

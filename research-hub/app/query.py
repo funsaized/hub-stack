@@ -76,14 +76,20 @@ class QueryEngine:
         if req.system_prompt and not self.allow_custom_system_prompts:
             raise PermissionError("Custom system prompts are disabled for this service")
         system = req.system_prompt or DEFAULT_RAG_SYSTEM_PROMPT
+        budget = min(req.max_context_tokens or self.model_context_tokens,
+                     self.model_context_tokens)
         chunks, context = pack_context(
-            sr.chunks, system, req.query,
-            min(req.max_context_tokens, self.model_context_tokens),
-            self.answer_reserve_tokens,
+            sr.chunks, system, req.query, budget, self.answer_reserve_tokens,
         )
         if not chunks:
+            # Say which number to change. The usual cause is a caller-supplied
+            # max_context_tokens close to the answer reserve, which leaves no
+            # room for evidence however good the retrieval was.
             return RAGResponse(query=req.query, answer=(
-                "No relevant information fits within the model context budget."
+                f"Retrieved {len(sr.chunks)} passages, but none fit the "
+                f"{budget}-token context budget once {self.answer_reserve_tokens} "
+                "tokens are reserved for the answer. Raise max_context_tokens "
+                "or omit it to use the model's full context."
             ), sources=[], model=self.ollama.model)
         prompt = render_prompt(context, req.query)
 

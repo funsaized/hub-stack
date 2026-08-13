@@ -39,7 +39,7 @@ class RequestValidationTests(unittest.TestCase):
                              "topic_filter": "optimizers", "tags_filter": ["ml"]},
             "RAGRequest": {"query": "compare the evidence", "top_k": 5,
                            "topic_filter": "optimizers", "tags_filter": ["ml"],
-                           "max_context_tokens": 3000},
+                           "max_context_tokens": 12000},
         }
         schema_names = main.app.openapi()["components"]["schemas"]
         for name, payload in examples.items():
@@ -140,3 +140,20 @@ class DocumentContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_rag_default_context_budget_leaves_room_for_evidence():
+    """Regression for HUB-041.
+
+    max_context_tokens defaulted to 3000 against a 2048-token answer reserve,
+    so a default /rag call had under 1000 tokens for the system prompt, the
+    question and the evidence combined -- evidence never fit and every default
+    call returned zero sources. The default now tracks the model context.
+    """
+    from app.models import RAGRequest
+
+    request = RAGRequest(query="a question about the corpus")
+    assert request.max_context_tokens is None
+
+    # An explicit value is still honoured, including a deliberately small one.
+    assert RAGRequest(query="q", max_context_tokens=900).max_context_tokens == 900
