@@ -1236,11 +1236,26 @@ invalidated by the engine change is **not** borne out: the screen is more
 load-bearing now, not miscalibrated. Rebuilding the reference set on the new
 mix would still be worthwhile, but it is no longer urgent.
 
-**Still unsolved.** Nothing backs off, and heavy use will exhaust the wider
-pool too — just more slowly. Remaining directions: cache searches by canonical
-query (highest leverage for repeated-topic use, and it would have made the
-whole evaluation campaign nearly free); or add API-keyed providers with
-documented quotas instead of silent suspension.
+**`google cse` disabled 2026-08-13.** SearXNG's engine takes no API key: it
+scrapes the JSONP CSE-element endpoint with a hardcoded third-party CX shared
+by every install, so it was permanently rate-limited and reported "too many
+requests" on every search ever made. Removing it recovered a cleaner picture —
+35 results across duckduckgo, bing and brave with only qwant and startpage
+blocked.
+
+**Strategy decided in `docs/ADR-002-search-provider-strategy.md`.** The
+official Bing Search API was retired 2025-08-11, so bing — our most productive
+engine — is a scraper with no official fallback. The ADR's decisive criterion
+is that this stack needs URLs and snippets, not page content: it already owns
+crawling, so providers bundling extraction (Tavily, Exa, Firecrawl) would be
+paid for output we discard.
+
+Stage 1, free and untried: per-engine outgoing limits, pacing within a job,
+and screening search results on title and snippet **before** crawling. Stage 2,
+only if stage 1 measurement still shows failures: Serper as a fallback behind
+SearXNG. Brave Search API is rejected pending an operator licensing decision —
+its terms restrict storing API results, and this system exists to build a
+persistent corpus.
 
 ### HUB-025 — Add scheduled research jobs
 
