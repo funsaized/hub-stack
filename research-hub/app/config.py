@@ -29,7 +29,7 @@ class Config:
     embedding_batch_size: int = 16
     embedding_batch_chars: int = 12000
     dependency_max_attempts: int = 3
-    model_context_tokens: int = 8192
+    model_context_tokens: int = 16384
     answer_reserve_tokens: int = 2048
     allow_custom_system_prompts: bool = False
     respect_robots_txt: bool = True
@@ -39,18 +39,18 @@ class Config:
     report_retrieval_min_score: float | None = None
     # Synthesis breadth. With a planned corpus of 30+ sources the drafting
     # caps, not the corpus, become the limit on how much a report can say.
-    # Sized to consume the available span supply, which measured 25 per report
-    # (2026-08-13). Supply itself is capped upstream by pack_evidence fitting
-    # evidence into the 8K model context, so raising these past ~25 buys
-    # nothing until MODEL_CONTEXT_TOKENS rises with it.
-    report_max_span_claims: int = 24
-    report_max_pair_claims: int = 16
+    # Sized against measured span supply, which rose from 23 to 64 per report
+    # when MODEL_CONTEXT_TOKENS went 8192 -> 16384 (2026-08-13): a larger
+    # context lets pack_evidence select 15 chunks instead of 7. Raise these
+    # only alongside a measured supply increase.
+    report_max_span_claims: int = 40
+    report_max_pair_claims: int = 20
     # Sized above the observed verified-claim count (15-16 per report) so the
     # display cap is not what limits a report -- evidence should be. Raised
     # from 12 on 2026-08-13, when every successful report in the evaluation
     # campaign hit the cap with 3-4 verified claims withheld. Costs nothing at
     # the gate: drafting volume, and therefore metered calls, is unchanged.
-    report_max_findings: int = 30
+    report_max_findings: int = 40
     report_max_disagreements: int = 4
     report_max_corrections: int = 6
     report_hybrid_retrieval: bool = True
@@ -150,7 +150,7 @@ def load_config() -> Config:
         embedding_batch_size=int(os.environ.get("EMBEDDING_BATCH_SIZE", "16")),
         embedding_batch_chars=int(os.environ.get("EMBEDDING_BATCH_CHARS", "12000")),
         dependency_max_attempts=int(os.environ.get("DEPENDENCY_MAX_ATTEMPTS", "3")),
-        model_context_tokens=int(os.environ.get("MODEL_CONTEXT_TOKENS", "8192")),
+        model_context_tokens=int(os.environ.get("MODEL_CONTEXT_TOKENS", "16384")),
         answer_reserve_tokens=int(os.environ.get("ANSWER_RESERVE_TOKENS", "2048")),
         allow_custom_system_prompts=os.environ.get(
             "ALLOW_CUSTOM_SYSTEM_PROMPTS", "false"
@@ -167,9 +167,9 @@ def load_config() -> Config:
             os.environ.get("REPORT_MAX_CHUNKS_PER_SOURCE", "3")
         ),
         report_retrieval_min_score=float(min_score) if min_score else None,
-        report_max_span_claims=int(os.environ.get("REPORT_MAX_SPAN_CLAIMS", "24")),
-        report_max_pair_claims=int(os.environ.get("REPORT_MAX_PAIR_CLAIMS", "16")),
-        report_max_findings=int(os.environ.get("REPORT_MAX_FINDINGS", "30")),
+        report_max_span_claims=int(os.environ.get("REPORT_MAX_SPAN_CLAIMS", "40")),
+        report_max_pair_claims=int(os.environ.get("REPORT_MAX_PAIR_CLAIMS", "20")),
+        report_max_findings=int(os.environ.get("REPORT_MAX_FINDINGS", "40")),
         report_max_disagreements=int(
             os.environ.get("REPORT_MAX_DISAGREEMENTS", "4")
         ),
