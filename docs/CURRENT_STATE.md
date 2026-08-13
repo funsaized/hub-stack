@@ -290,6 +290,40 @@ Findings ranged 3–31 per report, tracking corpus quality rather than corpus
 size: job 6 retained 11 sources but yielded 3 findings, job 5 retained 9 and
 yielded 31.
 
+## Source screening re-validated on the bing-era search mix (2026-08-13)
+
+The engine widening changed what search returns, so the screen's calibration
+was re-checked rather than assumed. Screened-out documents never reach the
+corpus, so four fresh jobs were run with `PLAN_SOURCE_RELEVANCE=0.0` to retain
+the negatives deliberately: 55 documents, labelled by the same procedure as
+the v1 reference set.
+
+**Search precision has collapsed, and the screen is now load-bearing.** The
+bing-era sample is 8 on-topic, 17 marginal, **28 off-topic** — 15% on-topic
+against 62% in the duckduckgo-era reference set. Widening the engine pool
+bought availability at a real cost in precision.
+
+**The screen separates that mix perfectly.** AUC on-vs-off is **1.000**:
+on-topic scores run 0.765–0.818 while off-topic tops out at 0.683, a clean gap
+with nothing in it.
+
+| Threshold | On-topic kept | Off-topic dropped |
+|---|---|---|
+| **0.54 (deployed)** | **100%** | **75%** |
+| 0.58 | 100% | 89% |
+| 0.62 | 100% | 93% |
+
+**0.54 is kept unchanged.** It already retains every on-topic document in the
+new mix while removing three quarters of the junk. Raising it would drop more
+off-topic here, but only 8 on-topic documents support that tail, and the much
+larger v1 reference set contains on-topic documents scoring below 0.58 — so
+tightening would trade a measured risk to recall for an improvement this
+sample cannot justify.
+
+Taken together with the earlier load test, the two changes are complementary:
+widening the pool keeps acquisition alive when engines block, and the screen
+absorbs the precision loss that comes with it.
+
 ## Source screening calibrated and enabled (HUB-038, 2026-08-13)
 
 Enabled at `PLAN_SOURCE_RELEVANCE = 0.54`, calibrated on a 494-document
