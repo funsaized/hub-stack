@@ -846,11 +846,55 @@ the deployed image.
 
 ## P3 — Optional expansion after sustained usage
 
-### HUB-024 — Add query planning and iterative research
+### HUB-024 — Adaptive query planning and iterative research
 
-Add query decomposition, follow-up searches based on evidence gaps, stopping criteria, and budget controls. This is the work that would justify the “deep research” label.
+**Status:** 🔴 OPEN — revisit trigger tripped and item opened by the operator
+2026-08-13. Design: `PRDs/hub-024-query-planning.md` (grounded in 16 arXiv
+abstracts fetched and read 2026-08-13; citations in the PRD).
 
-**Revisit trigger:** users repeatedly need broader or multi-angle synthesis than a single search query produces.
+**Trigger record:** a research job issues exactly one SearXNG query, so the
+retained corpus for a report contains only what that phrasing surfaced. The
+narrowness is on the acquisition side, not retrieval (hybrid retrieval already
+measures hit@4 `1.0` on the exact-term manifest, HUB-017). It also caps the
+cross-source machinery deployed in HUB-034: pair drafting can only find
+disagreements between sources that were crawled, and one query tends to return
+sources that agree.
+
+**Methodology (breadth is emergent, never a fixed count):**
+
+- **Marginal-distinctness admission.** One bounded local-LLM call proposes
+  candidate facet queries; each is embedded with the deployed
+  `nomic-embed-text` and admitted only if its max cosine similarity to the
+  admitted set is below `PLAN_FACET_DISTINCT`. Breadth is whatever survives
+  the threshold — a narrow topic admits one facet and behaves exactly as
+  today; `PLAN_MAX_FACETS` is a safety rail, not the mechanism. (ScoreGate's
+  threshold-not-top-K principle lifted from chunk selection to planning;
+  Adaptive-RAG's complexity routing falls out of single-facet collapse.)
+- **Gap-driven rounds.** After each round, one bounded call reads a per-facet
+  coverage summary (retained documents, distinct domains) and names what is
+  still uncovered; only those gaps become the next round's queries (KiRAG).
+- **Stopping — saturation first, coverage second, budget last.** Stop when a
+  round's yield of new canonical URLs falls below `PLAN_NOVELTY_MIN` (KAIR's
+  round-over-round saturation, instanced on this system's stable canonical-URL
+  document identity); or when every facet is covered and no gap is named; with
+  hard per-job caps on rounds, searches, crawls, and wall-clock as the
+  backstop only.
+
+**Prior-art traps the design explicitly avoids:** fixed depth × breadth
+parameters (Static-DRA's own limitation); expecting breadth to raise report
+quality (DeepWeb-Bench: retrieval is 12–14% of errors, derivation/calibration
+exceed 70% — so acceptance measures corpus breadth, not report quality, and
+the judge gate stays the quality guard); redundant tool calls (HotelQuEST —
+canonical-URL dedup across facets before crawling is mandatory).
+
+**Acceptance criteria:** more distinct domains and represented sources per
+report than the single-query baseline on a fixed topic set, recorded not
+asserted; a single-facet topic issues exactly one search; every sub-query
+inherits source policy and SSRF vetting with canonical dedup across facets and
+rounds; judge calls per report stay bounded by existing drafting caps; worker
+lease/retry/idempotency semantics unchanged; plan provenance (facets, queries,
+new-document yield, stop reason) recorded in job progress;
+`REPORT_QUERY_PLANNING=false` reproduces current behavior exactly.
 
 ### HUB-025 — Add scheduled research jobs
 
@@ -983,7 +1027,9 @@ HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HU
 
 ### Milestone 5 — Expansion only when earned
 
-HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none tripped.
+HUB-024 🔴 (trigger tripped 2026-08-13; opened with a researched design — see
+`PRDs/hub-024-query-planning.md`). HUB-025 through HUB-030 remain deferred
+behind their explicit revisit triggers; none tripped.
 
 ### Recommended order for the remaining open work (2026-08-12, post-pivot)
 
@@ -993,6 +1039,8 @@ HUB-024 through HUB-030 — all deferred behind explicit revisit triggers; none 
 4. **HUB-034** — ✅ done 2026-08-12 (operator-authorized; judge deployed as the only gate, NLI stack decommissioned, FastAPI/Starlette upgraded, deploy fully verified).
 5. **HUB-032** — ✅ done 2026-08-12 (v4 final gate-side + HUB-034 report-side pair drafting and disclaimer logic).
 
-The pivot sequence is complete; Milestone 4 is closed. Remaining open work is P3 (revisit triggers, none tripped).
+The pivot sequence is complete; Milestone 4 is closed.
+
+6. **HUB-024** — adaptive query planning and iterative research (opened 2026-08-13, trigger tripped; design in `PRDs/hub-024-query-planning.md`, implementation not started).
 
 **Exit condition:** each expansion is justified by measured usage or a documented limitation, not by architectural possibility.

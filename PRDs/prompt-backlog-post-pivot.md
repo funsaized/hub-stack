@@ -47,13 +47,21 @@ main; a new set means new operator-annotated cases, never reuse of the
 consumed v4 set). The gate is not trusted again until the new final passes.
 MiniMax reports no finer version granularity; that string is the trigger.
 
-## 3. P3 discipline
+## 3. HUB-024 — adaptive query planning (opened 2026-08-13, not implemented)
 
-HUB-024 through HUB-030 stay closed behind their revisit triggers (see
-backlog): open one ONLY if its trigger has actually tripped (e.g. repeated
-user need for multi-angle synthesis, sustained scheduled-research demand).
-If nothing tripped and the live proof is recorded, end the pass cleanly —
-do not manufacture work.
+The revisit trigger tripped and the operator opened it; the design is
+`PRDs/hub-024-query-planning.md` (grounded in fetched arXiv prior art).
+Implement only after the live proof above, because planning changes what gets
+crawled and a broken plan is easiest to see against a known-good baseline
+report. Build order: marginal-distinctness facet admission (breadth emerges
+from a similarity threshold — never a fixed count), canonical-URL dedup across
+facets, per-job budget rails, then gap-driven rounds with saturation stopping.
+Ship behind `REPORT_QUERY_PLANNING=false` and measure distinct domains and
+represented sources against the single-query baseline before enabling it.
+
+HUB-025 through HUB-030 stay closed behind their revisit triggers; open one
+ONLY if its trigger actually tripped. If nothing tripped and the live proof is
+recorded, end the pass cleanly — do not manufacture work.
 
 ## Standing constraints
 
