@@ -465,6 +465,7 @@ class ResearchOrchestrator:
                 plan = await plan_queries(
                     self.ollama, topic,
                     distinct=self.cfg.plan_facet_distinct,
+                    relevance=self.cfg.plan_facet_relevance,
                     max_facets=self.cfg.plan_max_facets,
                     search_budget=self.cfg.plan_search_budget,
                     job_id=job_id,
@@ -676,6 +677,7 @@ class ResearchOrchestrator:
                         self.ollama, topic, query_coverage,
                         issued_queries, issued_vectors,
                         distinct=self.cfg.plan_facet_distinct,
+                        relevance=self.cfg.plan_facet_relevance,
                         max_total=self.cfg.plan_search_budget,
                         job_id=job_id,
                     )

@@ -45,6 +45,11 @@ class Config:
     # the mechanism that decides breadth -- that is PLAN_FACET_DISTINCT.
     report_query_planning: bool = False
     plan_facet_distinct: float = 0.85
+    # Permissive by design pending calibration: the two-sided bar's relevance
+    # half only rejects the clearly-unrelated tail today, and every candidate's
+    # topic cosine is recorded so a real threshold can be measured rather than
+    # guessed (the novelty metric was guessed once already).
+    plan_facet_relevance: float = 0.35
     plan_max_facets: int = 8
     plan_max_rounds: int = 3
     plan_novelty_min: float = 0.2
@@ -75,6 +80,13 @@ class Config:
             raise ValueError("CRAWL_MAX_MARKDOWN_CHARS must be positive")
         if not 0.0 < self.plan_facet_distinct <= 1.0:
             raise ValueError("PLAN_FACET_DISTINCT must be in (0.0, 1.0]")
+        if not 0.0 <= self.plan_facet_relevance < 1.0:
+            raise ValueError("PLAN_FACET_RELEVANCE must be in [0.0, 1.0)")
+        if self.plan_facet_relevance >= self.plan_facet_distinct:
+            raise ValueError(
+                "PLAN_FACET_RELEVANCE must be below PLAN_FACET_DISTINCT, "
+                "otherwise no candidate can satisfy both halves of the bar"
+            )
         if not 1 <= self.plan_max_facets <= 32:
             raise ValueError("PLAN_MAX_FACETS must be between 1 and 32")
         if not 1 <= self.plan_max_rounds <= 10:
@@ -135,6 +147,7 @@ def load_config() -> Config:
             "REPORT_QUERY_PLANNING", "false"
         ).lower() in {"1", "true", "yes"},
         plan_facet_distinct=float(os.environ.get("PLAN_FACET_DISTINCT", "0.85")),
+        plan_facet_relevance=float(os.environ.get("PLAN_FACET_RELEVANCE", "0.35")),
         plan_max_facets=int(os.environ.get("PLAN_MAX_FACETS", "8")),
         plan_max_rounds=int(os.environ.get("PLAN_MAX_ROUNDS", "3")),
         plan_novelty_min=float(os.environ.get("PLAN_NOVELTY_MIN", "0.2")),

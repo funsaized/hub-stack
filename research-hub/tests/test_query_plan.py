@@ -27,6 +27,7 @@ from app.query_plan import (
     interleave,
     normalize_candidate,
     novelty_ratio,
+    query_defects,
     parse_candidates,
     plan_gap_round,
     plan_queries,
@@ -141,8 +142,8 @@ def test_normalize_candidate_bounds():
 def test_all_candidates_redundant_collapses_to_a_single_search():
     """The complexity signal: a narrow topic issues exactly one search."""
     plan = admit_facets(
-        "narrow topic", ["paraphrase one", "paraphrase two"],
-        [E1, E1, E1], distinct=0.85, max_facets=8,
+        "narrow topic", ["one paraphrase of it", "another paraphrase of it"],
+        [E1, E1, E1], distinct=0.85, relevance=0.0, max_facets=8,
     )
     assert plan.queries == ["narrow topic"]
     assert plan.collapsed is True
@@ -154,22 +155,22 @@ def test_all_candidates_redundant_collapses_to_a_single_search():
 
 def test_distinct_candidates_widen_the_plan():
     plan = admit_facets(
-        "broad topic", ["facet a", "facet b", "facet c"],
-        [E1, E2, E3, E4], distinct=0.85, max_facets=8,
+        "broad topic", ["first distinct facet", "second distinct facet", "third distinct facet"],
+        [E1, E2, E3, E4], distinct=0.85, relevance=0.0, max_facets=8,
     )
-    assert plan.queries == ["broad topic", "facet a", "facet b", "facet c"]
+    assert plan.queries == ["broad topic", "first distinct facet", "second distinct facet", "third distinct facet"]
     assert plan.collapsed is False
     assert plan.stop_reason == "candidates_exhausted"
 
 
 def test_breadth_is_not_a_fixed_count_at_one_threshold():
     """Same threshold, different evidence -> different breadth. No fixed N."""
-    narrow = admit_facets("t", ["a", "b", "c"], [E1, E1, E1, E1],
-                          distinct=0.85, max_facets=8)
-    middling = admit_facets("t", ["a", "b", "c"], [E1, E1, E2, E1],
-                            distinct=0.85, max_facets=8)
-    wide = admit_facets("t", ["a", "b", "c"], [E1, E2, E3, E4],
-                        distinct=0.85, max_facets=8)
+    narrow = admit_facets("t", ["cand one x", "cand two x", "cand three x"], [E1, E1, E1, E1],
+                          distinct=0.85, relevance=0.0, max_facets=8)
+    middling = admit_facets("t", ["cand one x", "cand two x", "cand three x"], [E1, E1, E2, E1],
+                            distinct=0.85, relevance=0.0, max_facets=8)
+    wide = admit_facets("t", ["cand one x", "cand two x", "cand three x"], [E1, E2, E3, E4],
+                        distinct=0.85, relevance=0.0, max_facets=8)
     assert [len(p.queries) for p in (narrow, middling, wide)] == [1, 2, 4]
 
 
@@ -177,10 +178,10 @@ def test_admission_compares_against_the_whole_admitted_set():
     """A candidate redundant with facet 1 is refused even if distinct from the
     topic -- otherwise near-duplicate facets would both be admitted."""
     plan = admit_facets(
-        "topic", ["facet a", "near duplicate of a"], [E1, E2, E2],
-        distinct=0.85, max_facets=8,
+        "topic", ["first distinct facet", "near duplicate of a"], [E1, E2, E2],
+        distinct=0.85, relevance=0.0, max_facets=8,
     )
-    assert plan.queries == ["topic", "facet a"]
+    assert plan.queries == ["topic", "first distinct facet"]
     assert plan.decisions[-1].reason == "redundant"
     assert plan.decisions[-1].max_cosine == pytest.approx(1.0)
 
@@ -188,18 +189,18 @@ def test_admission_compares_against_the_whole_admitted_set():
 def test_threshold_governs_admission_at_the_boundary():
     # cos = 0.8 for these two vectors: admitted at 0.85, refused at 0.75.
     near = [0.8, 0.6, 0.0, 0.0]
-    admitted = admit_facets("t", ["c"], [E1, near], distinct=0.85, max_facets=8)
-    refused = admit_facets("t", ["c"], [E1, near], distinct=0.75, max_facets=8)
+    admitted = admit_facets("t", ["a boundary candidate"], [E1, near], distinct=0.85, relevance=0.0, max_facets=8)
+    refused = admit_facets("t", ["a boundary candidate"], [E1, near], distinct=0.75, relevance=0.0, max_facets=8)
     assert len(admitted.queries) == 2
     assert len(refused.queries) == 1
 
 
 def test_max_facets_is_a_rail_and_is_recorded_not_silent():
     plan = admit_facets(
-        "topic", ["facet a", "facet b", "facet c"], [E1, E2, E3, E4],
-        distinct=0.85, max_facets=2,
+        "topic", ["first distinct facet", "second distinct facet", "third distinct facet"], [E1, E2, E3, E4],
+        distinct=0.85, relevance=0.0, max_facets=2,
     )
-    assert plan.queries == ["topic", "facet a"]
+    assert plan.queries == ["topic", "first distinct facet"]
     assert plan.stop_reason == "max_facets"
     # The truncated candidates are still visible in provenance.
     assert [d.reason for d in plan.decisions if not d.admitted] == [
@@ -208,8 +209,8 @@ def test_max_facets_is_a_rail_and_is_recorded_not_silent():
 
 
 def test_topic_is_always_the_first_query():
-    plan = admit_facets("the topic", ["facet a"], [E1, E2],
-                        distinct=0.85, max_facets=8)
+    plan = admit_facets("the topic", ["first distinct facet"], [E1, E2],
+                        distinct=0.85, relevance=0.0, max_facets=8)
     assert plan.queries[0] == "the topic"
     assert plan.decisions[0] == FacetDecision(
         query="the topic", admitted=True, reason="topic_seed",
@@ -218,9 +219,9 @@ def test_topic_is_always_the_first_query():
 
 def test_admit_facets_rejects_inconsistent_inputs():
     with pytest.raises(ValueError):
-        admit_facets("t", ["a", "b"], [E1, E2], distinct=0.85, max_facets=8)
+        admit_facets("t", ["a", "b"], [E1, E2], distinct=0.85, relevance=0.0, max_facets=8)
     with pytest.raises(ValueError):
-        admit_facets("t", [], [E1], distinct=0.85, max_facets=0)
+        admit_facets("t", [], [E1], distinct=0.85, relevance=0.0, max_facets=0)
 
 
 # --- plan_queries: degradation is always to today's behavior ---------------
@@ -230,7 +231,7 @@ def test_plan_queries_admits_distinct_facets():
         reply='{"facets": ["facet alpha here", "facet beta here"]}',
         vectors=[E1, E2, E3],
     )
-    plan = run(plan_queries(ollama, "a topic", distinct=0.85, max_facets=8,
+    plan = run(plan_queries(ollama, "a topic", distinct=0.85, relevance=0.0, max_facets=8,
                             search_budget=12))
     assert plan.queries == ["a topic", "facet alpha here", "facet beta here"]
     assert ollama.embed_calls == [["a topic", "facet alpha here",
@@ -239,7 +240,7 @@ def test_plan_queries_admits_distinct_facets():
 
 def test_planner_generation_failure_degrades_to_one_search():
     ollama = StubOllama(generate_error=RuntimeError("ollama down"))
-    plan = run(plan_queries(ollama, "a topic", distinct=0.85, max_facets=8,
+    plan = run(plan_queries(ollama, "a topic", distinct=0.85, relevance=0.0, max_facets=8,
                             search_budget=12))
     assert plan.queries == ["a topic"]
     assert plan.stop_reason == "planner_unavailable"
@@ -247,7 +248,7 @@ def test_planner_generation_failure_degrades_to_one_search():
 
 def test_planner_malformed_reply_degrades_to_one_search():
     ollama = StubOllama(reply="I cannot help with that.")
-    plan = run(plan_queries(ollama, "a topic", distinct=0.85, max_facets=8,
+    plan = run(plan_queries(ollama, "a topic", distinct=0.85, relevance=0.0, max_facets=8,
                             search_budget=12))
     assert plan.queries == ["a topic"]
     assert plan.stop_reason == "planner_unavailable"
@@ -256,7 +257,7 @@ def test_planner_malformed_reply_degrades_to_one_search():
 def test_embedding_failure_degrades_to_one_search():
     ollama = StubOllama(reply='{"facets": ["facet alpha here"]}',
                         embed_error=RuntimeError("embed down"))
-    plan = run(plan_queries(ollama, "a topic", distinct=0.85, max_facets=8,
+    plan = run(plan_queries(ollama, "a topic", distinct=0.85, relevance=0.0, max_facets=8,
                             search_budget=12))
     assert plan.queries == ["a topic"]
     assert plan.stop_reason == "planner_unavailable"
@@ -265,7 +266,7 @@ def test_embedding_failure_degrades_to_one_search():
 def test_wrong_embedding_count_degrades_to_one_search():
     ollama = StubOllama(reply='{"facets": ["facet alpha here"]}',
                         vectors=[E1])  # missing the candidate's vector
-    plan = run(plan_queries(ollama, "a topic", distinct=0.85, max_facets=8,
+    plan = run(plan_queries(ollama, "a topic", distinct=0.85, relevance=0.0, max_facets=8,
                             search_budget=12))
     assert plan.queries == ["a topic"]
     assert plan.stop_reason == "planner_unavailable"
@@ -273,7 +274,7 @@ def test_wrong_embedding_count_degrades_to_one_search():
 
 def test_planner_returning_no_facets_is_a_collapse_not_a_failure():
     ollama = StubOllama(reply='{"facets": []}')
-    plan = run(plan_queries(ollama, "a topic", distinct=0.85, max_facets=8,
+    plan = run(plan_queries(ollama, "a topic", distinct=0.85, relevance=0.0, max_facets=8,
                             search_budget=12))
     assert plan.queries == ["a topic"]
     assert plan.stop_reason == "collapse"
@@ -282,7 +283,7 @@ def test_planner_returning_no_facets_is_a_collapse_not_a_failure():
 
 def test_search_budget_of_one_spends_no_planner_call():
     ollama = StubOllama(reply='{"facets": ["facet alpha here"]}', vectors=[E1, E2])
-    plan = run(plan_queries(ollama, "a topic", distinct=0.85, max_facets=8,
+    plan = run(plan_queries(ollama, "a topic", distinct=0.85, relevance=0.0, max_facets=8,
                             search_budget=1))
     assert plan.queries == ["a topic"]
     assert plan.stop_reason == "budget"
@@ -294,7 +295,7 @@ def test_search_budget_bounds_the_plan_below_max_facets():
         reply='{"facets": ["facet alpha here", "facet beta here"]}',
         vectors=[E1, E2, E3],
     )
-    plan = run(plan_queries(ollama, "a topic", distinct=0.85, max_facets=8,
+    plan = run(plan_queries(ollama, "a topic", distinct=0.85, relevance=0.0, max_facets=8,
                             search_budget=2))
     assert len(plan.queries) == 2
     assert plan.stop_reason == "max_facets"
@@ -340,18 +341,18 @@ def test_single_query_plan_is_collapsed_with_its_reason_recorded():
 
 
 def test_provenance_exposes_every_admission_decision():
-    plan = admit_facets("topic", ["facet a", "dupe"], [E1, E2, E2],
-                        distinct=0.85, max_facets=8)
+    plan = admit_facets("topic", ["first distinct facet", "a duplicate query"], [E1, E2, E2],
+                        distinct=0.85, relevance=0.0, max_facets=8)
     provenance = plan.provenance()
     assert provenance["facet_count"] == 2
     assert provenance["collapsed"] is False
     assert provenance["decisions"] == [
         {"query": "topic", "admitted": True, "reason": "topic_seed",
-         "max_cosine": None},
-        {"query": "facet a", "admitted": True, "reason": "distinct",
-         "max_cosine": 0.0},
-        {"query": "dupe", "admitted": False, "reason": "redundant",
-         "max_cosine": 1.0},
+         "max_cosine": None, "topic_cosine": None, "defects": []},
+        {"query": "first distinct facet", "admitted": True, "reason": "distinct",
+         "max_cosine": 0.0, "topic_cosine": 0.0, "defects": []},
+        {"query": "a duplicate query", "admitted": False, "reason": "redundant",
+         "max_cosine": 1.0, "topic_cosine": 0.0, "defects": []},
     ]
 
 
@@ -401,6 +402,10 @@ def _acquisition_probe(monkeypatch, *, planning, plan_reply=None, vectors=None,
             ]
 
     orchestrator = object.__new__(ResearchOrchestrator)
+    # The synthetic facet vectors are orthogonal unit vectors, so their topic
+    # cosine is 0.0 by construction. Cases that are not about the relevance
+    # floor make it inert rather than contort their fixtures around it.
+    config_overrides.setdefault("plan_facet_relevance", 0.0)
     orchestrator.cfg = _config(report_query_planning=planning,
                                **config_overrides)
     orchestrator.ollama = StubOllama(reply=plan_reply, vectors=vectors,
@@ -485,6 +490,99 @@ def test_every_sub_query_result_passes_through_the_source_policy(monkeypatch):
     assert all(d["canonical_url"].startswith("https://") for d in decisions)
 
 
+# --- pre-issue QPP: score a query before spending a search on it -----------
+
+def test_run_together_words_are_rejected_before_a_search_is_spent():
+    """The exact malformation the 2026-08-13 planner emitted."""
+    assert "run_together_words" in query_defects(
+        "postgresql streamingReplication physicalToLogical"
+    )
+
+
+@pytest.mark.parametrize("query", [
+    "Postgres logical replication for major version upgrades",
+    "PostgreSQL WAL archive retention policy",
+    "how to run pg_upgrade without downtime",
+    "upgrading from 14 to 16 with libc/libssl changes",
+])
+def test_legitimate_queries_are_not_flagged(query):
+    """Capitalised names, acronyms, underscores and slashes are all normal."""
+    assert query_defects(query) == []
+
+
+@pytest.mark.parametrize("query,defect", [
+    ("two words", "too_few_words"),
+    (" ".join(["word"] * 40), "too_many_words"),
+    ("--- +++ === 123 456", "low_alphabetic_ratio"),
+])
+def test_query_defects_flags_unusable_shapes(query, defect):
+    assert defect in query_defects(query)
+
+
+def test_malformed_candidates_are_refused_and_recorded():
+    plan = admit_facets(
+        "topic", ["camelCase soupHere now", "a well formed facet"],
+        [E1, E2, E3], distinct=0.85, relevance=0.0, max_facets=8,
+    )
+    assert plan.queries == ["topic", "a well formed facet"]
+    refused = plan.decisions[1]
+    assert refused.reason == "malformed"
+    assert refused.defects == ("run_together_words",)
+
+
+def test_defects_are_recorded_even_on_admitted_queries():
+    """QPP output is provenance, not just a gate -- it must be calibratable."""
+    plan = admit_facets("topic", ["a well formed facet"], [E1, E2],
+                        distinct=0.85, relevance=0.0, max_facets=8)
+    assert plan.decisions[1].as_dict()["defects"] == []
+
+
+# --- the two-sided bar: distinct AND on-topic -------------------------------
+
+def test_off_topic_candidate_is_refused_however_distinct_it_is():
+    """The 2026-08-13 drift: maximally distinct is often least relevant."""
+    plan = admit_facets(
+        "topic", ["a totally unrelated subject"], [E1, E2],
+        distinct=0.85, relevance=0.35, max_facets=8,
+    )
+    assert plan.queries == ["topic"]
+    refused = plan.decisions[1]
+    assert refused.reason == "off_topic"
+    assert refused.topic_cosine == pytest.approx(0.0)
+
+
+def test_a_candidate_must_clear_both_halves_of_the_bar():
+    # Related to the topic (cos 0.6) but not a duplicate of it -> admitted.
+    related = [0.6, 0.8, 0.0, 0.0]
+    plan = admit_facets("topic", ["a related distinct facet"], [E1, related],
+                        distinct=0.85, relevance=0.35, max_facets=8)
+    assert len(plan.queries) == 2
+    assert plan.decisions[1].topic_cosine == pytest.approx(0.6)
+    # Too close to the topic -> redundant, even though it is plainly relevant.
+    plan = admit_facets("topic", ["a near restatement of topic"], [E1, E1],
+                        distinct=0.85, relevance=0.35, max_facets=8)
+    assert plan.queries == ["topic"]
+    assert plan.decisions[1].reason == "redundant"
+
+
+def test_relevance_floor_applies_to_gap_queries_too():
+    ollama = StubOllama(reply='{"facets": ["an off topic gap query"]}',
+                        vectors=[E4])
+    fresh, _, decisions, reason = run(plan_gap_round(
+        ollama, "topic", [("topic", 3, 2)], ["topic"], [E1],
+        distinct=0.85, relevance=0.35, max_total=12,
+    ))
+    assert fresh == []
+    assert reason == "coverage"
+    assert decisions[0].reason == "off_topic"
+
+
+def test_config_rejects_a_relevance_floor_above_the_distinctness_ceiling():
+    """Otherwise no candidate could satisfy both halves and breadth dies."""
+    with pytest.raises(ValueError):
+        _config(plan_facet_relevance=0.9, plan_facet_distinct=0.85)
+
+
 # --- stage 2: novelty saturation and the stop decision ---------------------
 
 def test_novelty_ratio_is_the_new_fraction_and_safe_when_empty():
@@ -538,12 +636,12 @@ def test_round_budget_stops_a_still_productive_search():
 
 def test_gap_queries_are_held_to_the_bar_against_every_issued_query():
     """A gap query redundant with round 1's facets is refused, not issued."""
-    ollama = StubOllama(reply='{"facets": ["redundant gap", "genuine gap here"]}',
+    ollama = StubOllama(reply='{"facets": ["a redundant gap query", "genuine gap here"]}',
                         vectors=[E2, E4])
     fresh, vectors, decisions, reason = run(plan_gap_round(
-        ollama, "topic", [("topic", 3, 2), ("facet a", 1, 1)],
-        ["topic", "facet a"], [E1, E2],
-        distinct=0.85, max_total=12,
+        ollama, "topic", [("topic", 3, 2), ("first distinct facet", 1, 1)],
+        ["topic", "first distinct facet"], [E1, E2],
+        distinct=0.85, relevance=0.0, max_total=12,
     ))
     assert fresh == ["genuine gap here"]
     assert reason == "continue"
@@ -555,7 +653,7 @@ def test_gap_pass_returning_nothing_is_the_coverage_stop():
     ollama = StubOllama(reply='{"facets": []}')
     fresh, _, _, reason = run(plan_gap_round(
         ollama, "topic", [("topic", 5, 4)], ["topic"], [E1],
-        distinct=0.85, max_total=12,
+        distinct=0.85, relevance=0.0, max_total=12,
     ))
     assert fresh == []
     assert reason == "coverage"
@@ -566,7 +664,7 @@ def test_gap_pass_whose_every_proposal_is_covered_is_also_coverage():
                         vectors=[E1])
     fresh, _, _, reason = run(plan_gap_round(
         ollama, "topic", [("topic", 5, 4)], ["topic"], [E1],
-        distinct=0.85, max_total=12,
+        distinct=0.85, relevance=0.0, max_total=12,
     ))
     assert fresh == []
     assert reason == "coverage"
@@ -576,7 +674,7 @@ def test_gap_pass_failure_ends_rounds_without_failing_the_job():
     ollama = StubOllama(generate_error=RuntimeError("ollama down"))
     fresh, _, _, reason = run(plan_gap_round(
         ollama, "topic", [("topic", 5, 4)], ["topic"], [E1],
-        distinct=0.85, max_total=12,
+        distinct=0.85, relevance=0.0, max_total=12,
     ))
     assert fresh == []
     assert reason == "planner_unavailable"
@@ -586,7 +684,7 @@ def test_gap_pass_respects_the_search_budget_without_calling_the_planner():
     ollama = StubOllama(reply='{"facets": ["a gap query here"]}', vectors=[E4])
     fresh, _, _, reason = run(plan_gap_round(
         ollama, "topic", [("topic", 1, 1)], ["topic", "b", "c"], [E1, E2, E3],
-        distinct=0.85, max_total=3,
+        distinct=0.85, relevance=0.0, max_total=3,
     ))
     assert fresh == []
     assert reason == "budget"
@@ -602,11 +700,11 @@ def test_coverage_summary_names_each_query_and_its_yield():
 
 def test_greedy_admit_rejects_inconsistent_inputs():
     with pytest.raises(ValueError):
-        greedy_admit(["a"], [E1], ["b"], [], distinct=0.85, max_total=4)
+        greedy_admit(["a"], [E1], ["b"], [], distinct=0.85, relevance=0.0, max_total=4)
     with pytest.raises(ValueError):
-        greedy_admit(["a"], [], ["b"], [E2], distinct=0.85, max_total=4)
+        greedy_admit(["a"], [], ["b"], [E2], distinct=0.85, relevance=0.0, max_total=4)
     with pytest.raises(ValueError):
-        greedy_admit(["a"], [E1], ["b"], [E2], distinct=0.85, max_total=0)
+        greedy_admit(["a"], [E1], ["b"], [E2], distinct=0.85, relevance=0.0, max_total=0)
 
 
 # --- stage 2: rounds through the acquisition path ---------------------------
@@ -750,17 +848,17 @@ def test_planning_disabled_records_a_single_round_and_no_gap_pass(monkeypatch):
 # --- provenance across rounds ----------------------------------------------
 
 def test_acquisition_provenance_records_rounds_and_the_stop_reason():
-    plan = QueryPlan(queries=["topic", "facet a"],
+    plan = QueryPlan(queries=["topic", "first distinct facet"],
                      decisions=[FacetDecision("topic", True, "topic_seed")],
                      stop_reason="candidates_exhausted")
     provenance = acquisition_provenance(
-        plan, issued_queries=["topic", "facet a", "gap q"],
+        plan, issued_queries=["topic", "first distinct facet", "gap q"],
         decisions=list(plan.decisions),
-        rounds=[RoundRecord(1, ["topic", "facet a"], 10, 10, 1.0, 8, 40),
+        rounds=[RoundRecord(1, ["topic", "first distinct facet"], 10, 10, 1.0, 8, 40),
                 RoundRecord(2, ["gap q"], 6, 1, 1 / 6, 1, 55)],
         stop_reason="saturation",
     )
-    assert provenance["queries"] == ["topic", "facet a", "gap q"]
+    assert provenance["queries"] == ["topic", "first distinct facet", "gap q"]
     assert provenance["facet_count"] == 2
     assert provenance["acquisition_stop_reason"] == "saturation"
     assert provenance["rounds"][1] == {
