@@ -1025,54 +1025,52 @@ closed.
 well-formed; attempt-11 artifacts byte-identical; three previously-failing
 topics re-run clean.
 
-### HUB-038 — Source relevance screening: built, instrumented, SHIPPED INERT
+### HUB-038 — Source relevance screening: calibrated and ENABLED
 
-**Status:** 🟡 PARTIAL — the mechanism is implemented, deployed and fully
-recorded, but **deliberately not enabled**: `PLAN_SOURCE_RELEVANCE` is 0.30,
-below every score observed, so it currently drops nothing. Two calibration
-runs showed no threshold can be trusted yet.
+**Status:** ✅ DONE 2026-08-13. Enabled at `PLAN_SOURCE_RELEVANCE = 0.54`,
+calibrated on a 494-document labelled reference set.
 
-**The problem it targets is real.** The facet floor admits queries, not the
-documents they return: the Redis corpus kept Couchbase and Databricks docs,
-the Kubernetes corpus kept an NIH paper.
+**Method.** Every document retained across all 38 jobs (494 job/document
+pairs, 20 topics) was scored locally and labelled `on_topic` / `marginal` /
+`off_topic` by MiniMax using a purpose-built prompt — deliberately not the
+sealed claim-gate prompt, which judges faithfulness and would conflate two
+questions. 280 on-topic, 113 marginal, 62 off-topic; 38 unparsed and 1 error
+excluded. **A reference set, not ground truth and not a seal:** among 44
+documents labelled more than once, 7 disagreed (16%), so treat differences
+under a few points as noise.
 
-**What was built.** `_screen_sources` scores retained documents before
-ingestion — where it would save embedding, drafting slots and metered calls —
-and records every document's cosine whether kept or dropped. Fail-safe by
-construction: a screening failure or a screen that would empty the job keeps
-everything.
+**The evaluation overturned two conclusions previously drawn by eyeballing
+two unlabelled runs.**
 
-**Two measured corrections along the way, both worth keeping:**
+1. *The screen works.* Topic-anchored AUC is **0.875** on-vs-off, per-topic
+   median **0.975** across the six topics carrying a usable negative sample.
+   The earlier "cannot separate" verdict was an artefact of reading raw score
+   lists without labels.
+2. *Facet anchoring was a mistake and is reverted.* On identical rows it
+   scored **0.741 against the topic's 0.857**, and 0.426 — worse than random —
+   on the Postgres topic. It won only on the single ambiguous topic it had
+   been tuned against: overfitting to n=1.
+3. *Windowed probes are not the improvement they were credited as.* Opening
+   0.872 versus windowed 0.875 is noise at n=342. Kept because it costs only
+   local embeddings and is more robust to boilerplate openings, but no longer
+   claimed as the fix.
 
-1. *Opening-text probes rank documents backwards.* Probing title + first 600
-   chars scored `redis.io` (0.5109) and antirez's blog (0.5131) BELOW generic
-   tutorials (`oneuptime.com` 0.7654), because reference docs open with
-   navigation while blog posts open by restating the topic. Fixed by scoring a
-   document by its best passage across six windows sampled through the whole
-   document. `redis.io` then moved to 0.6492/0.6976, mid-upper.
-2. *The raw topic is the wrong anchor when the topic is ambiguous.* On
-   "Transformer efficiency improvements" the topic embedding sat between both
-   senses and ranked electrical-transformer vendors above arXiv and NVIDIA.
-   Anchoring on the admitted facets instead (the planner's disambiguated
-   reading) moved `arxiv.org` from lowest (0.5262) to 0.7029/0.7364.
+**Operating point.** 0.54 keeps 98.2% of on-topic documents (5 lost of 280)
+while removing 35.5% of off-topic ones, with no adequately-sampled topic below
+91% recall. Chosen for recall over aggression: dropping a correct source costs
+more than keeping a stray one. Dropping nothing on a clean run is expected —
+off-topic documents are ~14% of a corpus.
 
-**Why it is still inert.** Even facet-anchored, the ambiguous topic does not
-separate: electrical vendors score 0.65–0.79 (`next.gr` 0.7854) against
-`docs.pytorch.org` at 0.5873. Any floor that drops the vendors also drops
-legitimate ML sources. The failure mode of enabling it is dropping the *right*
-sources, which is worse than keeping stray ones.
+**The "ambiguity failure" was not one.** On "Transformer efficiency
+improvements" the reference labeller independently marked electrical-transformer
+vendor pages `on_topic`, agreeing with the screen. The topic genuinely reads
+both ways; the earlier report of an inverted ranking assumed an ML sense the
+topic never stated. That is an underspecified-input issue, not a screen defect.
 
-**Diagnosis for whoever picks this up.** On the ambiguous topic the facets
-were correctly ML-specific ("how do transformers reduce computational cost
-during inference") and SearXNG *still* returned electrical vendors. That makes
-homonym contamination a **search** problem that a downstream embedding screen
-cannot repair, because the embedding does not separate the senses either.
-Candidate directions: disambiguating search terms at query time (adding a
-sense-fixing token), or a cheap lexical negative filter, rather than a further
-tightening of this cosine.
-
-**Enable only after** a run demonstrates a floor that drops known-bad sources
-while keeping known-good ones on the same topic.
+**Recorded as future work.** Facet anchoring is genuinely better on ambiguous
+topics (0.972 vs 0.827 there). Routing by *detected* ambiguity — a bimodal
+score distribution within one corpus — is the obvious refinement, left
+unguessed.
 
 ### HUB-039 — Collapse and multi-round machinery do not engage in practice
 

@@ -185,33 +185,45 @@ operator decision, not a config nudge.
 Metered cost rose with drafting — roughly 40 drafted claims per report against
 28 — and every cap is env-tunable to walk back without a rebuild.
 
-## Source screening built but not enabled (HUB-038, 2026-08-13)
+## Source screening calibrated and enabled (HUB-038, 2026-08-13)
 
-`ResearchOrchestrator._screen_sources` scores retained documents against the
-plan's admitted facets before ingestion and records every cosine in job
-progress. It is deployed with `PLAN_SOURCE_RELEVANCE = 0.30`, below every
-score observed, so **it currently drops nothing on purpose**.
+Enabled at `PLAN_SOURCE_RELEVANCE = 0.54`, calibrated on a 494-document
+labelled reference set covering every document retained across all 38 jobs and
+20 topics. Labelled on/marginal/off-topic by MiniMax with a purpose-built
+prompt, not the sealed claim-gate prompt. A reference set, not ground truth: 7
+of 44 repeat-labelled documents disagreed (16%).
 
-Two calibration runs corrected the mechanism and then declined to enable it:
+| Scoring variant | AUC (on vs off) |
+|---|---|
+| Opening text, topic-anchored | 0.872 |
+| **Windowed, topic-anchored (deployed)** | **0.875** |
+| Windowed, facet-anchored | 0.741 |
 
-- Probing a document's opening ranked sources backwards — `redis.io` 0.5109
-  against a generic tutorial at 0.7654 — because reference docs open with
-  navigation. Now scored by the best of six windows sampled across the whole
-  document, which moved `redis.io` to 0.6492/0.6976.
-- The raw topic is the wrong anchor for an ambiguous topic. On "Transformer
-  efficiency improvements" it ranked electrical-transformer vendors above
-  arXiv. Anchoring on the admitted facets moved `arxiv.org` from lowest to the
-  upper half.
+At 0.54 the screen keeps **98.2% of on-topic documents** while removing
+**35.5% of off-topic** ones; no adequately-sampled topic falls below 91%
+recall, and per-topic AUC median is 0.975. Dropping nothing on a clean run is
+expected, since off-topic documents are only ~14% of a corpus.
 
-Even so, that topic does not separate: vendors score 0.65–0.79 against
-`docs.pytorch.org` at 0.5873. Any floor that drops the vendors drops
-legitimate sources too, and dropping correct sources is worse than keeping
-stray ones — so the screen stays inert pending a threshold demonstrated to
-separate known-good from known-bad on one topic.
+The evaluation reversed two earlier conclusions drawn from unlabelled runs:
+the screen does separate, and facet anchoring — introduced to fix one
+ambiguous topic — is worse overall and was reverted as overfitting to n=1.
+Windowed probes turned out to be within noise of the simple opening probe.
 
-The residual insight: the facets were correctly ML-specific and SearXNG still
-returned electrical vendors, making homonym contamination a **search** problem
-an embedding screen downstream cannot repair.
+The supposed ambiguity failure was not one: on "Transformer efficiency
+improvements" the labeller independently marked electrical-transformer pages
+on-topic, agreeing with the screen. The topic reads both ways; the earlier
+report assumed an ML sense the topic never stated.
+
+## Judge reliability after HUB-037 (2026-08-13)
+
+The `reasoning_split` fix introduced a second failure mode that only surfaced
+under the campaign: with reasoning routed to its own field, a reply can carry
+`reasoning_content` and no `content` at all when deliberation consumes the
+token budget, which raised `KeyError` and surfaced as `malformed_output`.
+Missing or blank content now fails closed as a distinct `empty_content` reason
+logging `finish_reason` and reasoning length, and `RESPONSE_MAX_TOKENS` rose
+2048 → 4096 because reasoning counts against the budget even when split out.
+Verified: two further live reports completed on the first attempt.
 
 ## Eight-topic evaluation campaign (2026-08-13) — one blocking defect found
 
