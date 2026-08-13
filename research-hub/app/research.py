@@ -195,6 +195,34 @@ def _query_coverage_rows(
     return rows
 
 
+SOURCE_PROBE_WINDOWS = 6
+SOURCE_PROBE_CHARS = 500
+
+
+def _topic_probe_windows(result: dict) -> list[str]:
+    """Evenly spaced passages used to judge whether a document is on topic.
+
+    Sampling across the whole document rather than its opening is the point:
+    an opening probe measures how promptly a page restates its subject, which
+    rewards blog intros and penalises reference documentation that starts with
+    navigation.
+    """
+    title = (result.get("title") or "").strip()
+    body = (result.get("markdown") or "").strip()
+    if not body:
+        return [title or ""]
+    stride = max(1, (len(body) - SOURCE_PROBE_CHARS) // SOURCE_PROBE_WINDOWS)
+    starts = sorted({
+        min(index * stride, max(0, len(body) - SOURCE_PROBE_CHARS))
+        for index in range(SOURCE_PROBE_WINDOWS)
+    })
+    windows = [body[start:start + SOURCE_PROBE_CHARS] for start in starts]
+    # The title rides with the first window so a well-named page is not judged
+    # on body text alone.
+    windows[0] = f"{title}\n{windows[0]}" if title else windows[0]
+    return windows
+
+
 async def evaluate_crawl_result(result: dict, max_markdown_chars: int) -> None:
     """Reject a fetched document that landed on a disallowed destination or is
     oversized. Raises DestinationNotAllowed with the offending destination."""
@@ -433,6 +461,7 @@ class ResearchOrchestrator:
 
     async def _screen_sources(
         self, topic: str, results: list[dict], *, job_id: str | None = None,
+        anchor_queries: list[str] | None = None,
     ) -> tuple[list[dict], dict]:
         """Drop retained documents that are not about the topic.
 
@@ -446,10 +475,19 @@ class ResearchOrchestrator:
         topic, not that the research found nothing.
         """
         floor = getattr(self.cfg, "plan_source_relevance", 0.0)
-        probes = [topic] + [
-            f"{r.get('title') or ''}\n{(r.get('markdown') or '')[:600]}"
-            for r in results
-        ]
+        windows = [_topic_probe_windows(r) for r in results]
+        # Anchor on the ADMITTED FACETS, not the raw topic. A topic string can
+        # be ambiguous and its embedding then sits between both senses: on
+        # "Transformer efficiency improvements" the topic anchor scored
+        # electrical-transformer vendors above arXiv and NVIDIA, so a threshold
+        # would have dropped the correct sources first (measured 2026-08-13).
+        # The facets are the planner's disambiguated reading of the topic, so
+        # they discriminate where the topic cannot. A collapsed plan has only
+        # the topic, which is then the honest anchor.
+        anchors = anchor_queries[1:] if len(anchor_queries or []) > 1 else (
+            anchor_queries or [topic]
+        )
+        probes = list(anchors) + [w for doc in windows for w in doc]
         try:
             vectors = await self.ollama.embed_batch(probes)
             if len(vectors) != len(probes):
@@ -461,11 +499,22 @@ class ResearchOrchestrator:
             return results, {"applied": False, "reason": "embedding_unavailable",
                              "kept": len(results), "dropped": 0, "scores": []}
 
-        topic_vector = vectors[0]
-        scored = [
-            (result, cosine(vector, topic_vector))
-            for result, vector in zip(results, vectors[1:])
-        ]
+        anchor_vectors = vectors[:len(anchors)]
+        scored: list[tuple[dict, float]] = []
+        cursor = len(anchors)
+        for result, doc_windows in zip(results, windows):
+            span = vectors[cursor:cursor + len(doc_windows)]
+            cursor += len(doc_windows)
+            # A document is on topic if ANY substantial passage of it is. Its
+            # opening is not representative: reference documentation begins
+            # with navigation boilerplate while blog posts begin by restating
+            # the topic, which scored redis.io below generic tutorials when
+            # only the opening was probed (measured 2026-08-13).
+            scored.append((result, max(
+                (cosine(window, anchor)
+                 for window in span for anchor in anchor_vectors),
+                default=0.0,
+            )))
         kept = [result for result, score in scored if score >= floor]
         scores = [
             {"url": (r.get("policy_metadata") or {}).get("canonical_url")
@@ -481,9 +530,12 @@ class ResearchOrchestrator:
                              "kept": len(results), "dropped": 0,
                              "floor": floor, "scores": scores}
 
+        # `diagnostic` is one of the few extras the JSON formatter passes
+        # through; bare keys are silently dropped.
         logger.info("source_screening_completed", extra={
-            "job_id": job_id, "kept": len(kept),
-            "dropped": len(results) - len(kept),
+            "job_id": job_id, "phase": "ingest",
+            "diagnostic": {"kept": len(kept), "dropped": len(results) - len(kept),
+                           "floor": floor},
         })
         return kept, {"applied": True, "reason": "screened", "floor": floor,
                       "kept": len(kept), "dropped": len(results) - len(kept),
@@ -808,14 +860,12 @@ class ResearchOrchestrator:
             # one). Screen documents against the topic before ingestion, where
             # it saves embedding, drafting slots and metered judge calls rather
             # than only tidying the source list.
+            source_screening: dict | None = None
             if planning_enabled and crawl_results:
-                crawl_results, screening = await self._screen_sources(
+                crawl_results, source_screening = await self._screen_sources(
                     topic, crawl_results, job_id=job_id,
+                    anchor_queries=plan.queries,
                 )
-                await self._update_job(job_id, progress={
-                    "phase": "source_screening",
-                    "source_screening": screening,
-                })
 
             await self._update_job(job_id, sources_count=len(crawl_results))
 
@@ -969,6 +1019,7 @@ class ResearchOrchestrator:
                     ) if batches_completed else 0,
                     "crawl_policy": policy_decisions,
                     "robots_respected": respect_robots,
+                    "source_screening": source_screening,
                     "query_plan": acquisition_provenance(
                         plan, issued_queries=issued_queries,
                         decisions=plan_decisions, rounds=rounds,

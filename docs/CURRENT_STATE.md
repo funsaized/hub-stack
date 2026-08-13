@@ -151,6 +151,34 @@ diagnostic is emitted only after a batch completes, the failed attempt logged
 no `served_model` values, so served-model auditing has a gap on failed
 batches.
 
+## Source screening built but not enabled (HUB-038, 2026-08-13)
+
+`ResearchOrchestrator._screen_sources` scores retained documents against the
+plan's admitted facets before ingestion and records every cosine in job
+progress. It is deployed with `PLAN_SOURCE_RELEVANCE = 0.30`, below every
+score observed, so **it currently drops nothing on purpose**.
+
+Two calibration runs corrected the mechanism and then declined to enable it:
+
+- Probing a document's opening ranked sources backwards — `redis.io` 0.5109
+  against a generic tutorial at 0.7654 — because reference docs open with
+  navigation. Now scored by the best of six windows sampled across the whole
+  document, which moved `redis.io` to 0.6492/0.6976.
+- The raw topic is the wrong anchor for an ambiguous topic. On "Transformer
+  efficiency improvements" it ranked electrical-transformer vendors above
+  arXiv. Anchoring on the admitted facets moved `arxiv.org` from lowest to the
+  upper half.
+
+Even so, that topic does not separate: vendors score 0.65–0.79 against
+`docs.pytorch.org` at 0.5873. Any floor that drops the vendors drops
+legitimate sources too, and dropping correct sources is worse than keeping
+stray ones — so the screen stays inert pending a threshold demonstrated to
+separate known-good from known-bad on one topic.
+
+The residual insight: the facets were correctly ML-specific and SearXNG still
+returned electrical vendors, making homonym contamination a **search** problem
+an embedding screen downstream cannot repair.
+
 ## Eight-topic evaluation campaign (2026-08-13) — one blocking defect found
 
 A deliberately varied campaign against the deployed stack: six topics chosen

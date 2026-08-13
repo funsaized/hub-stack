@@ -995,11 +995,67 @@ def _doc(url, title="t", markdown="body"):
             "policy_metadata": {"canonical_url": url}}
 
 
+def test_probe_windows_sample_the_whole_document_not_its_opening():
+    """Regression for the inverted ranking measured 2026-08-13: probing only
+    the opening scored redis.io below generic tutorials, because reference
+    docs begin with navigation while blog posts begin by restating the topic.
+    """
+    from app.research import _topic_probe_windows
+    body = "".join(f"section {i} " * 40 for i in range(10))
+    windows = _topic_probe_windows({"title": "T", "markdown": body})
+    assert len(windows) > 1
+    assert windows[0].startswith("T\n")
+    # The last window is drawn from deep in the document, not near the start.
+    assert "section 9" in windows[-1] or "section 8" in windows[-1]
+
+
+def test_probe_windows_handle_short_and_empty_documents():
+    from app.research import _topic_probe_windows
+    assert _topic_probe_windows({"title": "T", "markdown": ""}) == ["T"]
+    short = _topic_probe_windows({"title": "T", "markdown": "tiny body"})
+    assert short and all(isinstance(w, str) for w in short)
+
+
+def test_documents_are_scored_against_facets_not_the_ambiguous_topic():
+    """Regression for the 2026-08-13 calibration run.
+
+    On "Transformer efficiency improvements" the topic embedding sat between
+    both senses and scored electrical-transformer vendors ABOVE arXiv and
+    NVIDIA, so any threshold would have dropped the correct sources first. The
+    admitted facets are the planner's disambiguated reading, so they are the
+    anchor; the topic seed is excluded whenever facets exist.
+    """
+    from app.research import ResearchOrchestrator
+    subject = object.__new__(ResearchOrchestrator)
+    subject.cfg = _config(plan_source_relevance=0.5)
+    # anchors -> [E2] (the facet); the ambiguous topic seed E1 is not used.
+    subject.ollama = StubOllama(vectors=[E2, E2, E1])
+    kept, _screening = run(subject._screen_sources(
+        "ambiguous topic",
+        [_doc("https://right-sense.example"), _doc("https://wrong-sense.example")],
+        anchor_queries=["ambiguous topic", "the disambiguating facet"],
+    ))
+    assert [d["url"] for d in kept] == ["https://right-sense.example"]
+
+
+def test_a_collapsed_plan_falls_back_to_the_topic_as_anchor():
+    from app.research import ResearchOrchestrator
+    subject = object.__new__(ResearchOrchestrator)
+    subject.cfg = _config(plan_source_relevance=0.5)
+    subject.ollama = StubOllama(vectors=[E1, E1, E2])
+    kept, _screening = run(subject._screen_sources(
+        "a topic", [_doc("https://on.example"), _doc("https://off.example")],
+        anchor_queries=["a topic"],
+    ))
+    assert [d["url"] for d in kept] == ["https://on.example"]
+
+
 def test_off_topic_documents_are_dropped_before_ingestion(monkeypatch):
     """The measured case: an on-topic facet still returned Couchbase docs."""
     subject = _screener(monkeypatch, vectors=[E1, E1, E2])
     kept, screening = run(subject._screen_sources(
-        "a topic", [_doc("https://on-topic.example"), _doc("https://off.example")],
+        "a topic", [_doc("https://on-topic.example"),
+                    _doc("https://off.example")],
     ))
     assert [d["url"] for d in kept] == ["https://on-topic.example"]
     assert screening["applied"] is True

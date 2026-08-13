@@ -1025,36 +1025,54 @@ closed.
 well-formed; attempt-11 artifacts byte-identical; three previously-failing
 topics re-run clean.
 
-### HUB-038 — Facet relevance is guarded; source relevance is not
+### HUB-038 — Source relevance screening: built, instrumented, SHIPPED INERT
 
-**Status:** ✅ DONE 2026-08-13 — source screening implemented, deployed and
-measured.
+**Status:** 🟡 PARTIAL — the mechanism is implemented, deployed and fully
+recorded, but **deliberately not enabled**: `PLAN_SOURCE_RELEVANCE` is 0.30,
+below every score observed, so it currently drops nothing. Two calibration
+runs showed no threshold can be trusted yet.
 
-**Defect.** `PLAN_FACET_RELEVANCE` admits *queries*, not the documents they
-return, so an entirely on-topic facet could still retain off-topic sources:
-the Redis `appendfsync` corpus kept Couchbase and Databricks documentation and
-the Kubernetes corpus kept an NIH paper. Every stray document was a candidate
-for span drafting and therefore for metered judge calls.
+**The problem it targets is real.** The facet floor admits queries, not the
+documents they return: the Redis corpus kept Couchbase and Databricks docs,
+the Kubernetes corpus kept an NIH paper.
 
-**Fix.** `ResearchOrchestrator._screen_sources` scores each retained
-document's title plus opening text against the topic with the already-deployed
-embedding model — one extra local batch call — and drops anything below
-`PLAN_SOURCE_RELEVANCE`. It runs *before* ingestion, so it saves embedding,
-drafting slots and metered calls rather than only tidying the source list, and
-only when planning is enabled, preserving the flag-off equivalence guarantee.
+**What was built.** `_screen_sources` scores retained documents before
+ingestion — where it would save embedding, drafting slots and metered calls —
+and records every document's cosine whether kept or dropped. Fail-safe by
+construction: a screening failure or a screen that would empty the job keeps
+everything.
 
-Two deliberate fail-safe properties, both tested: a screening failure keeps
-every document, because losing a corpus to a flaky embed call is far worse
-than a few stray sources; and a screen that would empty the job keeps
-everything too, because that means the threshold is wrong for the topic rather
-than that the research found nothing. Every document's cosine is recorded in
-job progress whether kept or dropped.
+**Two measured corrections along the way, both worth keeping:**
 
-`PLAN_SOURCE_RELEVANCE` ships permissive at `0.30` and fully recorded —
-the same discipline that moved `PLAN_FACET_RELEVANCE` from a guessed 0.35 to a
-measured 0.55. Document-versus-topic cosines are a different distribution from
-query-versus-query, so the value is explicitly uncalibrated until the next
-campaign.
+1. *Opening-text probes rank documents backwards.* Probing title + first 600
+   chars scored `redis.io` (0.5109) and antirez's blog (0.5131) BELOW generic
+   tutorials (`oneuptime.com` 0.7654), because reference docs open with
+   navigation while blog posts open by restating the topic. Fixed by scoring a
+   document by its best passage across six windows sampled through the whole
+   document. `redis.io` then moved to 0.6492/0.6976, mid-upper.
+2. *The raw topic is the wrong anchor when the topic is ambiguous.* On
+   "Transformer efficiency improvements" the topic embedding sat between both
+   senses and ranked electrical-transformer vendors above arXiv and NVIDIA.
+   Anchoring on the admitted facets instead (the planner's disambiguated
+   reading) moved `arxiv.org` from lowest (0.5262) to 0.7029/0.7364.
+
+**Why it is still inert.** Even facet-anchored, the ambiguous topic does not
+separate: electrical vendors score 0.65–0.79 (`next.gr` 0.7854) against
+`docs.pytorch.org` at 0.5873. Any floor that drops the vendors also drops
+legitimate ML sources. The failure mode of enabling it is dropping the *right*
+sources, which is worse than keeping stray ones.
+
+**Diagnosis for whoever picks this up.** On the ambiguous topic the facets
+were correctly ML-specific ("how do transformers reduce computational cost
+during inference") and SearXNG *still* returned electrical vendors. That makes
+homonym contamination a **search** problem that a downstream embedding screen
+cannot repair, because the embedding does not separate the senses either.
+Candidate directions: disambiguating search terms at query time (adding a
+sense-fixing token), or a cheap lexical negative filter, rather than a further
+tightening of this cosine.
+
+**Enable only after** a run demonstrates a floor that drops known-bad sources
+while keeping known-good ones on the same topic.
 
 ### HUB-039 — Collapse and multi-round machinery do not engage in practice
 
