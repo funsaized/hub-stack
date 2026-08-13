@@ -39,14 +39,18 @@ class Config:
     report_retrieval_min_score: float | None = None
     # Synthesis breadth. With a planned corpus of 30+ sources the drafting
     # caps, not the corpus, become the limit on how much a report can say.
-    report_max_span_claims: int = 16
-    report_max_pair_claims: int = 12
+    # Sized to consume the available span supply, which measured 25 per report
+    # (2026-08-13). Supply itself is capped upstream by pack_evidence fitting
+    # evidence into the 8K model context, so raising these past ~25 buys
+    # nothing until MODEL_CONTEXT_TOKENS rises with it.
+    report_max_span_claims: int = 24
+    report_max_pair_claims: int = 16
     # Sized above the observed verified-claim count (15-16 per report) so the
     # display cap is not what limits a report -- evidence should be. Raised
     # from 12 on 2026-08-13, when every successful report in the evaluation
     # campaign hit the cap with 3-4 verified claims withheld. Costs nothing at
     # the gate: drafting volume, and therefore metered calls, is unchanged.
-    report_max_findings: int = 20
+    report_max_findings: int = 30
     report_max_disagreements: int = 4
     report_max_corrections: int = 6
     report_hybrid_retrieval: bool = True
@@ -160,9 +164,9 @@ def load_config() -> Config:
             os.environ.get("REPORT_MAX_CHUNKS_PER_SOURCE", "3")
         ),
         report_retrieval_min_score=float(min_score) if min_score else None,
-        report_max_span_claims=int(os.environ.get("REPORT_MAX_SPAN_CLAIMS", "16")),
-        report_max_pair_claims=int(os.environ.get("REPORT_MAX_PAIR_CLAIMS", "12")),
-        report_max_findings=int(os.environ.get("REPORT_MAX_FINDINGS", "20")),
+        report_max_span_claims=int(os.environ.get("REPORT_MAX_SPAN_CLAIMS", "24")),
+        report_max_pair_claims=int(os.environ.get("REPORT_MAX_PAIR_CLAIMS", "16")),
+        report_max_findings=int(os.environ.get("REPORT_MAX_FINDINGS", "30")),
         report_max_disagreements=int(
             os.environ.get("REPORT_MAX_DISAGREEMENTS", "4")
         ),
