@@ -1117,6 +1117,47 @@ normal path.
 **No code change.** The fix was that the docs claimed more than the system
 does.
 
+### HUB-040 — Cross-source disagreements never fire; pair selection is the cause
+
+**Status:** 🔴 OPEN — diagnosed 2026-08-13, cause identified, fix not attempted.
+
+**Observation.** Not one verified source disagreement has appeared in any job
+ever run, including topics chosen specifically to elicit them. Until now the
+claim `kind` was invisible in logs and progress, so "no disagreements" was
+unfalsifiable — it could equally have been the drafter, the gate, or the
+display cap.
+
+**Measured, on "Microservices versus monolithic architecture tradeoffs":**
+
+```
+pairs_offered: 16
+drafted_by_kind:  {"finding": 6}      <- zero disagreements proposed
+verified_by_kind: {"finding": 3}
+draft_rejections: {"declined_pair": 9, "duplicate_claim": 1}
+```
+
+**The gate is exonerated.** No disagreement is ever rejected because none is
+ever drafted. The drafter classifies every usable pair as a `finding`, and
+declines 9 of 16 pairs outright as uncombinable.
+
+**Likely cause: `_pair_candidates` ranks by shared vocabulary.** That selects
+span pairs that *combine easily*, which is close to the opposite of selecting
+pairs that *conflict*. Two sources that disagree share a subject but diverge
+in the assertion; lexical overlap does not favour that, and the prompt's
+easier `finding` branch absorbs whatever remains. The 9 declines suggest the
+selected pairs are often not related enough to combine at all.
+
+**Fix directions, none validated.** Select pairs for contrast rather than
+overlap — for example high subject similarity with low assertion similarity —
+or add an explicit cheap "do these two spans conflict?" pass before drafting
+and route only positives down the disagreement branch. Both are guesses until
+measured; the instrumentation added here is what makes measuring them
+possible.
+
+**Do not treat the standing disclaimer as covering this.** Reports currently
+say "No material source disagreements were identified", which reads as a
+finding about the sources. It is presently a statement about the drafter.
+
 ### HUB-025 — Add scheduled research jobs
 
 Add recurring jobs only after the durable worker, idempotency, and notification paths are complete.
