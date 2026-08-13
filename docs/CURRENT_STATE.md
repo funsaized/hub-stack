@@ -151,6 +151,48 @@ diagnostic is emitted only after a batch completes, the failed attempt logged
 no `served_model` values, so served-model auditing has a gap on failed
 batches.
 
+## Query planning measured at scale — acceptance met (HUB-024, 2026-08-13)
+
+Five live runs on one fixed topic (`depth=6`, `max_sources=12`,
+`per_domain_limit=2`), each a controlled repeat of the `24a8a471` baseline:
+
+| Run | Queries / rounds | Sources / domains | Off-topic domains | Findings | Report |
+|---|---|---|---|---|---|
+| baseline (no planning) | 1 / — | 6 / 6 | — | 6 | ok, 1st attempt |
+| 2 — novelty bug | 12 / 3 | 15 / 14 | ~4 | 6 | failed, ok on retry |
+| 3 — novelty window fixed | 5 / 2 | 12 / 11 | 0 | — | failed |
+| 4 — coverage stopping | 5 / 1 | 6 / 5 | 1 | 5 | ok, 1st attempt |
+| **5 — scaled (`70a0de86`)** | **5 / 1** | **25 / 23** | **0** | **12 (+3 withheld)** | **ok, 1st attempt** |
+
+**The acceptance criterion is met**: 25 retained sources across 23 distinct
+domains against the single-query baseline's 6/6, with no off-topic
+acquisition. One round, stopped by `coverage_complete`, 25 crawled from a pool
+of 70. All five admitted facets scored topic cosine 0.65–0.79, none malformed.
+
+Run 4 is the instructive one. It fixed drift and simultaneously *failed*
+breadth (6/5, below baseline), because the per-round crawl cap was `depth`
+regardless of facet count — a five-facet plan saw 100 candidates and fetched
+6. The breadth in runs 2 and 3 had come from extra rounds spending extra
+budget, not from better queries. Making `depth` the per-facet allowance is
+what converted clean facets into a wide corpus.
+
+Report quality rose with the corpus rather than despite it: 12 displayed
+findings (3 more verified but withheld by display limits) against the
+baseline's 6, including a verified cross-document pair citing both sources,
+and the substantive sequence-replication caveat that the baseline also found.
+All 15 logged verdicts reported served model `MiniMax-M3`.
+
+Honest limits. One displayed finding is promotional filler ("Embrace logical
+replication — your database operations will thank you for it!") that passed
+the gate because it *is* faithfully entailed by its span: the judge verifies
+faithfulness, not informativeness, so span selection — not the gate — is the
+remaining quality lever. `PLAN_FACET_RELEVANCE = 0.55` is now calibrated from
+measurement rather than guessed, but on one topic only.
+
+Isolation after the run: attempt-11 report and registry byte-identical
+(`068d60b2…`, `d6748d76…`), v4 seal unchanged (`762e7a19…`), corpus grew to
+124 documents / 18 reports.
+
 ## Query planning: stopping and query quality rebuilt (HUB-024, 2026-08-13)
 
 Merged after the measurement above, grounded in a second prior-art pass (11
