@@ -366,8 +366,9 @@ class QdrantClient:
 class SearXNGClient:
     """Private meta-search via SearXNG."""
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, engines: str | None = None):
         self.base_url = base_url.rstrip("/")
+        self.engines = engines or "duckduckgo,bing,brave,startpage,mojeek,qwant"
         self._client = httpx.AsyncClient(timeout=30.0)
 
     async def close(self):
@@ -390,12 +391,25 @@ class SearXNGClient:
                     "format": "json",
                     "language": language,
                     "categories": "general",
-                    "engines": "duckduckgo,startpage,brave",
+                    "engines": self.engines,
                     "count": max_results,
                 },
             )
             r.raise_for_status()
             data = r.json()
+            # A suspended or CAPTCHA-blocked engine returns zero results, which
+            # is indistinguishable from a genuinely empty web unless the reason
+            # is surfaced. Running on one engine meant that state took down all
+            # acquisition while reporting only "No search results found"
+            # (HUB-042).
+            unresponsive = data.get("unresponsive_engines") or []
+            if unresponsive and not data.get("results"):
+                logger.warning("searxng_engines_unavailable", extra={
+                    "diagnostic": {
+                        "requested_engines": self.engines,
+                        "unresponsive": [list(entry) for entry in unresponsive],
+                    },
+                })
             results = []
             for item in data.get("results", []):
                 results.append({

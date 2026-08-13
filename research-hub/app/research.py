@@ -313,7 +313,9 @@ class ResearchOrchestrator:
             vector_size=cfg.embedding_dimension,
             embedding_model=cfg.embedding_model,
         )
-        self.searxng = SearXNGClient(cfg.searxng_url)
+        self.searxng = SearXNGClient(
+            cfg.searxng_url, getattr(cfg, "searxng_engines", None)
+        )
         self.crawl4ai = Crawl4AIClient(cfg.crawl4ai_url, cfg.crawl4ai_token or None)
         self.documents = DocumentStore(cfg.document_store_path)
         self.retrieval = ScopedRetrievalService(

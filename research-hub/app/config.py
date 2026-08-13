@@ -16,6 +16,11 @@ class Config:
     crawl4ai_url: str
     crawl4ai_token: str
     log_level: str
+    # Which engines a research search asks for. Several by design: the stack
+    # ran on duckduckgo alone until 2026-08-13, so one CAPTCHA blocked all
+    # acquisition (HUB-042). Query planning issues 3-6 searches per job, which
+    # makes spreading the load load-bearing rather than nice to have.
+    searxng_engines: str = "duckduckgo,bing,brave,startpage,mojeek,qwant"
     qdrant_collection: str = "research_corpus"
     embedding_dimension: int = 768
     chunk_size: int = 800
@@ -136,6 +141,9 @@ def load_config() -> Config:
         llm_model=os.environ.get("LLM_MODEL", "qwen3.5:9b"),
         embedding_model=os.environ.get("EMBEDDING_MODEL", "nomic-embed-text"),
         searxng_url=os.environ.get("SEARXNG_URL", "http://localhost:8080"),
+        searxng_engines=os.environ.get(
+            "SEARXNG_ENGINES", "duckduckgo,bing,brave,startpage,mojeek,qwant"
+        ),
         crawl4ai_url=os.environ.get("CRAWL4AI_URL", "http://localhost:11235"),
         crawl4ai_token=os.environ.get("CRAWL4AI_TOKEN", ""),
         log_level=os.environ.get("LOG_LEVEL", "info"),

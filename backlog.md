@@ -1181,10 +1181,15 @@ were retrieved, the budget, the reserve, and that raising or omitting
 
 ### HUB-042 — Search engines exhaust under sustained job volume
 
-**Status:** 🔴 OPEN — observed 2026-08-13 after roughly 30 research jobs in a
-day.
+**Status:** 🟡 MITIGATED 2026-08-13 by widening the engine pool and surfacing
+suspension. Not closed: the underlying quota problem is unsolved, and one
+follow-up is now open (see the calibration note below).
 
-Every SearXNG upstream rate-limited or CAPTCHA-blocked at once:
+**Root cause was worse than reported.** `searxng/settings.yml` disabled bing,
+google, brave and startpage, so despite the client requesting
+`duckduckgo,startpage,brave`, the stack ran on **duckduckgo alone**. A single
+CAPTCHA therefore took down all acquisition, and every upstream appeared
+suspended at once:
 
 ```
 brave      Suspended: too many requests
@@ -1193,17 +1198,34 @@ startpage  Suspended: CAPTCHA
 google cse Suspended: too many requests
 ```
 
-Jobs then fail with "No search results found" after three attempts. The
-failure is clean and retryable, but acquisition is fully blocked until the
-suspensions lapse, and nothing backs off, rotates engines, or surfaces the
-cause — the job error says only that no results were found.
+**Mitigation.** Enabled bing, brave, startpage, mojeek and qwant alongside
+duckduckgo — keyless engines only; google needs an API key and suspends
+immediately without one. The engine list is now `SEARXNG_ENGINES`, so it can
+be changed without a rebuild. `SearXNGClient` also logs
+`searxng_engines_unavailable` with the per-engine reason whenever a search
+returns nothing while engines are unresponsive, so suspension is no longer
+indistinguishable from an empty web.
 
-This is the practical ceiling on throughput, and query planning raises the
-pressure by issuing 3–6 searches per job instead of one.
+**Verified with five of six engines still blocked.** A live search returned 10
+results via bing while brave, duckduckgo, qwant, startpage and google cse were
+all CAPTCHA'd or suspended, and a full research job completed on the first
+attempt. That is the whole point: one survivor keeps acquisition alive.
 
-**Directions:** report engine suspension distinctly from a genuine empty
-result; back off between jobs; widen the engine list; or add API-keyed
-engines for sustained use.
+**New finding — engine choice shifts the screening input distribution.** That
+job crawled 17 documents and the source screen dropped **11**, far above the
+~5% overall drop the HUB-038 calibration predicts. Bing returns lower-precision
+results for a specific query (the PostgreSQL homepage, a w3schools tutorial,
+Wikipedia) where duckduckgo returned targeted pages. The screen caught them,
+which is it working — but `PLAN_SOURCE_RELEVANCE = 0.54` was calibrated on a
+corpus built almost entirely from duckduckgo results. **The reference set is
+now unrepresentative of the deployed search mix and should be rebuilt once the
+engine pool settles.**
+
+**Still unsolved.** Nothing backs off, and heavy use will exhaust the wider
+pool too — just more slowly. Remaining directions: cache searches by canonical
+query (highest leverage for repeated-topic use, and it would have made the
+whole evaluation campaign nearly free); or add API-keyed providers with
+documented quotas instead of silent suspension.
 
 ### HUB-025 — Add scheduled research jobs
 

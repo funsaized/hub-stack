@@ -15,14 +15,24 @@ search:
     - json
 
 # Enable JSON output for the crawler to consume
+# Keyless general-web engines, deliberately several (HUB-042). Running on one
+# engine meant a single CAPTCHA blocked all acquisition; query planning issues
+# 3-6 searches per job, so the load has to spread. google/google cse stay off:
+# they need an API key and suspend immediately without one.
 engines:
   - name: duckduckgo
     disabled: false
   - name: bing
-    disabled: true
-  - name: google
-    disabled: true
+    disabled: false
   - name: brave
-    disabled: true
+    disabled: false
   - name: startpage
+    disabled: false
+  - name: mojeek
+    disabled: false
+  - name: qwant
+    disabled: false
+  - name: wikipedia
+    disabled: false
+  - name: google
     disabled: true

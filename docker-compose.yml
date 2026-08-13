@@ -223,6 +223,7 @@ services:
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-768}
       - SEARXNG_URL=http://hub-searxng:8080
+      - SEARXNG_ENGINES=${SEARXNG_ENGINES:-duckduckgo,bing,brave,startpage,mojeek,qwant}
       - CRAWL4AI_URL=http://hub-crawl4ai:11235
       - CRAWL4AI_TOKEN=${CRAWL4AI_API_TOKEN:?Set CRAWL4AI_API_TOKEN in .env — generate with openssl rand -hex 32}
       - LOG_LEVEL=info
@@ -297,6 +298,7 @@ services:
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
       - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-768}
       - SEARXNG_URL=http://hub-searxng:8080
+      - SEARXNG_ENGINES=${SEARXNG_ENGINES:-duckduckgo,bing,brave,startpage,mojeek,qwant}
       - CRAWL4AI_URL=http://hub-crawl4ai:11235
       - CRAWL4AI_TOKEN=${CRAWL4AI_API_TOKEN:?Set CRAWL4AI_API_TOKEN in .env — generate with openssl rand -hex 32}
       - WORKER_LEASE_SECONDS=${WORKER_LEASE_SECONDS:-60}
