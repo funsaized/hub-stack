@@ -1,6 +1,51 @@
 # Current deployed state
 
-Last verified: 2026-08-12 on the local Windows 11 workstation.
+Last verified: 2026-08-13 on the local Windows 11 workstation.
+
+## Live report generated through the deployed judge gate (2026-08-13)
+
+The judge pivot had been proven structurally but no report had ever been
+produced end-to-end through the deployed gate. One small research job on a
+fresh topic now closes that gap.
+
+Job `24a8a471-2d83-4e2c-b6e2-f719c53c68f9`, topic "Postgres logical
+replication for major version upgrades with minimal downtime" (`depth=6`,
+`max_sources=12`, `per_domain_limit=2`) — deliberately unrelated to the
+attempt-11 clinical-AI corpus. Ingestion completed in ~39 s (6 retained
+sources from 29 policy-accepted candidates, 446 chunks, 0 duplicates,
+`robots_respected: true`); synthesis completed on **attempt 1** in ~105 s.
+
+Gate behavior, audited from the worker's `judge_verification_diagnostic`
+records:
+
+- **8 metered judge calls** (4 single-span claims + 4 cross-document pair
+  claims), well inside the 8+8 drafting caps (`MAX_SPAN_CANDIDATES`,
+  `MAX_DISAGREEMENT_PAIRS`); no correction pass was needed, so
+  `MAX_CORRECTION_CLAIMS` was never spent.
+- **Every one of the 8 verdicts reported `served_model: "MiniMax-M3"`
+  exactly.** No served-model drift; the v4 re-baseline trigger is not tripped.
+- The gate discriminated rather than rubber-stamping: 6 claims accepted, 2
+  pair claims rejected `padding_reference` (a reference judged unnecessary to
+  the claim) — the same padding-rejection behavior the v4 blind final
+  measured at 1.0.
+- Two pair claims verified with per-ref necessity and **both citations are
+  displayed** (`[S4][S5]`). Because cross-document pairs *were* available,
+  the standing cross-source disclaimer is correctly absent; the disagreements
+  section carries the ordinary "no material source disagreements" empty
+  state instead.
+- The report discloses its own gaps: 8 candidate sentences yielded no
+  verified claim (`declined_pair=2`, `declined_span=4`, `padding_reference=2`).
+
+Isolation verified after the run: the attempt-11 report and source registry
+remain byte-identical (`068d60b2…`, `d6748d76…`), the v4 seal file is
+unchanged (`762e7a19…`), and the only state movement is the new job's own
+(67 → 73 documents, 13 → 14 reports).
+
+**Single-query acquisition baseline (for HUB-024):** this job issued exactly
+one SearXNG query and retained **6 sources across 6 distinct domains**
+(`docs.aws.amazon.com`, `pganalyze.com`, `postgres.ai`, `runebook.dev`,
+`www.pgedge.com`, `www.pistack.xyz`). Any query-planning comparison measures
+against these numbers on this topic.
 
 ## Claim gate: MiniMax M3 judge deployed; NLI stack decommissioned (HUB-034)
 
