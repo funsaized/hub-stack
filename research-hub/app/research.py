@@ -461,6 +461,56 @@ class ResearchOrchestrator:
         from .synthesis import generate_report
         return await generate_report(self, job_id)
 
+    async def _rank_by_snippet(
+        self, topic: str, results_by_facet: list[list[dict]], *,
+        job_id: str | None = None,
+    ) -> tuple[list[list[dict]], dict]:
+        """Order each facet's results by snippet relevance before interleaving.
+
+        The crawl cap decides which candidates get fetched, so ordering decides
+        what the budget is spent on. Ranking rather than thresholding is
+        deliberate: a cutoff on title+snippet would need its own calibrated
+        number, and snippets score differently from the full documents
+        PLAN_SOURCE_RELEVANCE was measured on. Ranking wastes no crawl on junk
+        without ever discarding a candidate on a guessed threshold.
+
+        Ranks WITHIN each facet, never across them, so interleaving still
+        shares the budget between facets (ADR-002 stage 1).
+        """
+        flat = [r for facet in results_by_facet for r in facet]
+        if not flat:
+            return results_by_facet, {"applied": False, "reason": "no_results"}
+        probes = [topic] + [
+            (r.get("title") or "") + "\n" + (r.get("snippet") or "")
+            for r in flat
+        ]
+        try:
+            vectors = await self.ollama.embed_batch(probes)
+            if len(vectors) != len(probes):
+                raise RuntimeError("embedding count mismatch")
+        except Exception as exc:
+            logger.warning("snippet_ranking_unavailable", extra={
+                "job_id": job_id, "failure_reason": type(exc).__name__,
+            })
+            return results_by_facet, {"applied": False,
+                                      "reason": "embedding_unavailable"}
+
+        topic_vector = vectors[0]
+        scores = {
+            id(result): cosine(vector, topic_vector)
+            for result, vector in zip(flat, vectors[1:])
+        }
+        ranked = [
+            sorted(facet, key=lambda r: scores[id(r)], reverse=True)
+            for facet in results_by_facet
+        ]
+        ordered = sorted(scores.values(), reverse=True)
+        return ranked, {
+            "applied": True, "reason": "ranked", "candidates": len(flat),
+            "best": round(ordered[0], 4), "worst": round(ordered[-1], 4),
+            "median": round(ordered[len(ordered) // 2], 4),
+        }
+
     async def _screen_sources(
         self, topic: str, results: list[dict], *, job_id: str | None = None,
         anchor_queries: list[str] | None = None,
@@ -613,6 +663,8 @@ class ResearchOrchestrator:
             seen_canonical: set[str] = set()
             issued_queries = list(plan.queries)
             issued_vectors = list(plan.vectors)
+            search_pacing = getattr(self.cfg, "search_pacing_seconds", 0.0)
+            snippet_ranking: dict | None = None
             query_results: dict[str, set[str]] = {}
             covered_facets = 0
             issued_facets = 0
@@ -692,15 +744,25 @@ class ResearchOrchestrator:
                                        progress={"phase": "searching", "topic": topic,
                                                  "round": round_index})
                 with phase_timer("search", logger, job_id=job_id):
-                    # Sequential: a handful of facets costs seconds against the
-                    # local SearXNG, and firing them concurrently would push a
-                    # burst at the same upstream engines.
-                    results_by_facet = [
-                        await self.searxng.search(
+                    # Sequential and paced. Firing a plan's queries in
+                    # immediate succession is what CAPTCHAs an engine:
+                    # SearXNG's own guidance is to back off, and this stack
+                    # ran ~250 queries in bursts before four of six engines
+                    # blocked (ADR-002 stage 1). Seconds per job against a
+                    # ~180s job is a rounding error.
+                    results_by_facet = []
+                    for index, query in enumerate(round_queries):
+                        if index and search_pacing > 0:
+                            await asyncio.sleep(search_pacing)
+                        results_by_facet.append(await self.searxng.search(
                             query, max_results=max_sources, language=language
-                        )
-                        for query in round_queries
-                    ]
+                        ))
+                # Spend the crawl cap on the most relevant candidates rather
+                # than on whatever the engine happened to rank first.
+                if planning_enabled:
+                    results_by_facet, snippet_ranking = await self._rank_by_snippet(
+                        topic, results_by_facet, job_id=job_id,
+                    )
                 merged = interleave(results_by_facet)
                 if round_index == 1:
                     SEARCH_RESULTS.observe(len(merged))
@@ -1020,6 +1082,7 @@ class ResearchOrchestrator:
                     "crawl_policy": policy_decisions,
                     "robots_respected": respect_robots,
                     "source_screening": source_screening,
+                    "snippet_ranking": snippet_ranking,
                     "query_plan": acquisition_provenance(
                         plan, issued_queries=issued_queries,
                         decisions=plan_decisions, rounds=rounds,

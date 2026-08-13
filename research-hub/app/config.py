@@ -21,6 +21,10 @@ class Config:
     # acquisition (HUB-042). Query planning issues 3-6 searches per job, which
     # makes spreading the load load-bearing rather than nice to have.
     searxng_engines: str = "duckduckgo,bing,brave,startpage,mojeek,qwant"
+    # Delay between a plan's searches. Firing 3-6 queries in immediate
+    # succession is what triggers a CAPTCHA; SearXNG's own guidance is to back
+    # off. Seconds per job against a ~180s job is a rounding error (ADR-002).
+    search_pacing_seconds: float = 2.0
     qdrant_collection: str = "research_corpus"
     embedding_dimension: int = 768
     chunk_size: int = 800
@@ -121,6 +125,8 @@ class Config:
             raise ValueError("PLAN_FACET_DISTINCT must be in (0.0, 1.0]")
         if not 0.0 <= self.plan_facet_relevance < 1.0:
             raise ValueError("PLAN_FACET_RELEVANCE must be in [0.0, 1.0)")
+        if not 0.0 <= self.search_pacing_seconds <= 30.0:
+            raise ValueError("SEARCH_PACING_SECONDS must be in [0.0, 30.0]")
         if not 0.0 <= self.plan_source_relevance < 1.0:
             raise ValueError("PLAN_SOURCE_RELEVANCE must be in [0.0, 1.0)")
         if self.plan_facet_relevance >= self.plan_facet_distinct:
@@ -147,6 +153,9 @@ def load_config() -> Config:
         llm_model=os.environ.get("LLM_MODEL", "qwen3.5:9b"),
         embedding_model=os.environ.get("EMBEDDING_MODEL", "nomic-embed-text"),
         searxng_url=os.environ.get("SEARXNG_URL", "http://localhost:8080"),
+        search_pacing_seconds=float(
+            os.environ.get("SEARCH_PACING_SECONDS", "2.0")
+        ),
         searxng_engines=os.environ.get(
             "SEARXNG_ENGINES", "duckduckgo,bing,brave,startpage,mojeek,qwant"
         ),

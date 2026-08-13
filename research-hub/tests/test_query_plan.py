@@ -70,7 +70,12 @@ class StubOllama:
         if self._embed_error:
             raise self._embed_error
         if self._vector_queue is not None:
-            return self._vector_queue.pop(0) if self._vector_queue else []
+            # Both the planner and the pre-crawl ranker call embed_batch. Only
+            # serve a queued set when its size matches the request, so the
+            # ranker cannot consume vectors staged for a later planning round.
+            if self._vector_queue and len(self._vector_queue[0]) == len(texts):
+                return self._vector_queue.pop(0)
+            return [E1] * len(texts)
         return self._vectors
 
 
@@ -419,6 +424,7 @@ def _acquisition_probe(monkeypatch, *, planning, plan_reply=None, vectors=None,
     # cosine is 0.0 by construction. Cases that are not about the relevance
     # floor make it inert rather than contort their fixtures around it.
     config_overrides.setdefault("plan_facet_relevance", 0.0)
+    config_overrides.setdefault("search_pacing_seconds", 0.0)
     orchestrator.cfg = _config(report_query_planning=planning,
                                **config_overrides)
     orchestrator.ollama = StubOllama(reply=plan_reply, vectors=vectors,
@@ -1137,3 +1143,73 @@ def test_query_planning_defaults_are_off_and_inert():
 def test_planning_config_rejects_out_of_range_rails(overrides):
     with pytest.raises(ValueError):
         _config(**overrides)
+
+
+# --- ADR-002 stage 1: pre-crawl ranking and search pacing -------------------
+
+def _ranker(vectors=None, embed_error=None):
+    from app.research import ResearchOrchestrator
+    subject = object.__new__(ResearchOrchestrator)
+    subject.cfg = _config()
+    subject.ollama = StubOllama(vectors=vectors, embed_error=embed_error)
+    return subject
+
+
+def _result(url, title="t", snippet="s"):
+    return {"url": url, "title": title, "snippet": snippet}
+
+
+def test_snippet_ranking_orders_each_facet_by_relevance():
+    """The crawl cap decides what gets fetched, so order decides what the
+    budget buys."""
+    subject = _ranker(vectors=[E1, E2, E1])  # topic, then two results
+    ranked, provenance = run(subject._rank_by_snippet(
+        "a topic", [[_result("https://off.example"),
+                     _result("https://on.example")]],
+    ))
+    assert [r["url"] for r in ranked[0]] == ["https://on.example",
+                                             "https://off.example"]
+    assert provenance["applied"] is True
+    assert provenance["candidates"] == 2
+
+
+def test_snippet_ranking_never_ranks_across_facets():
+    """Cross-facet ranking would let one facet consume the whole crawl cap,
+    undoing the interleave that shares it."""
+    # topic, then flat result order: a-weak, a-strong, b-strong, b-weak.
+    subject = _ranker(vectors=[E1, E2, E1, E1, E2])
+    ranked, _p = run(subject._rank_by_snippet(
+        "a topic",
+        [[_result("https://a-weak.example"), _result("https://a-strong.example")],
+         [_result("https://b-strong.example"), _result("https://b-weak.example")]],
+    ))
+    assert len(ranked) == 2
+    assert [r["url"] for r in ranked[0]] == ["https://a-strong.example",
+                                             "https://a-weak.example"]
+    assert [r["url"] for r in ranked[1]] == ["https://b-strong.example",
+                                             "https://b-weak.example"]
+
+
+def test_snippet_ranking_discards_nothing():
+    """Ranking, not thresholding: no candidate is dropped on a guessed cutoff."""
+    subject = _ranker(vectors=[E1, E2, E3, E4])
+    facet = [_result(f"https://{i}.example") for i in range(3)]
+    ranked, _p = run(subject._rank_by_snippet("a topic", [facet]))
+    assert sorted(r["url"] for r in ranked[0]) == sorted(r["url"] for r in facet)
+
+
+def test_snippet_ranking_failure_leaves_the_order_untouched():
+    subject = _ranker(embed_error=RuntimeError("embed down"))
+    facet = [_result("https://a.example"), _result("https://b.example")]
+    ranked, provenance = run(subject._rank_by_snippet("a topic", [facet]))
+    assert ranked == [facet]
+    assert provenance["applied"] is False
+    assert provenance["reason"] == "embedding_unavailable"
+
+
+def test_search_pacing_default_is_set_and_bounded():
+    assert _config().search_pacing_seconds == 2.0
+    with pytest.raises(ValueError):
+        _config(search_pacing_seconds=-1.0)
+    with pytest.raises(ValueError):
+        _config(search_pacing_seconds=99.0)
