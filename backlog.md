@@ -1090,6 +1090,6 @@ remain deferred behind their explicit revisit triggers; none tripped as of
 
 The pivot sequence is complete; Milestone 4 is closed.
 
-6. **HUB-024** — adaptive query planning and iterative research (opened 2026-08-13, trigger tripped; design in `PRDs/hub-024-query-planning.md`). Stage 1 built 2026-08-13 behind `REPORT_QUERY_PLANNING=false`; next is stage 2 (gap-driven rounds with novelty-saturation stopping), then stage 3 measurement against the job-`24a8a471` single-query baseline.
+6. **HUB-024** — adaptive query planning and iterative research (opened 2026-08-13, trigger tripped; design in `PRDs/hub-024-query-planning.md`). Stages 1 and 2 built 2026-08-13 behind `REPORT_QUERY_PLANNING=false`. Stage 3 (breadth measurement against the job-`24a8a471` single-query baseline of 6 sources / 6 distinct domains) is blocked on the operator's decision to enable the flag in the deployed stack.
 
 **Exit condition:** each expansion is justified by measured usage or a documented limitation, not by architectural possibility.
