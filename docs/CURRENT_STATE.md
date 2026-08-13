@@ -57,6 +57,28 @@ a `document_id` and every one resolves in SQLite, so corpus-wide retrieval
 drops nothing. (33 retained documents have no Qdrant chunks — deduplicated
 sources — and remain lexically reachable.)
 
+**Deployed and verified on the stack.** `research-hub` and `research-worker`
+rebuilt from `63aacc6`; `app/{retrieval,query,document_store,clients,main,
+observability}.py` SHA-256 verified identical between the repo and both
+running containers. `/readyz` reports `capability: all` with all six services
+true.
+
+Live on the deployed API:
+
+| Call | Result |
+|---|---|
+| `/query` "how does reciprocal rank fusion combine rankings" | 6 chunks from **4 sources** across different jobs; top 3 dual-channel `dense,lexical` |
+| `/query` + `topic_filter` "Kubernetes pod autoscaling…" | 4 chunks from 3 sources, all on-topic |
+| `/query` + an unmatched `topic_filter` | **0 chunks** — the filter narrows, it does not silently widen |
+| `/rag` "microservices versus monoliths tradeoffs" | answered with citations over 4 distinct sources |
+
+Persisted state after the deploy is unchanged: the attempt-11 report and
+source registry are still byte-identical (`068d60b2…`, `d6748d76…`), the v4
+seal is `762e7a19…`, Qdrant holds 68,072 points, and the store holds 679
+documents / 758 observations / 71,125 lexical rows. `hub_retrieval_duration_seconds`
+is live and `hub_retrieval_score` recorded 18 observations across the runs
+above.
+
 ## Live report generated through the deployed judge gate (2026-08-13)
 
 The judge pivot had been proven structurally but no report had ever been
