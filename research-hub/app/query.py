@@ -12,7 +12,10 @@ from .context import (
 from .models import (
     ChatMessage, QueryRequest, QueryResponse, QueryChunk, RAGRequest, RAGResponse,
 )
-from .observability import EMBED_LATENCY, GENERATION_LATENCY, GENERATION_TOKENS, RETRIEVAL_SCORE
+from .observability import (
+    GENERATION_LATENCY, GENERATION_TOKENS, RETRIEVAL_LATENCY, RETRIEVAL_SCORE,
+)
+from .retrieval import ScopedRetrievalService
 
 
 @dataclass
@@ -26,29 +29,54 @@ class PreparedChat:
 class QueryEngine:
     """Hybrid search + RAG using Ollama for embeddings and generation."""
 
-    def __init__(self, ollama: OllamaClient, qdrant: QdrantClient, *,
+    def __init__(self, ollama: OllamaClient, qdrant: QdrantClient,
+                 retrieval: ScopedRetrievalService, *,
                  model_context_tokens: int = 8192, answer_reserve_tokens: int = 1024,
                  allow_custom_system_prompts: bool = False):
         self.ollama = ollama
         self.qdrant = qdrant
+        self.retrieval = retrieval
         self.model_context_tokens = model_context_tokens
         self.answer_reserve_tokens = answer_reserve_tokens
         self.allow_custom_system_prompts = allow_custom_system_prompts
 
     async def search(self, req: QueryRequest) -> QueryResponse:
-        started = time.monotonic()
-        vector = await self.ollama.embed(req.query)
-        EMBED_LATENCY.observe(time.monotonic() - started)
-        filters: dict = {}
-        if req.topic_filter:
-            filters["topic"] = req.topic_filter
-        if req.tags_filter:
-            filters["tags"] = req.tags_filter
+        """Corpus-wide hybrid retrieval -- the same path a report uses.
 
-        hits = await _run_sync(self.qdrant.search, vector, req.top_k, filters if filters else None)
-        chunks = [QueryChunk(**h) for h in hits]
-        for chunk in chunks:
-            RETRIEVAL_SCORE.observe(chunk.score)
+        Before HUB-043 this ran a second, dense-only implementation, so the
+        49 jobs' worth of documents in the store could only be searched at
+        lower quality than the retrieval running inside any one of them.
+        """
+        started = time.monotonic()
+        evidence = await self.retrieval.retrieve(
+            None, req.query,
+            source_topic=req.topic_filter, source_tags=req.tags_filter,
+        )
+        RETRIEVAL_LATENCY.observe(time.monotonic() - started)
+
+        chunks = [
+            QueryChunk(
+                text=candidate.text,
+                source_url=candidate.canonical_url,
+                source_title=candidate.source_title,
+                # Report the score that decided the order. Under fusion that
+                # is the RRF score, not a cosine: returning a similarity that
+                # contradicts the ranking would be worse than changing scale.
+                score=candidate.metadata.get("rrf_score", candidate.score),
+                metadata={
+                    **candidate.metadata,
+                    "document_id": candidate.document_id,
+                    "chunk_index": candidate.chunk_index,
+                },
+            )
+            for candidate in evidence.candidates[:req.top_k]
+        ]
+        for candidate in evidence.candidates[:req.top_k]:
+            # Only where a cosine exists: a lexical-only candidate scores 0.0
+            # and would drag the distribution this histogram documents. Absent
+            # channels means fusion did not run, so the score is a cosine.
+            if "dense" in (candidate.metadata.get("retrieval_channels") or ["dense"]):
+                RETRIEVAL_SCORE.observe(candidate.score)
         context = "\n\n---\n\n".join(
             f"[{i+1}] {c.source_title} ({c.source_url})\n{c.text}" for i, c in enumerate(chunks)
         )
@@ -188,12 +216,6 @@ class QueryEngine:
     @staticmethod
     def _history_text(messages: list[ChatMessage]) -> str:
         return "\n".join(f"{message.role}: {message.content}" for message in messages)
-
-
-async def _run_sync(func, *args, **kwargs):
-    """Run a sync function in a thread (for qdrant client)."""
-    import asyncio
-    return await asyncio.to_thread(func, *args, **kwargs)
 
 
 DEFAULT_RAG_SYSTEM_PROMPT = (

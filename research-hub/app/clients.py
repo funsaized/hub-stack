@@ -324,25 +324,30 @@ class QdrantClient:
         canonical_urls: list[str] | None = None,
         document_ids: list[str] | None = None,
     ) -> list[dict]:
-        """Return full internal candidates restricted to retained source identity."""
+        """Return full internal candidates, optionally scoped to source identity.
+
+        ``None`` means the whole collection (HUB-043): a corpus-wide query is
+        scoped by the corpus itself, and enumerating every id as a filter
+        would be equivalent but grows without bound. An *empty* list stays an
+        error -- it means a caller expected a scope and lost it, and silently
+        widening to the corpus is the failure this guard exists to catch.
+        """
         from qdrant_client.models import FieldCondition, Filter, MatchAny
 
         conditions = []
-        if canonical_urls:
-            conditions.append(FieldCondition(
-                key="canonical_url", match=MatchAny(any=canonical_urls)
-            ))
-        if document_ids:
-            conditions.append(FieldCondition(
-                key="document_id", match=MatchAny(any=document_ids)
-            ))
-        if not conditions:
-            raise ValueError("evidence search requires retained source scope")
+        for key, values in (
+            ("canonical_url", canonical_urls), ("document_id", document_ids),
+        ):
+            if values is None:
+                continue
+            if not values:
+                raise ValueError("evidence search requires retained source scope")
+            conditions.append(FieldCondition(key=key, match=MatchAny(any=values)))
         hits = self._client.search(
             collection_name=self.collection,
             query_vector=vector,
             limit=limit,
-            query_filter=Filter(must=conditions),
+            query_filter=Filter(must=conditions) if conditions else None,
         )
         excluded = {
             "text", "source_url", "source_title", "canonical_url",

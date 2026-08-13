@@ -1,4 +1,8 @@
-"""Transport-neutral retrieval scoped to retained job sources."""
+"""Transport-neutral retrieval over retained sources.
+
+One implementation serves both a report's job scope and a corpus-wide query;
+the scope narrows what is searched and never which retrieval runs.
+"""
 
 from __future__ import annotations
 
@@ -71,15 +75,52 @@ class ScopedRetrievalService:
         self.lexical = lexical
         self.rrf_k = rrf_k
 
-    async def retrieve(self, job_id: str, topic: str) -> RetrievedEvidence:
-        retained = await asyncio.to_thread(self.documents.documents_for_job, job_id)
+    async def retrieve(
+        self,
+        job_id: str | None,
+        query: str,
+        *,
+        source_topic: str | None = None,
+        source_tags: list[str] | None = None,
+    ) -> RetrievedEvidence:
+        """Hybrid dense+lexical retrieval over an optionally narrowed corpus.
+
+        ``job_id=None`` retrieves across the whole corpus (HUB-043). The job
+        id is a filter, not a mode: the same fusion, per-source caps and
+        needle channel run either way, so a corpus-wide query gets the
+        retrieval quality that used to exist only inside a report.
+
+        ``source_topic`` and ``source_tags`` narrow the corpus by the research
+        metadata a document was collected under. They resolve to a document
+        scope rather than a vector-store payload filter because the lexical
+        channel has no payload to filter on -- one scope keeps both channels
+        looking at the same sources.
+        """
+        filtered = source_topic is not None or bool(source_tags)
+        if job_id is not None:
+            if filtered:
+                raise ValueError("job scope and source filters are exclusive")
+            retained = await asyncio.to_thread(
+                self.documents.documents_for_job, job_id
+            )
+        elif filtered:
+            retained = await asyncio.to_thread(
+                lambda: self.documents.documents_matching(
+                    topic=source_topic, tags=source_tags,
+                )
+            )
+        else:
+            retained = await asyncio.to_thread(self.documents.all_documents)
         retained_by_id = {value["document_id"]: value for value in retained}
         if not retained_by_id:
             return RetrievedEvidence([], _diagnostics(0, [], 0))
 
-        urls = sorted({value["canonical_url"] for value in retained})
-        document_ids = sorted(retained_by_id)
-        vector = await self.ollama.embed(topic)
+        # Unfiltered, the scope IS the corpus: passing every id as a filter
+        # would be equivalent but grows an unbounded query with the corpus.
+        scoped = job_id is not None or filtered
+        urls = sorted({value["canonical_url"] for value in retained}) if scoped else None
+        document_ids = sorted(retained_by_id) if scoped else None
+        vector = await self.ollama.embed(query)
         hits = await asyncio.to_thread(
             self.qdrant.search_evidence,
             vector,
@@ -122,7 +163,7 @@ class ScopedRetrievalService:
         lexical_hits = []
         if self.lexical is not None:
             lexical_hits = await asyncio.to_thread(
-                self.lexical.search_chunks, topic, document_ids, self.candidate_limit
+                self.lexical.search_chunks, query, document_ids, self.candidate_limit
             )
             candidates = _fuse_rankings(
                 candidates, lexical_hits, retained_by_id, self.rrf_k
