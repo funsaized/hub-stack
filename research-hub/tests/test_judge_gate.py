@@ -269,6 +269,14 @@ class JudgeGateTests(unittest.IsolatedAsyncioTestCase):
         subject = self.client(lambda _request: verdict_response(content=leaked))
         self.assertEqual(await subject.verify([material()]), [None])
 
+    async def test_verdict_survives_the_reasoning_split_eating_the_key(self):
+        """Observed after reasoning_split shipped: the cut point moved again,
+        with '{"accepted' landing on the reasoning side."""
+        leaked = ('": true, "reason": null, '
+                  '"refs": [{"id": "R1", "necessary": true}]}')
+        subject = self.client(lambda _request: verdict_response(content=leaked))
+        self.assertEqual(await subject.verify([material()]), [None])
+
     async def test_repair_preserves_a_rejection_rather_than_inventing_one(self):
         leaked = (
             '<think>\nThe claim adds a qualifier the span lacks.{"\n</think>\n'

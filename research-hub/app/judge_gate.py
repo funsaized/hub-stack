@@ -72,9 +72,8 @@ _FENCE_BREAK = re.compile(r"<(?=\s*/?\s*untrusted_evidence\b)", re.IGNORECASE)
 # stripped before parsing; everything after it must still be exactly one JSON
 # object, so trailing chatter or injected extra verdicts stay malformed_output.
 _THINK_BLOCK = re.compile(r"\A\s*<think>.*?</think>", re.DOTALL)
-# Verdict text left behind when a reasoning block swallowed the object opening.
-_LOST_BRACE_AND_QUOTE = re.compile(r'\A[A-Za-z_][A-Za-z0-9_]*"\s*:')
-_LOST_BRACE = re.compile(r'\A"[A-Za-z_][A-Za-z0-9_]*"\s*:')
+# The verdict schema is fixed, which is what makes a reconstruction checkable.
+_VERDICT_KEYS = {"accepted", "reason", "refs"}
 
 JUDGE_SYSTEM = """You are a strict claim-faithfulness judge inside a research pipeline.
 
@@ -143,26 +142,33 @@ def _fenced_evidence(spans: list[str]) -> str:
     return "\n\n".join(blocks)
 
 
-def _repair_leaked_object_start(text: str) -> str:
-    """Restore an object opening that a reasoning block swallowed.
+def _repair_leaked_object_start(text: str) -> dict[str, Any] | None:
+    """Rebuild a verdict whose opening a reasoning stream swallowed.
 
-    Defence in depth behind ``reasoning_split`` (HUB-037). When the model
-    begins the verdict inside <think> and closes the block mid-token,
-    stripping the block also removes the start of the object. Two shapes were
-    observed live, distinguished by how much leaked:
+    Defence in depth behind ``reasoning_split`` (HUB-037). A reasoning model
+    may begin emitting the verdict while still reasoning, so the object's
+    opening ends up on the reasoning side of the split and never reaches
+    ``content``. Three cut points were observed live:
 
-        accepted": true, …     -> lost '{"'
-        "accepted": true, …    -> lost '{'
+        accepted": true, …   -> lost '{"'
+        "accepted": true, …  -> lost '{'
+        ": true, …           -> lost '{"accepted'
 
-    Only these two exact prefixes are repaired, and a repaired object still
-    passes through the unchanged structural gate, so a wrong reconstruction
-    fails closed exactly as an unparseable one does.
+    Rather than pattern-match each shape -- every retry so far has revealed a
+    new cut point -- restore the known prefixes of the fixed verdict schema
+    and accept a reconstruction ONLY if it yields exactly the three expected
+    keys. Every value is still the model's own; the sole thing supplied is
+    structure the schema already fixes. Anything else returns None and fails
+    closed.
     """
-    if _LOST_BRACE_AND_QUOTE.match(text):
-        return '{"' + text
-    if _LOST_BRACE.match(text):
-        return "{" + text
-    return text
+    for prefix in ('{', '{"', '{"accepted'):
+        try:
+            candidate = json.loads(prefix + text)
+        except ValueError:
+            continue
+        if isinstance(candidate, dict) and set(candidate) == _VERDICT_KEYS:
+            return candidate
+    return None
 
 
 def _extract_json_object(content: str) -> dict[str, Any]:
@@ -172,9 +178,13 @@ def _extract_json_object(content: str) -> dict[str, Any]:
         if text.rstrip().endswith("```"):
             text = text.rstrip()[:-3]
         text = text.strip()
-    if not text.startswith("{"):
-        text = _repair_leaked_object_start(text)
-    parsed = json.loads(text)
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        repaired = _repair_leaked_object_start(text)
+        if repaired is None:
+            raise
+        return repaired
     if not isinstance(parsed, dict):
         raise ValueError("verdict is not a JSON object")
     return parsed
