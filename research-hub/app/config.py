@@ -67,10 +67,13 @@ class Config:
     # guessed (the novelty metric was guessed once already).
     plan_facet_relevance: float = 0.55
     # HUB-038: the facet floor admits queries, not the documents they return.
-    # Screens retained documents against the topic before ingestion. Shipped
-    # permissive and fully recorded, exactly as the facet floor was before
-    # measurement moved it from 0.35 to 0.55.
-    plan_source_relevance: float = 0.30
+    # Screens retained documents against the topic before ingestion. Calibrated
+    # on a 494-document labelled reference set (2026-08-13): at 0.54 the screen
+    # keeps 98.2% of on-topic documents while removing 35.5% of off-topic ones,
+    # and no topic with a usable sample falls below 91% recall. Chosen for
+    # recall over aggression, because dropping a correct source costs more than
+    # keeping a stray one.
+    plan_source_relevance: float = 0.54
     plan_max_facets: int = 12
     plan_max_rounds: int = 4
     plan_search_budget: int = 24
@@ -181,7 +184,7 @@ def load_config() -> Config:
         plan_facet_distinct=float(os.environ.get("PLAN_FACET_DISTINCT", "0.85")),
         plan_facet_relevance=float(os.environ.get("PLAN_FACET_RELEVANCE", "0.55")),
         plan_source_relevance=float(
-            os.environ.get("PLAN_SOURCE_RELEVANCE", "0.30")
+            os.environ.get("PLAN_SOURCE_RELEVANCE", "0.54")
         ),
         plan_max_facets=int(os.environ.get("PLAN_MAX_FACETS", "12")),
         plan_max_rounds=int(os.environ.get("PLAN_MAX_ROUNDS", "4")),

@@ -476,17 +476,15 @@ class ResearchOrchestrator:
         """
         floor = getattr(self.cfg, "plan_source_relevance", 0.0)
         windows = [_topic_probe_windows(r) for r in results]
-        # Anchor on the ADMITTED FACETS, not the raw topic. A topic string can
-        # be ambiguous and its embedding then sits between both senses: on
-        # "Transformer efficiency improvements" the topic anchor scored
-        # electrical-transformer vendors above arXiv and NVIDIA, so a threshold
-        # would have dropped the correct sources first (measured 2026-08-13).
-        # The facets are the planner's disambiguated reading of the topic, so
-        # they discriminate where the topic cannot. A collapsed plan has only
-        # the topic, which is then the honest anchor.
-        anchors = anchor_queries[1:] if len(anchor_queries or []) > 1 else (
-            anchor_queries or [topic]
-        )
+        # Anchor on the RAW TOPIC. Facet anchoring was tried and reverted: on a
+        # 494-document labelled reference set it scored AUC 0.741 against the
+        # topic's 0.857 on identical rows, and was worse than random (0.426) on
+        # one topic. It won only on the single ambiguous topic it had been
+        # tuned against -- overfitting to n=1. `anchor_queries` is kept in the
+        # signature because facet anchoring remains the better choice for
+        # detectably ambiguous topics, which is recorded as future work rather
+        # than guessed at now.
+        anchors = [topic]
         probes = list(anchors) + [w for doc in windows for w in doc]
         try:
             vectors = await self.ollama.embed_batch(probes)

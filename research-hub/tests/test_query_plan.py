@@ -1016,38 +1016,25 @@ def test_probe_windows_handle_short_and_empty_documents():
     assert short and all(isinstance(w, str) for w in short)
 
 
-def test_documents_are_scored_against_facets_not_the_ambiguous_topic():
-    """Regression for the 2026-08-13 calibration run.
+def test_documents_are_scored_against_the_raw_topic():
+    """Anchoring reverted after the 494-document labelled evaluation.
 
-    On "Transformer efficiency improvements" the topic embedding sat between
-    both senses and scored electrical-transformer vendors ABOVE arXiv and
-    NVIDIA, so any threshold would have dropped the correct sources first. The
-    admitted facets are the planner's disambiguated reading, so they are the
-    anchor; the topic seed is excluded whenever facets exist.
+    Facet anchoring scored AUC 0.741 against the topic's 0.857 on identical
+    rows, and worse than random (0.426) on one topic. It won only on the single
+    ambiguous topic it had been tuned against.
     """
     from app.research import ResearchOrchestrator
     subject = object.__new__(ResearchOrchestrator)
     subject.cfg = _config(plan_source_relevance=0.5)
-    # anchors -> [E2] (the facet); the ambiguous topic seed E1 is not used.
-    subject.ollama = StubOllama(vectors=[E2, E2, E1])
-    kept, _screening = run(subject._screen_sources(
-        "ambiguous topic",
-        [_doc("https://right-sense.example"), _doc("https://wrong-sense.example")],
-        anchor_queries=["ambiguous topic", "the disambiguating facet"],
-    ))
-    assert [d["url"] for d in kept] == ["https://right-sense.example"]
-
-
-def test_a_collapsed_plan_falls_back_to_the_topic_as_anchor():
-    from app.research import ResearchOrchestrator
-    subject = object.__new__(ResearchOrchestrator)
-    subject.cfg = _config(plan_source_relevance=0.5)
+    # One anchor is embedded (the topic), then each document's windows.
     subject.ollama = StubOllama(vectors=[E1, E1, E2])
     kept, _screening = run(subject._screen_sources(
         "a topic", [_doc("https://on.example"), _doc("https://off.example")],
-        anchor_queries=["a topic"],
+        anchor_queries=["a topic", "a facet that must not be used"],
     ))
     assert [d["url"] for d in kept] == ["https://on.example"]
+    # Exactly one anchor was embedded, not the facets.
+    assert subject.ollama.embed_calls[0][0] == "a topic"
 
 
 def test_off_topic_documents_are_dropped_before_ingestion(monkeypatch):
@@ -1128,7 +1115,7 @@ def test_query_planning_defaults_are_off_and_inert():
     assert cfg.report_query_planning is False
     assert cfg.plan_facet_distinct == 0.85
     assert cfg.plan_facet_relevance == 0.55
-    assert cfg.plan_source_relevance == 0.30
+    assert cfg.plan_source_relevance == 0.54
     assert cfg.plan_max_facets == 12
     assert cfg.plan_max_rounds == 4
     assert cfg.plan_search_budget == 24
