@@ -234,6 +234,72 @@ class JudgeGateTests(unittest.IsolatedAsyncioTestCase):
                     await subject.verify([material()])
                 self.assertEqual(raised.exception.reason, reason)
 
+    async def test_request_splits_reasoning_out_of_the_verdict(self):
+        """HUB-037: MiniMax M3 thinks by default and delivers it inline.
+
+        reasoning_split routes reasoning to its own field so `content` is the
+        verdict alone. Thinking itself stays ON -- the sealed v4 evaluation
+        measured this gate with reasoning enabled, so disabling it would mean
+        the seal no longer describes the deployed gate.
+        """
+        subject = self.client(lambda _request: verdict_response())
+        await subject.verify([material()])
+        payload = json.loads(self.requests[0].content)
+        self.assertIs(payload["reasoning_split"], True)
+        self.assertNotIn("thinking", payload)
+
+    async def test_verdict_survives_a_reasoning_block_eating_the_brace(self):
+        """The exact live failure: the block closed after emitting '{\"'."""
+        leaked = (
+            "<think>\nThe claim restates the evidence exactly. R1 is "
+            'necessary.{"\n</think>\n\n'
+            'accepted": true, "reason": null, '
+            '"refs": [{"id": "R1", "necessary": true}]}'
+        )
+        subject = self.client(lambda _request: verdict_response(content=leaked))
+        self.assertEqual(await subject.verify([material()]), [None])
+
+    async def test_verdict_survives_a_reasoning_block_eating_only_the_brace(self):
+        """The other observed split: the block kept '{' but not the key."""
+        leaked = (
+            "<think>\nReasoning here.{\n</think>\n\n"
+            '"accepted": true, "reason": null, '
+            '"refs": [{"id": "R1", "necessary": true}]}'
+        )
+        subject = self.client(lambda _request: verdict_response(content=leaked))
+        self.assertEqual(await subject.verify([material()]), [None])
+
+    async def test_repair_preserves_a_rejection_rather_than_inventing_one(self):
+        leaked = (
+            '<think>\nThe claim adds a qualifier the span lacks.{"\n</think>\n'
+            'accepted": false, "reason": "unsupported", '
+            '"refs": [{"id": "R1", "necessary": true}]}'
+        )
+        subject = self.client(lambda _request: verdict_response(content=leaked))
+        self.assertEqual(await subject.verify([material()]), ["unsupported"])
+
+    async def test_repair_is_narrow_and_still_fails_closed_on_real_garbage(self):
+        for content in (
+            "<think>\nthinking\n</think>\nI cannot answer that.",
+            "<think>\nthinking\n</think>\n42 accepted",
+            "<think>\nthinking\n</think>\n[1, 2, 3]",
+        ):
+            with self.subTest(content=content):
+                subject = self.client(
+                    lambda _request, c=content: verdict_response(content=c)
+                )
+                with self.assertRaises(VerifierUnavailable) as raised:
+                    await subject.verify([material()])
+                self.assertEqual(raised.exception.reason, "malformed_output")
+
+    async def test_repaired_verdict_still_passes_the_structural_gate(self):
+        """A reconstruction that yields the wrong shape must not be trusted."""
+        leaked = ('<think>\nx{"\n</think>\naccepted": true, "reason": null}')
+        subject = self.client(lambda _request: verdict_response(content=leaked))
+        with self.assertRaises(VerifierUnavailable) as raised:
+            await subject.verify([material()])
+        self.assertEqual(raised.exception.reason, "malformed_output")
+
     async def test_malformed_reply_is_logged_before_failing_closed(self):
         """Regression for the 2026-08-13 live failures.
 
