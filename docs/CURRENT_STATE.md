@@ -216,6 +216,45 @@ operator decision, not a config nudge.
 Metered cost rose with drafting — roughly 40 drafted claims per report against
 28 — and every cap is env-tunable to walk back without a rebuild.
 
+## Widened search pool, load-tested (HUB-042, 2026-08-13)
+
+Six fresh topics run back to back, probing engine health before each job so
+degradation is measured rather than inferred.
+
+| # | Topic | Engines responding | Sources | Screened out | Findings | Report |
+|---|---|---|---|---|---|---|
+| 1 | SQLite WAL tuning | bing, ddg | 6 | 0 | 22 | ok |
+| 2 | Kafka rebalancing | brave, bing, ddg | 20 | 8 | — | **failed** |
+| 3 | Rust async runtimes | bing, brave | 4 | 32 | 10 | ok |
+| 4 | TLS rotation | bing | 5 | 5 | 19 | ok |
+| 5 | Elasticsearch ILM | bing | 9 | 7 | 31 | ok |
+| 6 | gRPC load balancing | bing | 11 | 0 | 3 | ok |
+
+**Acquisition never failed — 6 of 6.** Before widening, a single CAPTCHA
+produced "No search results found" and killed the job. Here the pool degraded
+from three responding engines to bing alone across the run, and every job
+still acquired. That is the resilience the widening was for; the ceiling is
+raised, not removed, and bing is now carrying the load alone.
+
+**The widened pool trades precision for availability, and the source screen is
+what makes that trade viable.** Job 3 dropped 32 of 36 documents, which looked
+alarming until the scores were read: bing and brave returned dictionary
+definitions of "rust" and "async" plus a WebMD page. The screen kept
+`rust-lang.org` and Wikipedia and dropped `dictionary.com`,
+`thefreedictionary.com` and `webmd.com`. It was correct. The thin four-source
+corpus reflects poor search results, not an over-aggressive filter — so the
+earlier worry that HUB-038's threshold was invalidated by the engine change is
+**not** borne out; if anything the screen matters more now.
+
+**One report failed, on `empty_content`.** The judge spent its whole token
+budget reasoning and returned no verdict, at the raised 4096-token allowance —
+1 of 6 reports, cleanly failed and retryable. `RESPONSE_MAX_TOKENS` is the
+lever if that rate proves too high; the 16K context leaves room for it.
+
+Findings ranged 3–31 per report, tracking corpus quality rather than corpus
+size: job 6 retained 11 sources but yielded 3 findings, job 5 retained 9 and
+yielded 31.
+
 ## Source screening calibrated and enabled (HUB-038, 2026-08-13)
 
 Enabled at `PLAN_SOURCE_RELEVANCE = 0.54`, calibrated on a 494-document

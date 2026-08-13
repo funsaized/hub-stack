@@ -1211,15 +1211,20 @@ results via bing while brave, duckduckgo, qwant, startpage and google cse were
 all CAPTCHA'd or suspended, and a full research job completed on the first
 attempt. That is the whole point: one survivor keeps acquisition alive.
 
-**New finding — engine choice shifts the screening input distribution.** That
-job crawled 17 documents and the source screen dropped **11**, far above the
-~5% overall drop the HUB-038 calibration predicts. Bing returns lower-precision
-results for a specific query (the PostgreSQL homepage, a w3schools tutorial,
-Wikipedia) where duckduckgo returned targeted pages. The screen caught them,
-which is it working — but `PLAN_SOURCE_RELEVANCE = 0.54` was calibrated on a
-corpus built almost entirely from duckduckgo results. **The reference set is
-now unrepresentative of the deployed search mix and should be rebuilt once the
-engine pool settles.**
+**Load-tested over six fresh topics (2026-08-13).** Acquisition succeeded 6 of
+6 while the pool degraded from three responding engines to bing alone; before
+widening, one CAPTCHA killed the job outright. Five of six reports completed;
+one failed on `empty_content`, cleanly and retryably.
+
+**The widened pool trades precision for availability.** Drop rates rose sharply
+(0–32 documents per job) because bing and brave return lower-precision results
+— for "Rust async runtime tokio async-std" they returned dictionary definitions
+of "rust" and "async" plus a WebMD page. The source screen kept `rust-lang.org`
+and Wikipedia and dropped `dictionary.com` and `webmd.com`, which is it working
+exactly as intended. The earlier concern that HUB-038's threshold had been
+invalidated by the engine change is **not** borne out: the screen is more
+load-bearing now, not miscalibrated. Rebuilding the reference set on the new
+mix would still be worthwhile, but it is no longer urgent.
 
 **Still unsolved.** Nothing backs off, and heavy use will exhaust the wider
 pool too — just more slowly. Remaining directions: cache searches by canonical
