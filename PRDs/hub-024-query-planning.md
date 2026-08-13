@@ -68,6 +68,12 @@ costs an orchestration layer we would have to test.
 
 ### 3. Stopping: saturation first, coverage second, budget last
 
+> **SUPERSEDED 2026-08-13.** Novelty saturation was implemented, measured, and
+> retired — it could never fire under distinctness-based admission. Coverage
+> was promoted from secondary to primary, in facet space. The original
+> reasoning is kept below for the record; the implemented design is in
+> "Implementation record" further down.
+
 - **Novelty saturation (primary).** Stop when a round's yield of *new
   canonical URLs* falls below `PLAN_NOVELTY_MIN` (design default: fewer than
   20% of that round's retained documents are new, or fewer than 2 new
@@ -119,7 +125,7 @@ judged); any change to judge-call volume per report.
 | `PLAN_FACET_DISTINCT` | `0.85` | Max cosine similarity for admitting a new facet |
 | `PLAN_MAX_FACETS` | `8` | Safety rail, not the breadth mechanism |
 | `PLAN_MAX_ROUNDS` | `3` | Budget backstop |
-| `PLAN_NOVELTY_MIN` | `0.2` | New-canonical-URL fraction below which rounds stop |
+| `PLAN_FACET_RELEVANCE` | `0.35` | Min cosine to the topic; the relevance half of the two-sided bar |
 | `PLAN_SEARCH_BUDGET` / `PLAN_CRAWL_BUDGET` | `12` / `40` | Per-job hard caps |
 
 ## Acceptance criteria
@@ -179,16 +185,40 @@ semantics at risk for no gain, and the acceptance criteria require those
 unchanged. `should_continue` checks saturation before the round rail, so a
 stop is attributed to the evidence running dry whenever both would have fired.
 
-Novelty is measured over the round's **top-`depth` fetch window** — the
-documents it would actually crawl. Stage 2 originally used the full
-policy-accepted candidate pool on the reasoning that it was "the same signal
-one step earlier"; the 2026-08-13 measurement proved that wrong. A round
-surfaces 59–93 candidates and fetches at most `depth`, so a pool-wide
-denominator leaves nearly every candidate unseen and pins novelty near 1.0 —
-observed 1.0 / 1.0 / 0.983 across three rounds that had visibly stopped
-finding relevant material, with the run stopping on the `max_rounds` rail
-instead. Bounding the denominator by the crawl allowance restores the signal.
-The full pool count is retained in provenance as `pool`.
+**Stopping was redesigned on 2026-08-13 after prior-art review** (11 further
+arXiv abstracts fetched and read; citations below). Document novelty is
+retired as a control signal and `PLAN_NOVELTY_MIN` is gone. It could never
+fire: admission only admits *distinct* queries, distinct queries return
+distinct documents, so novelty is pinned near 1.0 by construction whatever
+the true state of the research (observed live at 1.0 / 1.0 / 0.983 across
+three rounds that had visibly stopped making progress). Correcting the
+denominator to the fetch window made the number honest but not useful — the
+signal is structurally incompatible with distinctness-based admission.
+
+Saturation is now measured in **facet-coverage space**, following RAVine
+(2507.16725), which scores attributable coverage of a query's distinct
+sub-points rather than document novelty. A facet is covered once at least one
+retained document came from its own search; coverage is recomputed over every
+issued query each round, because a document fetched later can answer an
+earlier facet. Two threshold-free rules:
+
+- `coverage_complete` — every issued facet holds evidence.
+- `coverage_plateau` — a round raised the covered count by zero.
+
+**Rounds therefore exist to finish covering the admitted plan, not to invent
+new angles**, which makes a single round the normal case and extra rounds the
+exception that fires when the crawl allowance could not reach every facet in
+one pass. This is load-bearing: if completion did not end the loop, a gap
+pass that keeps inventing facets would keep raising the count forever — the
+same runaway that novelty produced, wearing a different hat.
+
+The LLM gap pass is **advisory**, checked only after the arithmetic signal. It
+proposes what to ask next and can end the research by declining, but it can no
+longer be the primary stop, because sufficiency judgements of exactly this
+kind measure poorly (RaCGEval, 2411.05547, baselines at 46.7%) and unaligned
+models default to answering rather than declining (2507.04976). Novelty is
+still recorded per round for calibration; it controls nothing. The full
+candidate-pool count is retained in provenance as `pool`.
 
 Gap queries are admitted by the same `greedy_admit` used for opening facets,
 compared against **every query the job has already issued** rather than just
@@ -237,12 +267,20 @@ same thing for a niche clinical question as for a broad engineering topic.
 Treat the first measurement as calibration of that threshold, not as
 validation of the design.
 
-**Resolved and superseded by the 2026-08-13 measurement.** The threshold was
-never reached, because the *metric* was wrong before the threshold could
-matter: novelty measured over the full candidate pool pins near 1.0 (observed
-1.0 / 1.0 / 0.983 across three saturated rounds). Fixed by bounding the
-denominator to the round's fetch window. The transfer question is still open,
-and now genuinely testable.
+**Closed 2026-08-13, by retiring the threshold entirely.** The question was
+moot: the metric was structurally broken before any threshold could matter,
+and the replacement (facet-coverage completion and plateau) has no tuned
+threshold to transfer. One guessed threshold remains — `PLAN_FACET_RELEVANCE`
+— and it ships deliberately permissive with every candidate's topic cosine
+recorded, so it can be measured rather than guessed a second time.
+
+**New open thread: facet coverage grades its own homework.** RAVine computes
+coverage against labelled answer points; we compute it against self-generated
+facets. A facet nobody proposed is invisible to the metric, so a narrow plan
+reads as "fully covered" exactly when it is worst. The relevance floor and
+pre-issue QPP narrow what gets proposed, which makes this *more* acute, not
+less. Worth a checkpoint before coverage becomes load-bearing for anything
+beyond stopping.
 
 **New open thread: distinctness alone is the wrong admission criterion.** The
 measurement showed facets drifting off-topic as rounds progress — the planner
@@ -288,7 +326,39 @@ Failure modes to avoid:
 - 2512.03887 — Static-DRA (https://arxiv.org/abs/2512.03887) — fixed Depth and
   Breadth parameters cannot adapt to what the evidence needs.
 
+Stopping and query-quality redesign (fetched and read 2026-08-13, second pass):
+- 2507.16725 — RAVine: Reality-Aligned Evaluation for Agentic Search
+  (https://arxiv.org/abs/2507.16725) — **primary mechanism**: score
+  attributable coverage of a query's distinct sub-points, and evaluate the
+  iterative process, not just the final answer. Lifted here as facet-coverage
+  saturation replacing document novelty.
+- 2411.05547 — Assessing the Answerability of Queries in Retrieval-Augmented
+  Code Generation (https://arxiv.org/abs/2411.05547) — **failure mode to
+  avoid**: judging whether retrieved evidence suffices is a hard task,
+  baselines at 46.7%; do not make an LLM sufficiency call the primary stop.
+- 2507.04976 — Can Video LLMs Refuse to Answer? Alignment for Answerability
+  (https://arxiv.org/abs/2507.04976) — **failure mode to avoid**: models do
+  not decline unless aligned to; a zero-shot gap pass inherits an
+  answer-anyway bias, so it must be advisory rather than load-bearing.
+- 1507.03928 — Pseudo-Query Reformulation (https://arxiv.org/abs/1507.03928)
+  — **supporting evidence**: score a candidate reformulation with a
+  performance predictor *before* issuing it, so weak reformulations are
+  pruned pre-search. Adopted as pre-issue QPP.
+- 2403.17421 — MA4DIV: Multi-Agent RL for Search Result Diversification
+  (https://arxiv.org/abs/2403.17421) — **supporting evidence**: diversity
+  must be relevance-discounted (α-NDCG), not raw. Motivates the two-sided
+  admission bar; the MARL machinery itself is not adopted.
+- 2405.17658 — Generative Query Reformulation using Ensemble Prompting
+  (https://arxiv.org/abs/2405.17658) — supporting evidence: a critic pass
+  filters generated reformulations for quality.
+
 Read but not adopted (recorded so a later pass need not re-read them):
+2509.22449 (unanswerability via linear activation directions — needs
+white-box hidden states, unavailable behind Ollama), 2604.09666 (GraphRAG vs
+agentic search benchmark — fixes retrieval budgets as a control variable),
+2604.17931 (LiteResearcher — train-time agentic RL, not a runtime signal),
+2309.12546 (PMAN — answerability scoring needs an answer already in hand),
+1601.04615 (term-provenance in human session logs),
 2410.20286 (Quam — recall via document-similarity graph, single-query scope),
 2607.15283 (biomedical question-type routing, predefined categories),
 2511.03214 (LGM — concept meta-relations for ambiguous terms),
