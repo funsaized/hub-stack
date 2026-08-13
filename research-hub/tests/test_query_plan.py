@@ -18,23 +18,38 @@ from app.query_plan import (
     PLANNER_MAX_CANDIDATES,
     FacetDecision,
     QueryPlan,
+    RoundRecord,
+    acquisition_provenance,
     admit_facets,
     cosine,
+    coverage_summary,
+    greedy_admit,
     interleave,
     normalize_candidate,
+    novelty_ratio,
     parse_candidates,
+    plan_gap_round,
     plan_queries,
+    should_continue,
     single_query_plan,
 )
 
 
 class StubOllama:
-    """Records calls so tests can assert the planner was (or was not) invoked."""
+    """Records calls so tests can assert the planner was (or was not) invoked.
+
+    ``reply_queue`` / ``vector_queue`` serve successive calls, which is how a
+    multi-round job's opening plan and its later gap passes are distinguished.
+    """
 
     def __init__(self, reply=None, vectors=None, generate_error=None,
-                 embed_error=None):
+                 embed_error=None, reply_queue=None, vector_queue=None):
         self._reply = reply
         self._vectors = vectors
+        self._reply_queue = list(reply_queue) if reply_queue is not None else None
+        self._vector_queue = (
+            list(vector_queue) if vector_queue is not None else None
+        )
         self._generate_error = generate_error
         self._embed_error = embed_error
         self.generate_calls = []
@@ -44,12 +59,16 @@ class StubOllama:
         self.generate_calls.append((prompt, kwargs))
         if self._generate_error:
             raise self._generate_error
+        if self._reply_queue is not None:
+            return self._reply_queue.pop(0) if self._reply_queue else '{"facets": []}'
         return self._reply
 
     async def embed_batch(self, texts):
         self.embed_calls.append(list(texts))
         if self._embed_error:
             raise self._embed_error
+        if self._vector_queue is not None:
+            return self._vector_queue.pop(0) if self._vector_queue else []
         return self._vectors
 
 
@@ -347,7 +366,8 @@ def test_query_plan_is_json_serializable_for_job_progress():
 # --- acquisition path: how many searches a job actually issues -------------
 
 def _acquisition_probe(monkeypatch, *, planning, plan_reply=None, vectors=None,
-                       results_per_query=3):
+                       results_per_query=3, reply_queue=None,
+                       vector_queue=None, results_for=None, **config_overrides):
     """Drive ResearchOrchestrator.run_job through search, then stop.
 
     Every crawl destination is refused by a stubbed SSRF policy, so the job
@@ -373,14 +393,19 @@ def _acquisition_probe(monkeypatch, *, planning, plan_reply=None, vectors=None,
             # record is identical on every run and interpreter.
             facet_index = len(searched)
             searched.append(query)
+            if results_for is not None:
+                return [{"url": u} for u in results_for(query, facet_index)]
             return [
                 {"url": f"https://f{facet_index}-r{i}.example.com/p"}
                 for i in range(results_per_query)
             ]
 
     orchestrator = object.__new__(ResearchOrchestrator)
-    orchestrator.cfg = _config(report_query_planning=planning)
-    orchestrator.ollama = StubOllama(reply=plan_reply, vectors=vectors)
+    orchestrator.cfg = _config(report_query_planning=planning,
+                               **config_overrides)
+    orchestrator.ollama = StubOllama(reply=plan_reply, vectors=vectors,
+                                     reply_queue=reply_queue,
+                                     vector_queue=vector_queue)
     orchestrator.searxng = Searx()
 
     async def get_job(job_id):
@@ -460,6 +485,270 @@ def test_every_sub_query_result_passes_through_the_source_policy(monkeypatch):
     assert all(d["canonical_url"].startswith("https://") for d in decisions)
 
 
+# --- stage 2: novelty saturation and the stop decision ---------------------
+
+def test_novelty_ratio_is_the_new_fraction_and_safe_when_empty():
+    assert novelty_ratio(2, 8) == pytest.approx(0.25)
+    assert novelty_ratio(0, 0) == 0.0
+
+
+def test_rounds_continue_while_each_one_still_finds_new_sources():
+    keep_going, reason = should_continue(
+        round_index=1, new_candidates=8, candidates=10,
+        max_rounds=3, novelty_min=0.2,
+    )
+    assert (keep_going, reason) == (True, "continue")
+
+
+def test_rounds_stop_when_novelty_falls_below_the_threshold():
+    keep_going, reason = should_continue(
+        round_index=1, new_candidates=1, candidates=20,
+        max_rounds=3, novelty_min=0.2,
+    )
+    assert (keep_going, reason) == (False, "saturation")
+
+
+def test_rounds_stop_on_too_few_new_documents_even_at_high_novelty():
+    """1 of 1 is ratio 1.0 but yields almost nothing: still saturated."""
+    keep_going, reason = should_continue(
+        round_index=1, new_candidates=1, candidates=1,
+        max_rounds=3, novelty_min=0.2,
+    )
+    assert (keep_going, reason) == (False, "saturation")
+
+
+def test_saturation_is_attributed_before_the_round_budget():
+    """When both would fire, the stop is the evidence running dry."""
+    keep_going, reason = should_continue(
+        round_index=3, new_candidates=0, candidates=10,
+        max_rounds=3, novelty_min=0.2,
+    )
+    assert (keep_going, reason) == (False, "saturation")
+
+
+def test_round_budget_stops_a_still_productive_search():
+    keep_going, reason = should_continue(
+        round_index=3, new_candidates=10, candidates=10,
+        max_rounds=3, novelty_min=0.2,
+    )
+    assert (keep_going, reason) == (False, "max_rounds")
+
+
+# --- stage 2: gap-driven rounds --------------------------------------------
+
+def test_gap_queries_are_held_to_the_bar_against_every_issued_query():
+    """A gap query redundant with round 1's facets is refused, not issued."""
+    ollama = StubOllama(reply='{"facets": ["redundant gap", "genuine gap here"]}',
+                        vectors=[E2, E4])
+    fresh, vectors, decisions, reason = run(plan_gap_round(
+        ollama, "topic", [("topic", 3, 2), ("facet a", 1, 1)],
+        ["topic", "facet a"], [E1, E2],
+        distinct=0.85, max_total=12,
+    ))
+    assert fresh == ["genuine gap here"]
+    assert reason == "continue"
+    assert [d.reason for d in decisions] == ["redundant", "distinct"]
+    assert len(vectors) == 3
+
+
+def test_gap_pass_returning_nothing_is_the_coverage_stop():
+    ollama = StubOllama(reply='{"facets": []}')
+    fresh, _, _, reason = run(plan_gap_round(
+        ollama, "topic", [("topic", 5, 4)], ["topic"], [E1],
+        distinct=0.85, max_total=12,
+    ))
+    assert fresh == []
+    assert reason == "coverage"
+
+
+def test_gap_pass_whose_every_proposal_is_covered_is_also_coverage():
+    ollama = StubOllama(reply='{"facets": ["already covered here"]}',
+                        vectors=[E1])
+    fresh, _, _, reason = run(plan_gap_round(
+        ollama, "topic", [("topic", 5, 4)], ["topic"], [E1],
+        distinct=0.85, max_total=12,
+    ))
+    assert fresh == []
+    assert reason == "coverage"
+
+
+def test_gap_pass_failure_ends_rounds_without_failing_the_job():
+    ollama = StubOllama(generate_error=RuntimeError("ollama down"))
+    fresh, _, _, reason = run(plan_gap_round(
+        ollama, "topic", [("topic", 5, 4)], ["topic"], [E1],
+        distinct=0.85, max_total=12,
+    ))
+    assert fresh == []
+    assert reason == "planner_unavailable"
+
+
+def test_gap_pass_respects_the_search_budget_without_calling_the_planner():
+    ollama = StubOllama(reply='{"facets": ["a gap query here"]}', vectors=[E4])
+    fresh, _, _, reason = run(plan_gap_round(
+        ollama, "topic", [("topic", 1, 1)], ["topic", "b", "c"], [E1, E2, E3],
+        distinct=0.85, max_total=3,
+    ))
+    assert fresh == []
+    assert reason == "budget"
+    assert ollama.generate_calls == []
+
+
+def test_coverage_summary_names_each_query_and_its_yield():
+    rendered = coverage_summary("the topic", [("the topic", 4, 3),
+                                              ("a facet", 0, 0)])
+    assert "the topic" in rendered
+    assert '"a facet": 0 document(s) from 0 domain(s)' in rendered
+
+
+def test_greedy_admit_rejects_inconsistent_inputs():
+    with pytest.raises(ValueError):
+        greedy_admit(["a"], [E1], ["b"], [], distinct=0.85, max_total=4)
+    with pytest.raises(ValueError):
+        greedy_admit(["a"], [], ["b"], [E2], distinct=0.85, max_total=4)
+    with pytest.raises(ValueError):
+        greedy_admit(["a"], [E1], ["b"], [E2], distinct=0.85, max_total=0)
+
+
+# --- stage 2: rounds through the acquisition path ---------------------------
+
+def test_a_collapsed_plan_never_opens_a_second_round(monkeypatch):
+    """The equivalence guarantee: a simple topic is one search, full stop."""
+    searched, progress = _acquisition_probe(
+        monkeypatch, planning=True,
+        reply_queue=['{"facets": ["a paraphrase of the topic"]}'],
+        vector_queue=[[E1, E1]],
+    )
+    assert searched == ["a research topic"]
+    assert progress["query_plan"]["acquisition_stop_reason"] == "single_round"
+    assert len(progress["query_plan"]["rounds"]) == 1
+
+
+def test_a_widened_plan_runs_a_gap_driven_second_round(monkeypatch):
+    searched, progress = _acquisition_probe(
+        monkeypatch, planning=True,
+        reply_queue=[
+            '{"facets": ["facet alpha here", "facet beta here"]}',
+            '{"facets": ["the gap query here"]}',
+        ],
+        vector_queue=[[E1, E2, E3], [E4]],
+        plan_max_rounds=2,
+    )
+    assert searched == ["a research topic", "facet alpha here",
+                        "facet beta here", "the gap query here"]
+    plan = progress["query_plan"]
+    assert [r["index"] for r in plan["rounds"]] == [1, 2]
+    assert plan["rounds"][1]["queries"] == ["the gap query here"]
+    assert plan["acquisition_stop_reason"] == "max_rounds"
+    assert plan["queries"][-1] == "the gap query here"
+
+
+def test_a_round_that_resurfaces_known_sources_stops_on_saturation(monkeypatch):
+    """Round 2 returns exactly round 1's URLs, so nothing new is acquired."""
+    def results_for(query, facet_index):
+        return [f"https://shared{i}.example.com/p" for i in range(3)]
+
+    searched, progress = _acquisition_probe(
+        monkeypatch, planning=True, results_for=results_for,
+        reply_queue=[
+            '{"facets": ["facet alpha here", "facet beta here"]}',
+            '{"facets": ["the gap query here"]}',
+        ],
+        vector_queue=[[E1, E2, E3], [E4]],
+        plan_max_rounds=3,
+    )
+    # Round 1's facets all return the same three URLs, which dedup to three
+    # genuinely new sources -- so round 1 is productive and a gap round runs.
+    # Round 2 resurfaces only those three, yields nothing new, and stops the
+    # research two rounds below the max_rounds rail.
+    assert searched == ["a research topic", "facet alpha here",
+                        "facet beta here", "the gap query here"]
+    plan = progress["query_plan"]
+    assert plan["acquisition_stop_reason"] == "saturation"
+    assert plan["rounds"][0]["new_candidates"] == 3
+    assert plan["rounds"][1]["candidates"] == 3
+    assert plan["rounds"][1]["new_candidates"] == 0
+    assert plan["rounds"][1]["crawled"] == 0
+
+
+def test_no_document_is_fetched_twice_across_rounds(monkeypatch):
+    """Round 2 re-surfacing a round-1 URL must not re-select it for crawl."""
+    def results_for(query, facet_index):
+        if facet_index < 3:
+            return [f"https://f{facet_index}-r{i}.example.com/p"
+                    for i in range(3)]
+        # The gap round returns two known URLs and two genuinely new ones.
+        return ["https://f0-r0.example.com/p", "https://f1-r0.example.com/p",
+                "https://new1.example.com/p", "https://new2.example.com/p"]
+
+    searched, progress = _acquisition_probe(
+        monkeypatch, planning=True, results_for=results_for,
+        reply_queue=[
+            '{"facets": ["facet alpha here", "facet beta here"]}',
+            '{"facets": ["the gap query here"]}',
+        ],
+        vector_queue=[[E1, E2, E3], [E4]],
+        plan_max_rounds=2,
+    )
+    assert len(searched) == 4
+    round_two = progress["query_plan"]["rounds"][1]
+    assert round_two["candidates"] == 4
+    assert round_two["new_candidates"] == 2
+    assert round_two["novelty"] == pytest.approx(0.5)
+
+
+def test_planning_disabled_records_a_single_round_and_no_gap_pass(monkeypatch):
+    searched, progress = _acquisition_probe(monkeypatch, planning=False)
+    assert searched == ["a research topic"]
+    plan = progress["query_plan"]
+    assert plan["acquisition_stop_reason"] == "single_round"
+    assert len(plan["rounds"]) == 1
+    assert plan["rounds"][0]["queries"] == ["a research topic"]
+
+
+# --- provenance across rounds ----------------------------------------------
+
+def test_acquisition_provenance_records_rounds_and_the_stop_reason():
+    plan = QueryPlan(queries=["topic", "facet a"],
+                     decisions=[FacetDecision("topic", True, "topic_seed")],
+                     stop_reason="candidates_exhausted")
+    provenance = acquisition_provenance(
+        plan, issued_queries=["topic", "facet a", "gap q"],
+        decisions=list(plan.decisions),
+        rounds=[RoundRecord(1, ["topic", "facet a"], 10, 10, 1.0, 8),
+                RoundRecord(2, ["gap q"], 6, 1, 1 / 6, 1)],
+        stop_reason="saturation",
+    )
+    assert provenance["queries"] == ["topic", "facet a", "gap q"]
+    assert provenance["facet_count"] == 2
+    assert provenance["acquisition_stop_reason"] == "saturation"
+    assert provenance["rounds"][1] == {
+        "index": 2, "queries": ["gap q"], "candidates": 6,
+        "new_candidates": 1, "novelty": 0.1667, "crawled": 1,
+    }
+
+
+def test_acquisition_provenance_is_json_serializable():
+    import json
+    plan = QueryPlan(queries=["topic"], stop_reason="collapse")
+    payload = acquisition_provenance(
+        plan, issued_queries=["topic"], decisions=[],
+        rounds=[RoundRecord(1, ["topic"], 3, 3, 1.0, 2)],
+        stop_reason="single_round",
+    )
+    assert json.loads(json.dumps(payload))["rounds"][0]["crawled"] == 2
+
+
+def test_plan_vectors_never_reach_provenance():
+    """Embeddings are carried between rounds but must not bloat job progress."""
+    plan = QueryPlan(queries=["topic"], stop_reason="collapse",
+                     vectors=[E1])
+    assert "vectors" not in plan.provenance()
+    assert "vectors" not in acquisition_provenance(
+        plan, issued_queries=["topic"], decisions=[], rounds=[],
+        stop_reason="single_round",
+    )
+
+
 # --- config surface ---------------------------------------------------------
 
 def _config(**overrides):
@@ -478,6 +767,8 @@ def test_query_planning_defaults_are_off_and_inert():
     assert cfg.report_query_planning is False
     assert cfg.plan_facet_distinct == 0.85
     assert cfg.plan_max_facets == 8
+    assert cfg.plan_max_rounds == 3
+    assert cfg.plan_novelty_min == 0.2
     assert cfg.plan_search_budget == 12
     assert cfg.plan_crawl_budget == 40
 
@@ -489,6 +780,10 @@ def test_query_planning_defaults_are_off_and_inert():
     {"plan_max_facets": 100},
     {"plan_search_budget": 0},
     {"plan_crawl_budget": 0},
+    {"plan_max_rounds": 0},
+    {"plan_max_rounds": 50},
+    {"plan_novelty_min": -0.1},
+    {"plan_novelty_min": 1.5},
 ])
 def test_planning_config_rejects_out_of_range_rails(overrides):
     with pytest.raises(ValueError):

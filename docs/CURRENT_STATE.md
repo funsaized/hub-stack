@@ -83,13 +83,14 @@ Rider changes deployed with the same rebuild:
   must be present (compose `${VAR:?}` and config validation); judged
   evidence spans leave the machine (see `docs/NETWORKING.md`).
 
-## Query planning stage 1 merged, not deployed (HUB-024)
+## Query planning stages 1–2 merged, not deployed (HUB-024)
 
 Merged 2026-08-13. The repository now contains `app/query_plan.py`, the
-stage-1 adaptive query planner (facet admission by marginal distinctness,
-cross-facet canonical dedup, budget rails, single round). **The deployed
-stack was not rebuilt and no deployed container was recreated**, so live
-acquisition still issues exactly one SearXNG query per job.
+adaptive query planner: facet admission by marginal distinctness, cross-facet
+and cross-round canonical dedup, budget rails (stage 1), and gap-driven rounds
+that stop on novelty saturation with the reason recorded (stage 2). **The
+deployed stack was not rebuilt and no deployed container was recreated**, so
+live acquisition still issues exactly one SearXNG query per job.
 
 `REPORT_QUERY_PLANNING` defaults to `false` in config, compose and
 `.env.example`; with it false the acquisition path issues the single search
@@ -100,12 +101,20 @@ crawl cap is still `depth`, so breadth would arrive at constant crawl and
 judge cost; the claim gate, the v4 seal and judge-call volume per report are
 untouched.
 
-Verified before merge: 249 tests green in-container with zero skips (44 new,
+Rounds wrap search and crawl only — ingestion is untouched, so worker lease,
+heartbeat, timeout, retry and idempotency semantics are unchanged. Job
+progress records every query issued, every admission decision including
+refusals, each round's novelty yield, and the stop reason (`single_round`,
+`saturation`, `coverage`, `max_rounds`, `budget`, `planner_unavailable`), so
+a degenerate plan is visible in provenance rather than inferred from a thin
+report.
+
+Verified before merge: 274 tests green in-container with zero skips (69 new,
 offline and deterministic), `ruff --select E9,F` clean, `compileall` clean,
 `docker compose config` valid. Enabling the flag in the deployed stack is a
-separate operator decision that has not been taken, and stage 2 (gap-driven
-rounds with novelty-saturation stopping) plus stage 3 (breadth measurement
-against the job-`24a8a471` baseline above) remain open.
+separate operator decision that has not been taken; stage 3 (breadth
+measurement against the job-`24a8a471` baseline above) is blocked on it, since
+measuring breadth requires planned jobs to actually run.
 
 ## Deployment model
 

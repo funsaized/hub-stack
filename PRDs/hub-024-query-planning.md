@@ -143,12 +143,13 @@ judged); any change to judge-call volume per report.
   recorded in job progress.
 - `REPORT_QUERY_PLANNING=false` reproduces current behavior exactly.
 
-## Implementation record — stage 1 (2026-08-13)
+## Implementation record — stages 1 and 2 (2026-08-13)
 
-Built: facet admission, cross-facet canonical dedup, budget rails, single
-round, all behind `REPORT_QUERY_PLANNING=false`. Not built: gap-driven rounds,
-novelty saturation, `PLAN_NOVELTY_MIN` (stage 2); breadth measurement
-(stage 3).
+Built: facet admission, cross-facet and cross-round canonical dedup, budget
+rails (stage 1); gap-driven rounds with novelty-saturation stopping and a
+recorded stop reason (stage 2). All behind `REPORT_QUERY_PLANNING=false`. Not
+built: the breadth measurement against the single-query baseline (stage 3),
+which is gated on the operator's decision to enable the flag.
 
 `app/query_plan.py` holds the mechanism; `app/research.py` phase 1 consumes
 it. Three choices are worth recording because they are what keep the
@@ -170,17 +171,43 @@ acceptance criteria true by construction rather than by assertion:
    which is what keeps "judge calls per report stay bounded by the existing
    drafting caps" true without any new accounting.
 
+Stage 2 adds a round loop around **search and crawl only**; ingestion still
+runs once, unchanged, over the accumulated crawl results. This deliberately
+departs from the PRD's "after each round's ingestion" wording, for two
+reasons. Restructuring the ingest block would put the worker's lease,
+heartbeat and idempotency semantics at risk for no gain — the acceptance
+criteria require those unchanged. And novelty measured on *policy-accepted
+candidates* rather than retained documents is the same signal available one
+step earlier: a round whose searches mostly resurface known canonical URLs has
+saturated, and there is no reason to spend the fetches to find that out.
+`should_continue` checks saturation before the round rail, so a stop is
+attributed to the evidence running dry whenever both would have fired.
+
+Gap queries are admitted by the same `greedy_admit` used for opening facets,
+compared against **every query the job has already issued** rather than just
+its own round — so a gap query cannot re-ask an earlier facet. A collapsed
+plan never opens a second round, which is what keeps "a single-facet topic
+issues exactly one search" literally true rather than approximately true.
+
 Failure policy: every planner failure (unreachable model, malformed JSON,
 mismatched embedding count) degrades to the single-query plan and records
-`planner_unavailable` as the stop reason. The planner never fails a job.
+`planner_unavailable` as the stop reason. A gap-pass failure ends the rounds
+with the reason recorded and keeps everything already acquired. The planner
+never fails a job.
 
-Verification: 249 tests pass in-container with zero skips, 44 of them new and
+Stop reasons recorded in job progress: `single_round` (collapsed or planning
+off), `saturation`, `coverage`, `max_rounds`, `budget`, `planner_unavailable`.
+
+Verification: 274 tests pass in-container with zero skips, 69 of them new and
 fully offline (planner LLM and embeddings stubbed, no live search). Beyond the
-unit cases, five drive `run_job`'s acquisition directly and assert the
+unit cases, ten drive `run_job`'s acquisition directly and assert the
 criteria: flag off issues exactly one search and never calls the planner; a
-collapsed plan issues exactly one search; admitted facets issue one search
-each; a dead planner still acquires on the single query; and every facet's
-results appear in the one policy record.
+collapsed plan issues exactly one search and never opens a second round;
+admitted facets issue one search each; a dead planner still acquires on the
+single query; every facet's results appear in the one policy record; a
+widened plan runs a gap-driven second round; a round that resurfaces known
+sources stops on saturation below the rail; and a URL seen in round 1 is not
+re-selected for crawl in round 2.
 
 Deliberately unmeasured: `PLAN_FACET_DISTINCT = 0.85` is still the design
 default. The open thread below is unresolved — the first measurement calibrates

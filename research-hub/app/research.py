@@ -22,7 +22,16 @@ from .context import classify_and_sanitize
 from .models import JobStatus, ResearchRequest
 from .document_store import DocumentStore
 from .url_policy import DestinationNotAllowed, vet_destination_async
-from .query_plan import interleave, plan_queries, single_query_plan
+from .query_plan import (
+    RoundRecord,
+    acquisition_provenance,
+    interleave,
+    novelty_ratio,
+    plan_gap_round,
+    plan_queries,
+    should_continue,
+    single_query_plan,
+)
 from .retrieval import ScopedRetrievalService
 from .judge_gate import JudgeClaimVerifier
 from .observability import (
@@ -164,6 +173,24 @@ def apply_source_policy(results: list[dict], req: ResearchRequest,
                         freshness_days=(cutoff - published).days if published else None)
         accepted.append(enriched)
     return accepted, decisions
+
+
+def _query_coverage_rows(
+    queries: list[str], results_by_facet: list[list[dict]], covered: set[str],
+) -> list[tuple[str, int, int]]:
+    """Per-query (documents, distinct domains) for the gap pass to reason over.
+
+    A query is credited with every fetched document its own search surfaced,
+    including documents an earlier round already retained -- coverage is about
+    what the corpus answers, not about which query got there first.
+    """
+    rows: list[tuple[str, int, int]] = []
+    for query, results in zip(queries, results_by_facet):
+        canonical = {canonicalize_url(r.get("url", "")) for r in results}
+        hit = canonical & covered
+        domains = {urlsplit(url).hostname or "" for url in hit}
+        rows.append((query, len(hit), len(domains)))
+    return rows
 
 
 async def evaluate_crawl_result(result: dict, max_markdown_chars: int) -> None:
@@ -450,48 +477,31 @@ class ResearchOrchestrator:
                 "plan_stop_reason": plan.stop_reason,
             })
 
-            with phase_timer("search", logger, job_id=job_id):
-                # Sequential: a handful of facets costs seconds against the
-                # local SearXNG, and firing them concurrently would push a
-                # burst at the same upstream engines.
-                results_by_facet = [
-                    await self.searxng.search(
-                        query, max_results=max_sources, language=language
-                    )
-                    for query in plan.queries
-                ]
-            search_results = interleave(results_by_facet)
-            SEARCH_RESULTS.observe(len(search_results))
-            if not search_results:
-                raise RuntimeError("No search results found")
+            # Rounds only run for a plan that actually admitted breadth. A
+            # collapsed plan must issue exactly one search, which is what keeps
+            # a simple topic equivalent to the pre-planning path.
+            rounds_enabled = planning_enabled and not plan.collapsed
+            total_crawl_cap = depth
+            if rounds_enabled:
+                total_crawl_cap = min(
+                    depth * self.cfg.plan_max_rounds, self.cfg.plan_crawl_budget
+                )
 
-            # One policy pass over the merged candidates is what makes every
-            # sub-query inherit the full HUB-020/021 source policy and
-            # deduplicate canonical URLs *across* facets before any crawl.
-            policy_results, policy_decisions = apply_source_policy(search_results, request)
-            crawl_cap = depth
-            if planning_enabled:
-                crawl_cap = min(depth, self.cfg.plan_crawl_budget)
-            selected_results = policy_results[:crawl_cap]
-            urls_to_crawl = [r["url"] for r in selected_results]
-            if not urls_to_crawl:
-                raise RuntimeError("No search results passed crawl policy")
-            await self._update_job(job_id, progress={
-                "phase": "searching_done",
-                "candidate_urls": len(urls_to_crawl),
-                "crawl_policy": policy_decisions,
-                "query_plan": plan.provenance(),
-            })
-
-            # Phase 2: Crawl (concurrent)
-            phase = "crawl"
-            await self._update_job(job_id, status=JobStatus.CRAWLING.value,
-                                   progress={"phase": "crawling", "crawled": 0, "total": len(urls_to_crawl)})
             crawl_results = []
+            policy_decisions: list[dict] = []
+            plan_decisions = list(plan.decisions)
+            rounds: list[RoundRecord] = []
+            seen_canonical: set[str] = set()
+            issued_queries = list(plan.queries)
+            issued_vectors = list(plan.vectors)
+            query_coverage: list[tuple[str, int, int]] = []
+            round_queries = list(plan.queries)
+            crawls_attempted = 0
+            acquisition_stop = "single_round"
             crawl_phase_started = time.monotonic()
             sem = asyncio.Semaphore(4)  # 4 concurrent
 
-            async def crawl_one(url: str, idx: int):
+            async def crawl_one(url: str, idx: int, round_selected: list[dict]):
                 async with sem:
                     domain = urlsplit(url).hostname or "unknown"
                     started = time.monotonic()
@@ -545,15 +555,138 @@ class ResearchOrchestrator:
                         "duration_seconds": round(time.monotonic() - started, 4),
                     })
                     if res:
-                        res["policy_metadata"] = selected_results[idx]
+                        res["policy_metadata"] = round_selected[idx]
                         crawl_results.append(res)
                     await self._update_job(job_id, progress={
                         "phase": "crawling",
                         "crawled": len(crawl_results),
-                        "total": len(urls_to_crawl),
+                        "total": crawls_attempted,
                     })
 
-            await asyncio.gather(*[crawl_one(u, i) for i, u in enumerate(urls_to_crawl)])
+            round_index = 0
+            while round_queries:
+                round_index += 1
+                phase = "search"
+                await self._update_job(job_id, status=JobStatus.SEARCHING.value,
+                                       progress={"phase": "searching", "topic": topic,
+                                                 "round": round_index})
+                with phase_timer("search", logger, job_id=job_id):
+                    # Sequential: a handful of facets costs seconds against the
+                    # local SearXNG, and firing them concurrently would push a
+                    # burst at the same upstream engines.
+                    results_by_facet = [
+                        await self.searxng.search(
+                            query, max_results=max_sources, language=language
+                        )
+                        for query in round_queries
+                    ]
+                merged = interleave(results_by_facet)
+                if round_index == 1:
+                    SEARCH_RESULTS.observe(len(merged))
+                    if not merged:
+                        raise RuntimeError("No search results found")
+
+                # One policy pass per round is what makes every sub-query
+                # inherit the full HUB-020/021 source policy and deduplicate
+                # canonical URLs across facets; `seen_canonical` extends that
+                # deduplication across rounds, so no document is fetched twice.
+                accepted, decisions = apply_source_policy(merged, request)
+                policy_decisions.extend(decisions)
+                fresh = [
+                    r for r in accepted if r["canonical_url"] not in seen_canonical
+                ]
+                round_cap = max(0, min(depth, total_crawl_cap - crawls_attempted))
+                selected_results = fresh[:round_cap]
+                for result in selected_results:
+                    seen_canonical.add(result["canonical_url"])
+                urls_to_crawl = [r["url"] for r in selected_results]
+                if round_index == 1 and not urls_to_crawl:
+                    raise RuntimeError("No search results passed crawl policy")
+                crawls_attempted += len(urls_to_crawl)
+                query_coverage.extend(
+                    _query_coverage_rows(round_queries, results_by_facet,
+                                         seen_canonical)
+                )
+                await self._update_job(job_id, progress={
+                    "phase": "searching_done",
+                    "round": round_index,
+                    "candidate_urls": len(urls_to_crawl),
+                    "crawl_policy": policy_decisions,
+                    "query_plan": acquisition_provenance(
+                        plan, issued_queries=issued_queries,
+                        decisions=plan_decisions, rounds=rounds,
+                        stop_reason=acquisition_stop,
+                    ),
+                })
+
+                # Phase 2: Crawl (concurrent)
+                phase = "crawl"
+                await self._update_job(
+                    job_id, status=JobStatus.CRAWLING.value,
+                    progress={"phase": "crawling", "crawled": len(crawl_results),
+                              "total": crawls_attempted, "round": round_index},
+                )
+                crawled_before = len(crawl_results)
+                await asyncio.gather(*[
+                    crawl_one(u, i, selected_results)
+                    for i, u in enumerate(urls_to_crawl)
+                ])
+                rounds.append(RoundRecord(
+                    index=round_index, queries=list(round_queries),
+                    candidates=len(accepted), new_candidates=len(fresh),
+                    novelty=novelty_ratio(len(fresh), len(accepted)),
+                    crawled=len(crawl_results) - crawled_before,
+                ))
+
+                round_queries = []
+                if not rounds_enabled:
+                    break
+                # Saturation first, budget last: a stop is attributed to the
+                # evidence running dry whenever both would have fired.
+                continue_rounds, reason = should_continue(
+                    round_index=round_index,
+                    new_candidates=len(fresh), candidates=len(accepted),
+                    max_rounds=self.cfg.plan_max_rounds,
+                    novelty_min=self.cfg.plan_novelty_min,
+                )
+                if not continue_rounds:
+                    acquisition_stop = reason
+                    break
+                if crawls_attempted >= total_crawl_cap:
+                    acquisition_stop = "budget"
+                    break
+                gap_queries, issued_vectors, gap_decisions, gap_reason = (
+                    await plan_gap_round(
+                        self.ollama, topic, query_coverage,
+                        issued_queries, issued_vectors,
+                        distinct=self.cfg.plan_facet_distinct,
+                        max_total=self.cfg.plan_search_budget,
+                        job_id=job_id,
+                    )
+                )
+                plan_decisions.extend(gap_decisions)
+                if not gap_queries:
+                    acquisition_stop = gap_reason
+                    break
+                issued_queries.extend(gap_queries)
+                round_queries = gap_queries
+
+            logger.info("acquisition_completed", extra={
+                "job_id": job_id, "phase": "search",
+                "rounds": len(rounds), "queries_issued": len(issued_queries),
+                "plan_stop_reason": acquisition_stop,
+            })
+            # Record the settled plan as soon as acquisition ends, so a job
+            # that fails during ingestion still shows why it stopped searching.
+            await self._update_job(job_id, progress={
+                "phase": "acquisition_done",
+                "crawl_policy": policy_decisions,
+                "query_plan": acquisition_provenance(
+                    plan, issued_queries=issued_queries,
+                    decisions=plan_decisions, rounds=rounds,
+                    stop_reason=acquisition_stop,
+                ),
+            })
             crawl_phase_elapsed = time.monotonic() - crawl_phase_started
             JOB_PHASE_LATENCY.labels("crawl").observe(crawl_phase_elapsed)
             logger.info("phase_completed", extra={
@@ -712,7 +845,11 @@ class ResearchOrchestrator:
                     ) if batches_completed else 0,
                     "crawl_policy": policy_decisions,
                     "robots_respected": respect_robots,
-                    "query_plan": plan.provenance(),
+                    "query_plan": acquisition_provenance(
+                        plan, issued_queries=issued_queries,
+                        decisions=plan_decisions, rounds=rounds,
+                        stop_reason=acquisition_stop,
+                    ),
                 },
             )
             # Synthesis is deliberately outside ingestion failure semantics. A failed
