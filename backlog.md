@@ -1261,6 +1261,125 @@ SearXNG. Brave Search API is rejected pending an operator licensing decision —
 its terms restrict storing API results, and this system exists to build a
 persistent corpus.
 
+### HUB-043 — Retrieval is job-scoped; the corpus cannot be queried as one base
+
+**Status:** 🔴 OPEN — the highest-value item on the board. Analysis and
+literature grounding in the 2026-08-13 system analysis.
+
+`ScopedRetrievalService.retrieve(job_id, topic)` takes a job id as its first
+argument, so hybrid dense+BM25 fusion, per-source caps and the FTS5 needle
+channel run **only** during one job's report synthesis. `/query` and `/rag`
+use a separate, simpler, dense-only path.
+
+The system therefore has two retrieval implementations and the better one
+cannot see the corpus: 530 documents sit physically in one index and
+logically in 49 silos. The exact-term channel that HUB-017 measured lifting
+hit@4 from `0.6923` to `1.0` — the one that recovered a DOI no reranking
+could reach — is unavailable to every corpus-wide query.
+
+This is the gap between the current system and the stated goal of a
+searchable, cross-referenced knowledge base, and it is a prerequisite for
+HUB-044 through HUB-046.
+
+**Approach.** Make `job_id` an optional filter rather than a required
+argument, unscope the lexical channel, and route `/query` and `/rag` through
+the same service. This *deletes* a duplicate implementation rather than
+adding one. Note it deliberately crosses the PRD boundary that held `/query`
+and `/rag` unchanged — that boundary protected a regression surface which is
+now the thing to fix.
+
+**Acceptance:** one retrieval path; corpus-wide queries use dense+BM25+RRF;
+job-scoped report synthesis is byte-identical to today on a retried report.
+
+### HUB-044 — No retrieval-breadth metric; evidence concentrates on few sources
+
+**Status:** 🔴 OPEN — measured, unmeasured.
+
+A synthesis run selected 15 chunks drawn from only **7 of 22 available
+sources**. Breadth is bought expensively during acquisition and then partly
+discarded at retrieval, and nothing tracks it.
+
+Graph-Aware Late Chunking (arXiv 2603.22633) argues ranking metrics
+systematically undervalue breadth: content-similarity methods scored the
+highest MRR while always retrieving from a single document section, and
+structure-aware methods reached up to 15.6x more sections. It proposes
+coverage metrics (SecCov@k, CS Recall) alongside MRR/Recall@k.
+
+**Approach.** Track source coverage at k next to recall in the retrieval
+benchmark. Without this number, changes to chunking or retrieval cannot be
+judged — which is why it precedes HUB-045.
+
+### HUB-045 — Chunk embeddings lose their document context
+
+**Status:** 🔴 OPEN — deferred behind HUB-044, which would prove whether
+chunking is actually the bottleneck.
+
+Chunking is a fixed 800/100 recursive split applied identically to API
+reference tables, Q&A pages, marketing copy and academic PDFs, and each chunk
+is embedded in isolation so it loses the context of its surrounding passage.
+
+Late Chunking (arXiv 2409.04701) embeds the whole document once with a
+long-context model and pools per chunk afterwards, reporting better retrieval
+without retraining and without changing chunk boundaries — a low-risk swap at
+the embedding step. **Precondition:** the embedding model's context window
+must cover typical documents; that is the load-bearing assumption to verify
+first.
+
+Adaptive Chunking (arXiv 2603.25333) is the more thorough alternative —
+per-document metrics selecting among chunkers, correctness 62–64% → 72% — but
+adds five metrics and multiple splitters, which is disproportionate until
+HUB-044 shows chunking is the limit.
+
+### HUB-046 — Cross-document linking: bridge entities, not shared vocabulary
+
+**Status:** 🔴 OPEN — supersedes the mechanism half of HUB-040.
+
+Nothing connects a document to any other: no entity linking, no cross-job
+deduplication, no path for "what do we know about X across everything". The
+one cross-document mechanism that exists pairs evidence spans by **shared
+vocabulary**, which optimises for combinability rather than relatedness and
+produced zero genuine conflicts across 450 sampled pairs.
+
+Entity-centered Cross-document RE (arXiv 2210.16541) connects documents
+through *bridge entities* that co-occur with both targets, filtering out the
+noisy surrounding text that lexical overlap admits. Sequential Cross-Document
+Coreference (arXiv 2104.08413) supplies the cost shape: incremental
+mention-to-cluster scoring rather than exhaustive pairwise comparison, linear
+rather than quadratic.
+
+**Take the ideas, not the models** — both assume labelled supervision this
+corpus does not have. Entity keys are also what deduplication and cross-job
+aggregation both need, so this is the cheapest first step toward either.
+
+### HUB-047 — No end-to-end retrieval evaluation set
+
+**Status:** 🔴 OPEN — the gap the backlog never named.
+
+There are benchmarks for exact-term recall, claim support and source
+screening, but nothing measuring whether the knowledge base answers real
+questions well. Every retrieval decision to date has been judged on a proxy.
+
+**Approach.** A held-out question set with known-good source documents,
+scored on answer correctness and source coverage. HUB-044 is its first
+metric. This is what would let HUB-045 and HUB-048 be decided by measurement
+rather than argument.
+
+### HUB-048 — Knowledge-graph go/no-go, decided by measurement
+
+**Status:** 🔴 OPEN — replaces the open-ended evaluation in HUB-027.
+
+RAG vs. GraphRAG (arXiv 2502.11371) benchmarks both under a unified protocol
+and finds GraphRAG's advantage is task- and dataset-dependent rather than
+universal, with graph construction adding nontrivial LLM preprocessing cost —
+material on one workstation with a 9B local model.
+
+**Approach.** Run that protocol on this corpus: existing hybrid retrieval
+against a minimal graph prototype, on representative aggregation queries, and
+let the measured delta decide. Do not build the graph first.
+
+**Blocked by HUB-043 and HUB-047**: comparing against a corpus-wide baseline
+requires one to exist, and deciding by measurement requires an evaluation set.
+
 ### HUB-025 — Add scheduled research jobs
 
 Add recurring jobs only after the durable worker, idempotency, and notification paths are complete.
@@ -1340,6 +1459,12 @@ document store unless the adopted use case requires shared transactional access.
 
 ### HUB-027 — Evaluate a knowledge graph layer
 
+**Superseded 2026-08-13 by HUB-048**, which replaces the open-ended
+evaluation with a measured protocol. Note the stated precondition is **not
+met**: hybrid retrieval exists for jobs but not corpus-wide (HUB-043), so
+"hybrid retrieval first" has not actually happened for the queries a graph
+would serve.
+
 Do not add a graph until hybrid retrieval, reranking, citation validation, and a retrieval evaluation set are in place.
 
 **Revisit trigger:** measured failures are primarily relationship/multi-hop failures that hybrid retrieval cannot solve.
@@ -1392,6 +1517,10 @@ HUB-017 ✅, HUB-018 ✅, HUB-019 ✅, HUB-020 ✅, HUB-021 ✅, HUB-022 ✅, HU
 
 ### Milestone 5 — Expansion only when earned
 
+HUB-043 🔴 (corpus-wide retrieval — the highest-value open item), HUB-044 🔴
+(retrieval-breadth metric), HUB-045 🔴 (late chunking), HUB-046 🔴
+(bridge-entity cross-document linking), HUB-047 🔴 (end-to-end retrieval
+evaluation set), HUB-048 🔴 (knowledge-graph go/no-go by measurement).
 HUB-024 ✅ (2026-08-13 — deployed and measured: 25 sources / 23 domains
 against the 6/6 single-query baseline, zero off-topic acquisition; design and
 citations in `PRDs/hub-024-query-planning.md`). HUB-025 through HUB-030 remain
