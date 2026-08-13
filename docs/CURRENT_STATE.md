@@ -216,6 +216,41 @@ operator decision, not a config nudge.
 Metered cost rose with drafting — roughly 40 drafted claims per report against
 28 — and every cap is env-tunable to walk back without a rebuild.
 
+## Judge reliability: token allowance and timeout sized together (2026-08-13)
+
+Three configurations, measured rather than reasoned about. The last two used
+ten report retries each — retry re-runs synthesis only, so it exercises the
+judge repeatedly without adding search pressure and isolates judge failures
+from acquisition failures.
+
+| Allowance / timeout | Outcome |
+|---|---|
+| 4096 tokens / 60 s | ~17% `empty_content` (1 of 6 full jobs) |
+| 8192 tokens / 60 s | 20% `timeout` (2 of 10 retries) |
+| **8192 tokens / 180 s** | **0 failures (10 of 10 retries)** |
+
+**The first fix only moved the failure.** Raising the allowance was correctly
+diagnosed — a failure logged `finish_reason=length` after 19,637 characters of
+reasoning, roughly 4,900 tokens against a 4,096 allowance — but the two
+parameters are coupled, and 60 s had been chosen when the allowance was 2048.
+Permitting four times the output without extending the time to produce it
+traded `empty_content` for `timeout` at a slightly worse rate. Only the
+ten-retry test exposed that; the single prior failure could not have.
+
+With both sized together, the previously-failing Kafka job now completes
+consistently at 33–40 findings, and no `empty_content` or `timeout` appears in
+the logs across the whole run.
+
+**How much this proves.** Ten clean retries are consistent with a true failure
+rate up to roughly a quarter, so this is not proof of zero. The confidence
+comes from mechanism as much as count: both observed failure modes had
+identified causes, and both causes are now addressed. Judge calls remain
+sequential, so the raised timeout is worst-case latency per slow claim, not
+per report.
+
+Findings across the ten retries ranged 3–40, tracking corpus quality rather
+than corpus size.
+
 ## Widened search pool, load-tested (HUB-042, 2026-08-13)
 
 Six fresh topics run back to back, probing engine health before each job so
