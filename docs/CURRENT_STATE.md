@@ -251,6 +251,42 @@ per report.
 Findings across the ten retries ranged 3–40, tracking corpus quality rather
 than corpus size.
 
+## Search stage 1: pacing and pre-crawl ranking (ADR-002, 2026-08-13)
+
+Two free changes, both previously untried, decided in
+`docs/ADR-002-search-provider-strategy.md`.
+
+**Pacing.** The planner fired a plan's 3–6 queries in immediate succession
+and jobs ran back to back; roughly 250 queries in bursts blocked four of six
+engines. `SEARCH_PACING_SECONDS` defaults to 2.0 — seconds per job against a
+~180 s job.
+
+**Pre-crawl ranking.** The crawl cap decides which candidates are fetched, so
+their order decides what the budget buys. Each facet's results are now ordered
+by title+snippet relevance to the topic before interleaving. Deliberately
+ranking rather than thresholding: a cutoff on snippets would need its own
+calibrated number, and ranking wastes no crawl while discarding nothing.
+Ranking is within each facet, never across, so interleaving still shares the
+budget; a failed embed leaves the order untouched.
+
+Measured on the topic that previously behaved worst:
+
+| "Rust async runtime, tokio vs async-std" | Before | After |
+|---|---|---|
+| Documents crawled | 36 | 17 |
+| Retained after the post-crawl screen | 4 | **17** |
+| Discarded as off-topic | **32** | **0** |
+
+The earlier run fetched `dictionary.com`, `thefreedictionary.com` and
+`webmd.com` before discarding them. With ranking the budget went to the top of
+71 scored candidates and every fetched document survived, retaining
+`tokio.rs`, `docs.rs`, `users.rust-lang.org` and similar.
+
+Stage 2 — adding Serper as a fallback behind SearXNG — remains deferred
+pending an operator spend decision. Brave Search API stays rejected pending a
+licensing question: its terms restrict storing API results, and this system
+exists to build a persistent corpus.
+
 ## Widened search pool, load-tested (HUB-042, 2026-08-13)
 
 Six fresh topics run back to back, probing engine health before each job so

@@ -1,7 +1,7 @@
 # ADR-002 — Search provider strategy for research acquisition
 
 Date: 2026-08-13
-Status: Proposed — stage 1 actionable now; stage 2 needs an operator spend decision
+Status: Stage 1 Accepted and deployed 2026-08-13; stage 2 deferred pending an operator spend decision
 Item: HUB-042 (`backlog.md`)
 
 ## Context
@@ -130,6 +130,31 @@ private path stays default and the paid path is insurance, mirroring the
   remove what the engines pay nothing to produce.
 - **A search cache.** Would have cut most of today's load, since topics were
   repeated. Explicitly declined by the operator.
+
+## Stage 1 outcome (2026-08-13)
+
+Deployed: pacing at `SEARCH_PACING_SECONDS=2.0`, and per-facet ranking of
+search results by title+snippet relevance before interleaving and before the
+crawl cap is applied.
+
+Measured on "Rust async runtime differences between tokio and async-std", the
+topic that previously behaved worst:
+
+| | Before stage 1 | After stage 1 |
+|---|---|---|
+| Documents crawled | 36 | 17 |
+| Retained after the post-crawl screen | 4 | **17** |
+| Discarded as off-topic | **32** | **0** |
+
+The earlier run spent 36 crawls to keep 4 sources, discarding
+`dictionary.com`, `thefreedictionary.com` and `webmd.com` after fetching
+them. With ranking, the crawl budget went to the top of 71 scored candidates
+(best `0.92`, median `0.731`, worst `0.418`) and every fetched document
+survived the screen. The retained domains are `tokio.rs`, `docs.rs`,
+`users.rust-lang.org`, `rustify.rs`, `rustfaq.org` and similar.
+
+The post-crawl screen is not redundant — it remains the guard for documents
+whose snippet flatters them — but it now has little left to remove.
 
 ## Acceptance
 
