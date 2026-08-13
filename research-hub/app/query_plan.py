@@ -94,6 +94,10 @@ class QueryPlan:
     queries: list[str]
     decisions: list[FacetDecision] = field(default_factory=list)
     stop_reason: str = "collapse"
+    # Embeddings of the admitted queries, carried so a later round can be held
+    # to the same distinctness bar against every query already issued. Never
+    # serialized into provenance.
+    vectors: list[list[float]] = field(default_factory=list, repr=False)
 
     @property
     def collapsed(self) -> bool:
@@ -159,6 +163,70 @@ def parse_candidates(raw: str) -> list[str]:
     return candidates
 
 
+def greedy_admit(
+    seed_queries: list[str],
+    seed_vectors: list[list[float]],
+    candidates: list[str],
+    candidate_vectors: list[list[float]],
+    *,
+    distinct: float,
+    max_total: int,
+) -> tuple[list[str], list[list[float]], list[FacetDecision], str]:
+    """Admit candidates that add retrieval intent the seed set does not cover.
+
+    Shared by first-round facet admission and later-round gap admission, so a
+    gap query is held to exactly the same distinctness bar as an opening
+    facet -- and is compared against every query the job has already issued,
+    not just the ones from its own round.
+
+    Returns ``(queries, vectors, decisions, stop_reason)``.
+    """
+    if len(candidate_vectors) != len(candidates):
+        raise ValueError("expected one vector per candidate")
+    if len(seed_vectors) != len(seed_queries):
+        raise ValueError("expected one vector per seed query")
+    if max_total < 1:
+        raise ValueError("max_total must be at least 1")
+
+    queries = list(seed_queries)
+    vectors = list(seed_vectors)
+    decisions: list[FacetDecision] = []
+    stop_reason = "candidates_exhausted"
+
+    for index, candidate in enumerate(candidates):
+        if len(queries) >= max_total:
+            # The rail tripped: record every remaining candidate as
+            # unconsidered so a plan truncated by the cap is visible in
+            # provenance rather than inferred from a thin corpus.
+            stop_reason = "max_facets"
+            decisions.extend(
+                FacetDecision(query=c, admitted=False, reason="max_facets")
+                for c in candidates[index:]
+            )
+            break
+        vector = candidate_vectors[index]
+        similarity = (
+            max(cosine(vector, v) for v in vectors) if vectors else 0.0
+        )
+        if similarity < distinct:
+            queries.append(candidate)
+            vectors.append(vector)
+            decisions.append(
+                FacetDecision(
+                    query=candidate, admitted=True, reason="distinct",
+                    max_cosine=similarity,
+                )
+            )
+        else:
+            decisions.append(
+                FacetDecision(
+                    query=candidate, admitted=False, reason="redundant",
+                    max_cosine=similarity,
+                )
+            )
+    return queries, vectors, decisions, stop_reason
+
+
 def admit_facets(
     topic: str,
     candidates: list[str],
@@ -175,48 +243,24 @@ def admit_facets(
     """
     if len(vectors) != len(candidates) + 1:
         raise ValueError("expected one vector per candidate plus the topic")
-    if max_facets < 1:
-        raise ValueError("max_facets must be at least 1")
 
-    queries = [topic]
-    admitted_vectors = [vectors[0]]
-    decisions = [FacetDecision(query=topic, admitted=True, reason="topic_seed")]
-    stop_reason = "candidates_exhausted"
-
-    for index, candidate in enumerate(candidates, start=1):
-        if len(queries) >= max_facets:
-            # The rail tripped: record every remaining candidate as unconsidered
-            # so a plan truncated by the cap is visible, not inferred.
-            stop_reason = "max_facets"
-            decisions.extend(
-                FacetDecision(query=c, admitted=False, reason="max_facets")
-                for c in candidates[index - 1:]
-            )
-            break
-        vector = vectors[index]
-        similarity = max(cosine(vector, v) for v in admitted_vectors)
-        if similarity < distinct:
-            queries.append(candidate)
-            admitted_vectors.append(vector)
-            decisions.append(
-                FacetDecision(
-                    query=candidate, admitted=True, reason="distinct",
-                    max_cosine=similarity,
-                )
-            )
-        else:
-            decisions.append(
-                FacetDecision(
-                    query=candidate, admitted=False, reason="redundant",
-                    max_cosine=similarity,
-                )
-            )
+    queries, admitted_vectors, decisions, stop_reason = greedy_admit(
+        [topic], [vectors[0]], candidates, vectors[1:],
+        distinct=distinct, max_total=max_facets,
+    )
+    decisions = [
+        FacetDecision(query=topic, admitted=True, reason="topic_seed"),
+        *decisions,
+    ]
 
     if len(queries) == 1 and stop_reason == "candidates_exhausted":
         # Every candidate collapsed into the topic: this is the complexity
         # signal, and the job now behaves exactly as it did before planning.
         stop_reason = "collapse"
-    return QueryPlan(queries=queries, decisions=decisions, stop_reason=stop_reason)
+    return QueryPlan(
+        queries=queries, decisions=decisions, stop_reason=stop_reason,
+        vectors=admitted_vectors,
+    )
 
 
 async def plan_queries(
@@ -279,6 +323,182 @@ async def plan_queries(
             extra={"job_id": job_id, "failure_reason": str(exc)},
         )
         return single_query_plan(topic, "planner_unavailable")
+
+
+GAP_SYSTEM = (
+    "You identify what a research corpus is still missing. "
+    "You reply with JSON only."
+)
+
+GAP_RULES = """Below is what a research job has retrieved so far, per query.
+
+Name the sub-questions the corpus does NOT yet answer, as search queries.
+
+Rules:
+- Target gaps, not more of what is already covered. A query that would
+  return the same sources again is worthless here.
+- A query covering zero retrieved documents is the strongest gap signal.
+- If the corpus already covers the topic, return an empty list. That is a
+  correct answer and ends the research.
+- Each query is a search-engine query: keywords or a short question, no
+  boolean operators, no site: filters, no quotes.
+
+Return JSON: {"facets": ["query one", "query two"]}"""
+
+
+@dataclass(frozen=True)
+class RoundRecord:
+    """What one acquisition round issued and yielded. Recorded per job."""
+
+    index: int
+    queries: list[str]
+    candidates: int
+    new_candidates: int
+    novelty: float
+    crawled: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "index": self.index,
+            "queries": list(self.queries),
+            "candidates": self.candidates,
+            "new_candidates": self.new_candidates,
+            "novelty": round(self.novelty, 4),
+            "crawled": self.crawled,
+        }
+
+
+def novelty_ratio(new_candidates: int, candidates: int) -> float:
+    """Fraction of a round's policy-accepted candidates never seen before.
+
+    Measured on candidates rather than on retained documents (the PRD's
+    original wording) because the signal is identical and available *before*
+    the crawl: a round whose searches mostly resurface known URLs has
+    saturated, and there is no reason to spend the fetches to discover that.
+    """
+    if candidates <= 0:
+        return 0.0
+    return new_candidates / candidates
+
+
+def should_continue(
+    *,
+    round_index: int,
+    new_candidates: int,
+    candidates: int,
+    max_rounds: int,
+    novelty_min: float,
+    min_new_documents: int = 2,
+) -> tuple[bool, str]:
+    """Decide whether another round is warranted, and say why not.
+
+    Saturation first, budget last -- the ordering the PRD requires, so a stop
+    is attributed to the evidence running dry rather than to a rail whenever
+    both would have fired.
+    """
+    ratio = novelty_ratio(new_candidates, candidates)
+    if new_candidates < min_new_documents or ratio < novelty_min:
+        return False, "saturation"
+    if round_index >= max_rounds:
+        return False, "max_rounds"
+    return True, "continue"
+
+
+def coverage_summary(topic: str, per_query: list[tuple[str, int, int]]) -> str:
+    """Render the per-query coverage the gap pass reasons over."""
+    lines = [f"Topic: {topic}", "", "Coverage so far:"]
+    for query, documents, domains in per_query:
+        lines.append(
+            f"- \"{query}\": {documents} document(s) from {domains} domain(s)"
+        )
+    return "\n".join(lines)
+
+
+async def plan_gap_round(
+    ollama,
+    topic: str,
+    per_query: list[tuple[str, int, int]],
+    issued_queries: list[str],
+    issued_vectors: list[list[float]],
+    *,
+    distinct: float,
+    max_total: int,
+    job_id: str | None = None,
+) -> tuple[list[str], list[list[float]], list[FacetDecision], str]:
+    """Propose and admit the next round's gap-driven queries.
+
+    Never raises: a failure yields no queries, which ends the rounds with the
+    reason recorded rather than failing an otherwise healthy job.
+    """
+    if max_total <= len(issued_queries):
+        return [], issued_vectors, [], "budget"
+    try:
+        raw = await ollama.generate(
+            f"{GAP_RULES}\n\n{coverage_summary(topic, per_query)}",
+            system=GAP_SYSTEM,
+            max_tokens=PLANNER_MAX_TOKENS,
+            json_schema=FACET_SCHEMA,
+            diagnostic_stage="query_plan_gap",
+        )
+        candidates = parse_candidates(raw)
+    except Exception as exc:
+        logger.warning(
+            "query_plan_gap_unavailable",
+            extra={"job_id": job_id, "failure_reason": type(exc).__name__},
+        )
+        return [], issued_vectors, [], "planner_unavailable"
+
+    if not candidates:
+        # The gap pass was asked to return nothing once the corpus covers the
+        # topic; that is the coverage stop, not a failure.
+        return [], issued_vectors, [], "coverage"
+
+    try:
+        candidate_vectors = await ollama.embed_batch(candidates)
+        if len(candidate_vectors) != len(candidates):
+            raise ValueError("embedding count mismatch")
+        queries, vectors, decisions, _ = greedy_admit(
+            issued_queries, issued_vectors, candidates, candidate_vectors,
+            distinct=distinct, max_total=max_total,
+        )
+    except Exception as exc:
+        logger.warning(
+            "query_plan_gap_admission_failed",
+            extra={"job_id": job_id, "failure_reason": type(exc).__name__},
+        )
+        return [], issued_vectors, [], "planner_unavailable"
+
+    fresh = queries[len(issued_queries):]
+    if not fresh:
+        # Every proposed gap was already covered by an issued query.
+        return [], vectors, decisions, "coverage"
+    return fresh, vectors, decisions, "continue"
+
+
+def acquisition_provenance(
+    plan: QueryPlan,
+    *,
+    issued_queries: list[str],
+    decisions: list[FacetDecision],
+    rounds: list[RoundRecord],
+    stop_reason: str,
+) -> dict[str, Any]:
+    """The full audit trail for one job's acquisition, for job progress.
+
+    A degenerate plan has to be visible in provenance rather than inferred
+    from a thin report, so this records every query issued, every admission
+    decision including refusals, each round's novelty yield, and why the
+    rounds stopped.
+    """
+    return {
+        "queries": list(issued_queries),
+        "facet_count": len(plan.queries),
+        "collapsed": plan.collapsed,
+        "stop_reason": plan.stop_reason,
+        "acquisition_stop_reason": stop_reason,
+        "rounds": [r.as_dict() for r in rounds],
+        "decisions": [d.as_dict() for d in decisions],
+    }
 
 
 def interleave(results_by_facet: list[list[dict]]) -> list[dict]:

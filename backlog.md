@@ -848,11 +848,12 @@ the deployed image.
 
 ### HUB-024 — Adaptive query planning and iterative research
 
-**Status:** 🟡 IN PROGRESS — stage 1 (facet admission, cross-facet dedup,
-budget rails, single round) implemented behind `REPORT_QUERY_PLANNING=false`
-on 2026-08-13; stages 2 (gap-driven rounds) and 3 (measurement) not started.
-Design: `PRDs/hub-024-query-planning.md` (grounded in 16 arXiv abstracts
-fetched and read 2026-08-13; citations in the PRD).
+**Status:** 🟡 IN PROGRESS — stages 1 and 2 implemented behind
+`REPORT_QUERY_PLANNING=false` on 2026-08-13. Stage 3 (breadth measurement
+against the single-query baseline) is **blocked on the operator's decision to
+enable the flag in the deployed stack**, which has not been taken. Design:
+`PRDs/hub-024-query-planning.md` (grounded in 16 arXiv abstracts fetched and
+read 2026-08-13; citations in the PRD).
 
 **Stage 1 as built.** `app/query_plan.py` proposes candidate facets in one
 bounded local-LLM call, embeds `[topic, *candidates]` in a single
@@ -867,17 +868,36 @@ construction rather than by reimplementation. SSRF vetting is per-URL in
 `crawl_one` and therefore unchanged. Crawl count is still bounded by `depth`,
 so breadth arrives at constant crawl and judge cost.
 
-Every planner failure mode — dead Ollama, malformed JSON, wrong embedding
-count, bad admission input — degrades to the single-query plan with the
-reason recorded (`planner_unavailable`), never a failed job. 249 tests pass
-in-container (44 new, offline and deterministic), including direct assertions
-that the flag-off path issues exactly one search and never calls the planner.
+**Stage 2 as built.** A round loop wraps search and crawl only; ingestion
+still runs once, unchanged, over the accumulated crawl results — restructuring
+it would risk the lease/heartbeat/idempotency semantics the acceptance
+criteria require untouched. After each round a bounded call reads a per-query
+coverage summary and names the gaps; those become the next round's queries,
+admitted by the same distinctness bar against **every** query already issued.
+Rounds stop on novelty saturation (a round's fraction of policy-accepted
+candidates never seen before falling under `PLAN_NOVELTY_MIN`, or fewer than
+two new), checked *before* the `PLAN_MAX_ROUNDS` rail so a stop is attributed
+to the evidence running dry whenever both would have fired. `seen_canonical`
+extends dedup across rounds, so no document is fetched twice. A collapsed plan
+never opens a second round.
 
-**Not yet done:** gap-driven rounds, novelty saturation stopping,
-`PLAN_NOVELTY_MIN`, and the breadth measurement against the single-query
+Novelty is measured on policy-accepted candidates rather than the PRD's
+"retained documents" — the same signal one step earlier, so saturation costs
+no wasted fetches to discover. Recorded stop reasons: `single_round`,
+`saturation`, `coverage`, `max_rounds`, `budget`, `planner_unavailable`.
+
+Every planner failure mode — dead Ollama, malformed JSON, wrong embedding
+count, bad admission input, gap-pass failure — degrades to the single-query
+plan or ends the rounds with the reason recorded, never a failed job. 274
+tests pass in-container (69 new, offline and deterministic), ten of which
+drive `run_job`'s acquisition directly.
+
+**Not yet done (stage 3):** the breadth measurement against the single-query
 baseline recorded in `docs/CURRENT_STATE.md` (job `24a8a471`: 6 sources / 6
-distinct domains). Enabling the flag in the deployed stack is a separate
-operator decision and has not been taken.
+distinct domains). It needs planned jobs to actually run, which needs the flag
+enabled in the deployed stack — a separate operator decision that has not been
+taken. `PLAN_NOVELTY_MIN = 0.2` is still the design default and the first
+measurement calibrates it rather than validating the design.
 
 **Trigger record:** a research job issues exactly one SearXNG query, so the
 retained corpus for a report contains only what that phrasing surfaced. The
