@@ -88,7 +88,13 @@ class Config:
     judge_model: str = "MiniMax-M3"
     # Subscription Key — excluded from repr so the secret can never reach logs.
     judge_api_key: str = field(default="", repr=False)
-    judge_timeout_seconds: float = 60.0
+    # Sized with RESPONSE_MAX_TOKENS: a call permitted 8192 output tokens needs
+    # time to produce them, and 60s was chosen when the allowance was 2048.
+    # Raising the allowance alone traded empty_content failures for timeouts
+    # (measured 2026-08-13: 2 of 10 report retries). Judge calls are
+    # sequential, so this is worst-case added latency per slow claim, not per
+    # report.
+    judge_timeout_seconds: float = 180.0
 
     def __post_init__(self) -> None:
         if not 1 <= self.report_rrf_k <= 1000:
@@ -201,5 +207,5 @@ def load_config() -> Config:
         judge_base_url=os.environ.get("JUDGE_BASE_URL", "https://api.minimax.io/v1"),
         judge_model=os.environ.get("JUDGE_MODEL", "MiniMax-M3"),
         judge_api_key=os.environ.get("MINIMAX_SUBSCRIPTION_KEY", ""),
-        judge_timeout_seconds=float(os.environ.get("JUDGE_TIMEOUT_SECONDS", "60")),
+        judge_timeout_seconds=float(os.environ.get("JUDGE_TIMEOUT_SECONDS", "180")),
     )

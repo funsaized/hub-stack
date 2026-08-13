@@ -259,7 +259,7 @@ services:
       - MINIMAX_SUBSCRIPTION_KEY=${MINIMAX_SUBSCRIPTION_KEY:?Set MINIMAX_SUBSCRIPTION_KEY in .env — MiniMax Token Plan Subscription Key}
       - JUDGE_BASE_URL=${JUDGE_BASE_URL:-https://api.minimax.io/v1}
       - JUDGE_MODEL=${JUDGE_MODEL:-MiniMax-M3}
-      - JUDGE_TIMEOUT_SECONDS=${JUDGE_TIMEOUT_SECONDS:-60}
+      - JUDGE_TIMEOUT_SECONDS=${JUDGE_TIMEOUT_SECONDS:-180}
     depends_on:
       ollama:
         condition: service_healthy
@@ -340,7 +340,7 @@ services:
       - MINIMAX_SUBSCRIPTION_KEY=${MINIMAX_SUBSCRIPTION_KEY:?Set MINIMAX_SUBSCRIPTION_KEY in .env — MiniMax Token Plan Subscription Key}
       - JUDGE_BASE_URL=${JUDGE_BASE_URL:-https://api.minimax.io/v1}
       - JUDGE_MODEL=${JUDGE_MODEL:-MiniMax-M3}
-      - JUDGE_TIMEOUT_SECONDS=${JUDGE_TIMEOUT_SECONDS:-60}
+      - JUDGE_TIMEOUT_SECONDS=${JUDGE_TIMEOUT_SECONDS:-180}
     volumes:
       - research_hub_data:/app/data
     depends_on:
