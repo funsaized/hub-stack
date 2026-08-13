@@ -72,6 +72,9 @@ _FENCE_BREAK = re.compile(r"<(?=\s*/?\s*untrusted_evidence\b)", re.IGNORECASE)
 # stripped before parsing; everything after it must still be exactly one JSON
 # object, so trailing chatter or injected extra verdicts stay malformed_output.
 _THINK_BLOCK = re.compile(r"\A\s*<think>.*?</think>", re.DOTALL)
+# Verdict text left behind when a reasoning block swallowed the object opening.
+_LOST_BRACE_AND_QUOTE = re.compile(r'\A[A-Za-z_][A-Za-z0-9_]*"\s*:')
+_LOST_BRACE = re.compile(r'\A"[A-Za-z_][A-Za-z0-9_]*"\s*:')
 
 JUDGE_SYSTEM = """You are a strict claim-faithfulness judge inside a research pipeline.
 
@@ -140,6 +143,28 @@ def _fenced_evidence(spans: list[str]) -> str:
     return "\n\n".join(blocks)
 
 
+def _repair_leaked_object_start(text: str) -> str:
+    """Restore an object opening that a reasoning block swallowed.
+
+    Defence in depth behind ``reasoning_split`` (HUB-037). When the model
+    begins the verdict inside <think> and closes the block mid-token,
+    stripping the block also removes the start of the object. Two shapes were
+    observed live, distinguished by how much leaked:
+
+        accepted": true, …     -> lost '{"'
+        "accepted": true, …    -> lost '{'
+
+    Only these two exact prefixes are repaired, and a repaired object still
+    passes through the unchanged structural gate, so a wrong reconstruction
+    fails closed exactly as an unparseable one does.
+    """
+    if _LOST_BRACE_AND_QUOTE.match(text):
+        return '{"' + text
+    if _LOST_BRACE.match(text):
+        return "{" + text
+    return text
+
+
 def _extract_json_object(content: str) -> dict[str, Any]:
     text = _THINK_BLOCK.sub("", content, count=1).strip()
     if text.startswith("```"):
@@ -147,6 +172,8 @@ def _extract_json_object(content: str) -> dict[str, Any]:
         if text.rstrip().endswith("```"):
             text = text.rstrip()[:-3]
         text = text.strip()
+    if not text.startswith("{"):
+        text = _repair_leaked_object_start(text)
     parsed = json.loads(text)
     if not isinstance(parsed, dict):
         raise ValueError("verdict is not a JSON object")
@@ -213,6 +240,22 @@ class JudgeClaimVerifier:
             "model": self._model,
             "temperature": 0,
             "max_tokens": RESPONSE_MAX_TOKENS,
+            # MiniMax M3 defaults to thinking:{"type":"adaptive"} when the
+            # parameter is omitted, and delivers that reasoning inline in
+            # `content`. It sometimes opens the JSON verdict before closing the
+            # block, so stripping <think>…</think> removed the object's opening
+            # brace and the verdict failed to parse (HUB-037; 3 of 8 reports on
+            # 2026-08-13). reasoning_split routes the reasoning to a separate
+            # `reasoning_content` field and leaves `content` as the verdict
+            # alone.
+            #
+            # Deliberately NOT thinking:{"type":"disabled"}: the sealed v4
+            # blind evaluation measured this gate with thinking on, because
+            # that is the default. Turning reasoning off would change how the
+            # judge decides and the seal would no longer describe the deployed
+            # gate, requiring a fresh blind set. Splitting the output changes
+            # only where the reasoning text is delivered.
+            "reasoning_split": True,
             "messages": [
                 {"role": "system", "content": JUDGE_SYSTEM},
                 {"role": "user", "content":
