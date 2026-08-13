@@ -169,7 +169,8 @@ public API.
 | K8s autoscaling | 3 | 4 | 10 / 9 | 12 | ok |
 | K8s autoscaling | 12 | 6 | 56 / 45 | 12 | ok |
 
-**Blocking defect — 3 of 8 reports failed (37.5%), all one root cause.**
+**Blocking defect — 3 of 8 reports failed (37.5%), all one root cause.
+FIXED the same day; see HUB-037 below.**
 MiniMax M3 leaks the opening of its JSON verdict *into* its reasoning block:
 
 ```
@@ -183,10 +184,24 @@ accepted": true, "reason": null, "refs": [{"id": "R1", "necessary": true}]}
 `accepted": true…`, which cannot parse. The earlier `Extra data: line 1
 column 11` failures were the same leak splitting at a different point. The
 gate fails closed and the report stays retryable, so nothing unsupported is
-ever published — but roughly a third of reports need a retry. **Not fixed:**
-the claim gate is out of scope for HUB-024, and patching it mid-campaign
-would have destroyed comparability. This is the single highest-value
-reliability fix available and is recorded as such in the backlog.
+ever published — but roughly a third of reports need a retry. It was left unpatched during the campaign so the batches stayed
+comparable, then fixed immediately afterwards.
+
+**Fix (HUB-037, deployed 2026-08-13).** The root cause was an integration
+gap, not a parser bug: MiniMax M3 defaults to `thinking:{"type":"adaptive"}`
+when the parameter is omitted and delivers reasoning inline. The request now
+sends `reasoning_split: true`, routing reasoning to its own field.
+Deliberately not `thinking:{"type":"disabled"}` — the sealed v4 evaluation
+measured this gate with reasoning ON, so disabling it would change how the
+judge decides and invalidate the seal; splitting changes only delivery, and
+the seal's recorded `system_prompt_sha256` is unchanged. Because the leak
+then moved to a third cut point, the parser also reconstructs a swallowed
+object opening against the fixed verdict schema, accepting only
+reconstructions that yield exactly the three expected keys.
+
+**Verified:** all three previously-failing topics re-ran clean on the first
+attempt, zero `malformed_output` across 27 verdicts, 303 tests green, v4 seal
+and attempt-11 artifacts byte-identical.
 
 **`PLAN_FACET_RELEVANCE = 0.55` is well calibrated and transfers.** Across 21
 admitted facets the topic cosines ran 0.550–0.818 (median 0.695); the nine

@@ -992,50 +992,38 @@ lease/retry/idempotency semantics unchanged; plan provenance (facets, queries,
 new-document yield, stop reason) recorded in job progress;
 `REPORT_QUERY_PLANNING=false` reproduces current behavior exactly.
 
-### HUB-037 — Judge verdict parsing fails when MiniMax leaks JSON into its reasoning block
+### HUB-037 — Judge verdict parsing fails when MiniMax leaks JSON into its reasoning stream
 
-**Status:** 🔴 OPEN — measured 2026-08-13, highest-value reliability fix
-available. Trigger tripped by evidence, not speculation.
+**Status:** ✅ DONE — fixed and verified 2026-08-13. All three topics that
+failed in the evaluation campaign now complete on the first attempt, with zero
+`malformed_output` occurrences across 27 verdicts.
 
-**Defect.** MiniMax M3 sometimes begins emitting the JSON verdict *inside* its
-`<think>` block and closes the block mid-token:
+**Root cause.** MiniMax M3 defaults to `thinking: {"type": "adaptive"}` when
+the parameter is omitted — which it was — and delivers that reasoning inline
+in `content`. The model sometimes begins emitting the JSON verdict while still
+reasoning, so stripping the reasoning also removed the object's opening and
+the verdict could not parse.
 
-```
-<think>
-…reasoning…{"
-</think>
-accepted": true, "reason": null, "refs": [{"id": "R1", "necessary": true}]}
-```
+**Fix, in two parts.** `reasoning_split: true` routes reasoning to its own
+`reasoning_content` field so `content` is the verdict alone. Deliberately
+*not* `thinking: {"type": "disabled"}`: the sealed v4 blind evaluation
+measured this gate with reasoning ON because that is the default, so
+disabling it would change how the judge decides and the seal would no longer
+describe the deployed gate. Splitting changes only delivery — confirmed by the
+seal's recorded `system_prompt_sha256` being unchanged.
 
-`_THINK_BLOCK` in `app/judge_gate.py` strips `<think>…</think>` and removes
-the `{"` with it, leaving `accepted": true…`, which `json.loads` rejects. The
-`Extra data: line 1 column 11` failures seen earlier are the same leak
-splitting at a different point.
+That alone was not sufficient. With reasoning separated the leak simply moved
+(`{"accepted` landed on the reasoning side), the third distinct cut point in
+as many observations. Pattern-matching each shape was chasing a moving target,
+so the parser now restores the known prefixes of the fixed verdict schema and
+accepts a reconstruction only when it parses to exactly the three expected
+keys. Values remain the model's own; anything that does not validate fails
+closed.
 
-**Measured impact.** 3 of 8 reports failed in the 2026-08-13 evaluation
-campaign (37.5%); every failure had this signature. Across the whole day's
-live runs the rate is ~38%. The gate fails closed and the report stays
-retryable, so nothing unsupported is published — this is a reliability and
-cost problem (a failed report wastes its whole batch of metered calls), not a
-correctness one.
-
-**Why it was not fixed in place.** The claim gate and its v4 seal were out of
-scope for HUB-024, and patching it mid-campaign would have destroyed
-comparability between batches.
-
-**Proposed fix, and its risk.** Repair only this known pathology
-deterministically: after stripping the reasoning block, if the remainder
-matches `^[A-Za-z_]+"\s*:` it lost a leading `{"`, so restore it and parse.
-Any reconstructed verdict still passes through the unchanged
-`_enforce_verdict` structural gate, so a bad reconstruction fails closed
-exactly as today. The alternative — asking MiniMax to disable reasoning —
-should be checked first, since not emitting the block at all is strictly
-better than repairing it.
-
-**Acceptance:** a reply with the leak parses to the correct verdict; a
-mangled reply that cannot be reconstructed still fails closed; the sealed v4
-fixtures re-verify unchanged; live report failure rate falls well below the
-measured 37.5%.
+**Verified:** 303 tests green in-container; v4 seal byte-identical
+(`762e7a19…`) with every recorded hash intact and 130/130 annotations
+well-formed; attempt-11 artifacts byte-identical; three previously-failing
+topics re-run clean.
 
 ### HUB-038 — Facet relevance is guarded; source relevance is not
 
