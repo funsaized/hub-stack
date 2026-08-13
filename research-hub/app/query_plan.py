@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -43,20 +44,29 @@ PLANNER_SYSTEM = (
     "You reply with JSON only."
 )
 
-PLANNER_RULES = """Propose search queries that cover genuinely DIFFERENT
+QUERY_STYLE_RULES = """- Write each query as ordinary words separated by spaces, exactly as a
+  person would type it into a search box. Between 3 and 20 words.
+- NEVER run words together. "streamingReplication" and "physicalToLogical"
+  are wrong; "streaming replication" and "physical to logical" are right.
+- Never invent product, tool, library or standard names. Use a name only if
+  it appears in the topic or you are certain it exists.
+- No boolean operators, no site: filters, no quotes."""
+
+PLANNER_RULES = f"""Propose search queries that cover genuinely DIFFERENT
 information needs within the topic.
 
 Rules:
 - Each query must seek information the others do not. Rephrasings, synonyms
   and word-order variants of the same need are useless here.
+- Every query must still be about the topic. A query that is different
+  because it changed the subject is worse than no query at all.
 - If the topic is narrow enough that one query already covers it, return an
   empty list. That is a correct and expected answer, not a failure.
-- Each query is a search-engine query: keywords or a short question, no
-  boolean operators, no site: filters, no quotes.
+{QUERY_STYLE_RULES}
 - Cover angles such as mechanism, procedure, failure modes, constraints,
   comparisons and evidence -- but only where the topic actually has them.
 
-Return JSON: {"facets": ["query one", "query two"]}"""
+Return JSON: {{"facets": ["query one", "query two"]}}"""
 
 FACET_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -67,6 +77,38 @@ FACET_SCHEMA: dict[str, Any] = {
 }
 
 
+# Pre-issue query performance prediction (QPP). Diaz (1507.03928) scores a
+# candidate reformulation BEFORE spending a search on it; these are the
+# predictors that are sound for this system. Deliberately absent: a
+# collection-IDF predictor. Classical QPP predicts performance against the
+# collection being searched, and sub-queries are issued against the open web
+# while our document frequencies are local -- scoring against the wrong
+# collection is precisely the error that made the novelty metric useless.
+MIN_QUERY_WORDS = 3
+MAX_QUERY_WORDS = 20
+# A token that starts lowercase yet contains an uppercase letter is a
+# run-together identifier, not a phrase a person would search for. Deliberately
+# does not fire on "PostgreSQL" or "WAL" (capitalised or acronym starts), and
+# does not reject underscores, because "pg_upgrade" is a real command.
+_RUN_TOGETHER = re.compile(r"^[a-z][a-zA-Z0-9._+/-]*[A-Z]")
+
+
+def query_defects(query: str) -> list[str]:
+    """Pre-issue defects that make a generated query not worth a search."""
+    tokens = query.split()
+    defects: list[str] = []
+    if len(tokens) < MIN_QUERY_WORDS:
+        defects.append("too_few_words")
+    elif len(tokens) > MAX_QUERY_WORDS:
+        defects.append("too_many_words")
+    if any(_RUN_TOGETHER.match(token) for token in tokens):
+        defects.append("run_together_words")
+    letters = sum(1 for c in query if c.isalpha() or c.isspace())
+    if not query or letters / len(query) < 0.6:
+        defects.append("low_alphabetic_ratio")
+    return defects
+
+
 @dataclass(frozen=True)
 class FacetDecision:
     """Why one candidate query was admitted or refused. Recorded per job."""
@@ -75,6 +117,10 @@ class FacetDecision:
     admitted: bool
     reason: str
     max_cosine: float | None = None
+    #: Cosine to the topic -- the relevance half of the two-sided bar.
+    topic_cosine: float | None = None
+    #: Pre-issue QPP defects; recorded even when they did not decide the case.
+    defects: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -84,6 +130,10 @@ class FacetDecision:
             "max_cosine": (
                 None if self.max_cosine is None else round(self.max_cosine, 4)
             ),
+            "topic_cosine": (
+                None if self.topic_cosine is None else round(self.topic_cosine, 4)
+            ),
+            "defects": list(self.defects),
         }
 
 
@@ -170,14 +220,25 @@ def greedy_admit(
     candidate_vectors: list[list[float]],
     *,
     distinct: float,
+    relevance: float,
     max_total: int,
+    topic_vector: list[float] | None = None,
 ) -> tuple[list[str], list[list[float]], list[FacetDecision], str]:
     """Admit candidates that add retrieval intent the seed set does not cover.
 
+    The bar is TWO-SIDED. Distinctness alone maximises divergence from what is
+    already admitted and nothing pulls back toward the topic, so the most
+    distinct candidate available is frequently the least relevant one -- the
+    2026-08-13 measurement watched later rounds drift into HAProxy, Barman and
+    monitoring-vendor pages. A candidate must therefore be BOTH far enough
+    from the admitted set (below ``distinct``) and close enough to the topic
+    (above ``relevance``). Cheap pre-issue QPP defects are checked first, so a
+    malformed query never costs a search.
+
     Shared by first-round facet admission and later-round gap admission, so a
-    gap query is held to exactly the same distinctness bar as an opening
-    facet -- and is compared against every query the job has already issued,
-    not just the ones from its own round.
+    gap query is held to exactly the same bar as an opening facet -- and is
+    compared against every query the job has already issued, not just the ones
+    from its own round.
 
     Returns ``(queries, vectors, decisions, stop_reason)``.
     """
@@ -192,6 +253,11 @@ def greedy_admit(
     vectors = list(seed_vectors)
     decisions: list[FacetDecision] = []
     stop_reason = "candidates_exhausted"
+    # The topic is always the first query a job issues, so the seed's head is
+    # the topic vector unless one is supplied explicitly.
+    anchor = topic_vector if topic_vector is not None else (
+        seed_vectors[0] if seed_vectors else None
+    )
 
     for index, candidate in enumerate(candidates):
         if len(queries) >= max_total:
@@ -200,30 +266,34 @@ def greedy_admit(
             # provenance rather than inferred from a thin corpus.
             stop_reason = "max_facets"
             decisions.extend(
-                FacetDecision(query=c, admitted=False, reason="max_facets")
+                FacetDecision(query=c, admitted=False, reason="max_facets",
+                              defects=tuple(query_defects(c)))
                 for c in candidates[index:]
             )
             break
         vector = candidate_vectors[index]
+        defects = tuple(query_defects(candidate))
+        topic_similarity = None if anchor is None else cosine(vector, anchor)
         similarity = (
             max(cosine(vector, v) for v in vectors) if vectors else 0.0
         )
-        if similarity < distinct:
+        if defects:
+            reason = "malformed"
+        elif topic_similarity is not None and topic_similarity < relevance:
+            reason = "off_topic"
+        elif similarity >= distinct:
+            reason = "redundant"
+        else:
+            reason = "distinct"
+        decision = FacetDecision(
+            query=candidate, admitted=reason == "distinct", reason=reason,
+            max_cosine=similarity, topic_cosine=topic_similarity,
+            defects=defects,
+        )
+        decisions.append(decision)
+        if decision.admitted:
             queries.append(candidate)
             vectors.append(vector)
-            decisions.append(
-                FacetDecision(
-                    query=candidate, admitted=True, reason="distinct",
-                    max_cosine=similarity,
-                )
-            )
-        else:
-            decisions.append(
-                FacetDecision(
-                    query=candidate, admitted=False, reason="redundant",
-                    max_cosine=similarity,
-                )
-            )
     return queries, vectors, decisions, stop_reason
 
 
@@ -233,6 +303,7 @@ def admit_facets(
     vectors: list[list[float]],
     *,
     distinct: float,
+    relevance: float,
     max_facets: int,
 ) -> QueryPlan:
     """Greedily admit candidates that add retrieval intent the plan lacks.
@@ -246,7 +317,8 @@ def admit_facets(
 
     queries, admitted_vectors, decisions, stop_reason = greedy_admit(
         [topic], [vectors[0]], candidates, vectors[1:],
-        distinct=distinct, max_total=max_facets,
+        distinct=distinct, relevance=relevance, max_total=max_facets,
+        topic_vector=vectors[0],
     )
     decisions = [
         FacetDecision(query=topic, admitted=True, reason="topic_seed"),
@@ -268,6 +340,7 @@ async def plan_queries(
     topic: str,
     *,
     distinct: float,
+    relevance: float,
     max_facets: int,
     search_budget: int,
     job_id: str | None = None,
@@ -315,7 +388,8 @@ async def plan_queries(
     try:
         return admit_facets(
             topic, candidates, vectors,
-            distinct=distinct, max_facets=effective_max,
+            distinct=distinct, relevance=relevance,
+            max_facets=effective_max,
         )
     except ValueError as exc:
         logger.warning(
@@ -330,7 +404,7 @@ GAP_SYSTEM = (
     "You reply with JSON only."
 )
 
-GAP_RULES = """Below is what a research job has retrieved so far, per query.
+GAP_RULES = f"""Below is what a research job has retrieved so far, per query.
 
 Name the sub-questions the corpus does NOT yet answer, as search queries.
 
@@ -338,12 +412,14 @@ Rules:
 - Target gaps, not more of what is already covered. A query that would
   return the same sources again is worthless here.
 - A query covering zero retrieved documents is the strongest gap signal.
+- Every query must still be about the topic. Do not reach for an adjacent
+  subject just to find something uncovered -- if the remaining gaps are not
+  about the topic, there are no gaps left.
 - If the corpus already covers the topic, return an empty list. That is a
   correct answer and ends the research.
-- Each query is a search-engine query: keywords or a short question, no
-  boolean operators, no site: filters, no quotes.
+{QUERY_STYLE_RULES}
 
-Return JSON: {"facets": ["query one", "query two"]}"""
+Return JSON: {{"facets": ["query one", "query two"]}}"""
 
 
 @dataclass(frozen=True)
@@ -432,6 +508,7 @@ async def plan_gap_round(
     issued_vectors: list[list[float]],
     *,
     distinct: float,
+    relevance: float,
     max_total: int,
     job_id: str | None = None,
 ) -> tuple[list[str], list[list[float]], list[FacetDecision], str]:
@@ -469,7 +546,8 @@ async def plan_gap_round(
             raise ValueError("embedding count mismatch")
         queries, vectors, decisions, _ = greedy_admit(
             issued_queries, issued_vectors, candidates, candidate_vectors,
-            distinct=distinct, max_total=max_total,
+            distinct=distinct, relevance=relevance, max_total=max_total,
+            topic_vector=issued_vectors[0] if issued_vectors else None,
         )
     except Exception as exc:
         logger.warning(
