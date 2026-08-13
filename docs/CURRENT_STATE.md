@@ -151,6 +151,21 @@ diagnostic is emitted only after a batch completes, the failed attempt logged
 no `served_model` values, so served-model auditing has a gap on failed
 batches.
 
+## Findings display cap raised (2026-08-13)
+
+`REPORT_MAX_FINDINGS` 12 → 20. Every successful report in the evaluation
+campaign hit the 12-finding cap with 3–4 verified claims withheld, so the cap
+rather than the evidence was deciding how much a report could say. Costs
+nothing at the gate: drafting volume, and therefore metered call count, is
+unchanged — this only stops discarding claims the judge already verified and
+was already paid for.
+
+Verified live on the Postgres topic: 15 findings displayed and the "withheld
+by the report display limits" line is gone, so the cap no longer binds. With
+28 claims drafted per report (16 spans + 12 pairs) and roughly 15 verifying,
+**drafting volume is now the next lever** — raising `REPORT_MAX_SPAN_CLAIMS`
+would add verified findings at a proportional increase in metered calls.
+
 ## Source screening built but not enabled (HUB-038, 2026-08-13)
 
 `ResearchOrchestrator._screen_sources` scores retained documents against the
