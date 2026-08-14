@@ -71,6 +71,14 @@ class Config:
     report_max_corrections: int = 6
     report_hybrid_retrieval: bool = True
     report_rrf_k: int = 60
+    # HUB-049: how the evidence budget is spent. "rank" fills it top-down, the
+    # deployed behaviour; "marginal_gain" selects by relevance minus redundancy
+    # against what is already packed. Off by default -- the measurement that
+    # justifies flipping it does not exist yet (HUB-047), and coverage alone
+    # must not be that measurement (arXiv:2603.22633 reports large coverage
+    # gains worth ~0.01 F1). The two modes are identical whenever the budget
+    # admits every candidate, so this only bites where scarcity is real.
+    evidence_packing: str = "rank"
     # Adaptive query planning (HUB-024). Off by default: with the master switch
     # false the acquisition path is byte-identical to the single-query path.
     # PLAN_MAX_FACETS is a safety rail against a pathological planner, never
@@ -114,6 +122,8 @@ class Config:
             raise ValueError("REPORT_RETRIEVAL_CANDIDATES must be between 1 and 1000")
         if not 1 <= self.report_max_chunks_per_source <= 100:
             raise ValueError("REPORT_MAX_CHUNKS_PER_SOURCE must be between 1 and 100")
+        if self.evidence_packing not in ("rank", "marginal_gain"):
+            raise ValueError("EVIDENCE_PACKING must be 'rank' or 'marginal_gain'")
         if (self.report_retrieval_min_score is not None and
                 not math.isfinite(self.report_retrieval_min_score)):
             raise ValueError("REPORT_RETRIEVAL_MIN_SCORE must be finite")
@@ -211,6 +221,7 @@ def load_config() -> Config:
             "REPORT_HYBRID_RETRIEVAL", "true"
         ).lower() in {"1", "true", "yes"},
         report_rrf_k=int(os.environ.get("REPORT_RRF_K", "60")),
+        evidence_packing=os.environ.get("EVIDENCE_PACKING", "rank").strip().lower(),
         report_query_planning=os.environ.get(
             "REPORT_QUERY_PLANNING", "false"
         ).lower() in {"1", "true", "yes"},

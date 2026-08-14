@@ -61,7 +61,8 @@ class JsonFormatter(logging.Formatter):
         for key in ("job_id", "phase", "source_url", "source_domain", "duration_seconds",
                     "retry_count", "failure_category", "outcome",
                     "retrieval_candidates", "selected_chunks", "sources_available",
-                    "sources_represented", "drafted_spans", "verified_claims",
+                    "sources_represented", "evidence_packing",
+                    "drafted_spans", "verified_claims",
                     "rejected_claims", "no_supported_findings",
                     "diagnostic"):
             value = getattr(record, key, None)

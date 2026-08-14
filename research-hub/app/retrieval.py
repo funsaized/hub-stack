@@ -13,11 +13,15 @@ from typing import Any
 
 from .context import (
     classify_and_sanitize,
+    pack_by_marginal_gain,
     pack_complete_entries,
     render_entry,
     render_prompt,
     token_count,
 )
+
+
+PACKING_MODES = ("rank", "marginal_gain")
 
 
 @dataclass(frozen=True)
@@ -264,6 +268,17 @@ def _diagnostics(
     )
 
 
+def candidate_relevance(candidate: EvidenceCandidate) -> float:
+    """The score that produced this candidate's rank, whichever channel ranked it.
+
+    Under fusion the cosine is meaningless for a lexical-only chunk (it is
+    0.0), so reading ``score`` would rank every BM25 find last. The RRF score
+    is what ordered the list and is therefore what a selection rule must use.
+    """
+    fused = candidate.metadata.get("rrf_score")
+    return float(fused) if fused is not None else float(candidate.score)
+
+
 def pack_evidence(
     candidates: list[EvidenceCandidate],
     *,
@@ -273,19 +288,32 @@ def pack_evidence(
     answer_reserve: int,
     source_ids: dict[str, str] | None = None,
     packed_ids: bool = False,
+    packing: str = "rank",
 ) -> tuple[list[EvidenceCandidate], str]:
-    """Pack complete sanitized evidence entries within a conservative budget."""
+    """Pack complete sanitized evidence entries within a conservative budget.
+
+    ``packing="rank"`` fills the budget in rank order -- the deployed
+    behaviour. ``packing="marginal_gain"`` selects by relevance minus
+    redundancy instead (HUB-049); it is identical to rank order whenever the
+    budget admits every candidate, so the two differ only where the budget is
+    actually the constraint.
+    """
+    if packing not in PACKING_MODES:
+        raise ValueError(f"packing must be one of {PACKING_MODES}")
     budget = context_limit - answer_reserve - token_count(system) - token_count(
         render_prompt("", question)
     )
-    return pack_complete_entries(
-        candidates,
-        lambda index, value: render_entry(
-            f"E{index}" if packed_ids else source_ids[value.document_id] if source_ids else index,
-            value.source_title,
-            value.canonical_url,
-            value.text,
-            value.document_id if source_ids or packed_ids else None,
-        ),
-        budget,
+    render = lambda index, value: render_entry(
+        f"E{index}" if packed_ids else source_ids[value.document_id] if source_ids else index,
+        value.source_title,
+        value.canonical_url,
+        value.text,
+        value.document_id if source_ids or packed_ids else None,
     )
+    if packing == "marginal_gain":
+        return pack_by_marginal_gain(
+            candidates, render, budget,
+            relevance=candidate_relevance,
+            text=lambda value: value.text,
+        )
+    return pack_complete_entries(candidates, render, budget)

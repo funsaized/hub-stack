@@ -458,6 +458,7 @@ async def generate_report(orchestrator, job_id: str) -> dict:
             context_limit=getattr(orchestrator.cfg, "model_context_tokens", 8192),
             answer_reserve=orchestrator.cfg.answer_reserve_tokens,
             packed_ids=True,
+            packing=getattr(orchestrator.cfg, "evidence_packing", "rank"),
         )
         represented_sources = {
             int(source_ids[candidate.document_id][1:]) for candidate in selected
@@ -684,6 +685,9 @@ async def generate_report(orchestrator, job_id: str) -> dict:
             "selected_chunks": retrieval_counts["selected"],
             "sources_available": retrieval_counts["available_sources"],
             "sources_represented": retrieval_counts["represented_sources"],
+            # Which packer spent the evidence budget, so a report can be
+            # attributed to the selection rule that produced it (HUB-049).
+            "evidence_packing": getattr(orchestrator.cfg, "evidence_packing", "rank"),
             "drafted_spans": len(drafted_sources),
             "verified_claims": len(findings) + len(disagreements),
             "rejected_claims": dict(rejected_reasons),
