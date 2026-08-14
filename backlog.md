@@ -1521,12 +1521,26 @@ scored on answer correctness and source coverage. HUB-044 is its first
 metric. This is what would let HUB-045, HUB-048 and HUB-049's flag be decided
 by measurement rather than argument.
 
-**Open design question, unanswered by the prior art.** Every paper read
-validates on short-answer QA with gold spans. This system's output is
-long-form cited synthesis over a private, growing corpus, where "correct" is
-not a string match. Settle the scoring design before building the set — the
-existing sealed judge protocol (v4) is the closest thing already in the repo
-and is the obvious starting point.
+**Scoring design settled 2026-08-13** — `PRDs/hub-047-answer-completeness-scoring.md`,
+grounded in three further fetched abstracts. Stage 1 of the item is done; no
+question set is built yet. The design in one paragraph: score precision and
+completeness as **two axes that are never blended**, keep the existing claim
+gate as the precision axis, and add **nugget recall** as the completeness axis
+— per question a short list of atomic facts a good answer must contain,
+labelled vital or okay, assigned three-way against the report, and credited
+only when carried by a claim that passed the gate. Nuggets are mined from
+**document scope, never from retrieval output**, or the pipeline picks its own
+yardstick. Drafting is local and human verification is the quality bar, so
+**HUB-047 costs zero metered judge calls** — the expensive resource is roughly
+180 nuggets of operator hand-verification. Calibration and evaluation sets are
+kept separate because one is consumed on use and the other must be re-runnable.
+
+The instrument ranks **configurations**, not reports: nugget-style scoring
+agrees with human judgment at the system level and is noisy per report
+(arXiv:2504.15068, arXiv:2509.26184). It may never gate a single report.
+
+**Next stage:** build the 15-question set against that design — the operator
+hand-verification pass is the gating cost and needs scheduling, not code.
 
 ### HUB-048 — Knowledge-graph go/no-go, decided by measurement
 
