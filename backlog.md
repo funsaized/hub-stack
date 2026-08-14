@@ -1327,12 +1327,14 @@ writes both into job progress and `hub_report_retrieval_items` carries both as
 labelled histogram observations. The original wording ("nothing tracks it")
 was wrong.
 
-*The motivating case no longer reproduces.* "15 chunks from 7 of 22 sources"
-was job `bc3e5297` before HUB-024's breadth work and the 120-chunk candidate
-limit. Re-measured on the same job with the same query: **44 chunks from 15 of
-22** sources. The concentration cited as the reason for this item had already
-been roughly halved by other work — which is exactly why the item was worth
-doing as a *measurement* rather than as a fix.
+*The motivating case reproduces, one stage later than recorded.* "15 chunks
+from 7 of 22 sources" (job `bc3e5297`) does not reproduce at the retrieval
+stage, which now selects **44 chunks from 15 of 22**. It reproduces almost
+exactly at the stage the original observation was actually made — the packed
+evidence the model reads — which is **15 chunks from 8 of 22**. (This entry
+first recorded the retrieval-stage number alone and concluded the case was
+stale; corrected 2026-08-13 after measuring every stage. The coverage work
+stands; it measures one stage too early. See HUB-049.)
 
 **What was actually missing.** The tracked number is a single post-cap total.
 It is taken after `max_chunks_per_source` has already forced diversity, so it

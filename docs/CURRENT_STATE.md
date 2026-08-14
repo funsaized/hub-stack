@@ -68,9 +68,16 @@ Three things the measurement said that the tracked total could not:
   win under either metric alone.
 
 Two backlog claims were corrected against the code before any of this was
-built: breadth was not untracked, and the motivating case no longer
-reproduces — job `bc3e5297` was recorded at 15 chunks from 7 of 22 sources and
-now selects **44 chunks from 15 of 22**.
+built: breadth was not untracked, and job `bc3e5297`'s recorded "15 chunks
+from 7 of 22 sources" does not reproduce at the retrieval stage, which now
+selects **44 chunks from 15 of 22**.
+
+> **Correction (same day, HUB-049).** That second claim was measured at the
+> wrong stage. At the stage the original observation was made — the packed
+> evidence, after the context budget — `bc3e5297` is **15 chunks from 8 of 22
+> sources**, essentially the original number. The case was never stale. The
+> coverage metric above is correct but measures the retrieval ranking, one
+> stage before the constraint that actually decides what a report sees.
 
 Job `48c9247e` reproduces HUB-043's recorded figure exactly (93 chunks from 39
 of 56), confirming the read-only mirror follows the production path.
