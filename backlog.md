@@ -1539,8 +1539,39 @@ The instrument ranks **configurations**, not reports: nugget-style scoring
 agrees with human judgment at the system level and is noisy per report
 (arXiv:2504.15068, arXiv:2509.26184). It may never gate a single report.
 
-**Next stage:** build the 15-question set against that design — the operator
-hand-verification pass is the gating cost and needs scheduling, not code.
+**Stage 2 opened 2026-08-13: artefacts committed, 1 of 15 questions annotated.**
+`tests/fixtures/answer_eval_questions.json` (15 questions, 8 job-scoped and 7
+over bounded topic/tag filters), `tests/fixtures/answer_eval_nuggets.json`
+(`q-nginx-buffering`, 15 nuggets, 7 vital), both prompts under
+`tests/prompts/`, and `tests/validate_answer_eval_nuggets.py`, which verifies
+every span verbatim against the corpus. **15 of 15 spans verify.** Annotation
+was done by a model from a different family than the `qwen3.5:9b` under test,
+at zero metered judge cost.
+
+Three things the design did not anticipate, found while annotating:
+
+- **Unfiltered corpus questions cannot be annotated at all** under the
+  document-scope rule: the scope is 679 documents / 44 MB, too large to read
+  exhaustively, and any sampling of it reintroduces exactly the relevance
+  judgement the rule exists to exclude. Corpus-scope coverage is therefore
+  measured over bounded topic and tag filters, which exercise the same
+  corpus-wide path (HUB-043) with an annotatable scope. Recorded in the
+  question set as `excluded_scopes`, not silently dropped.
+- **Span verification needs Unicode folding to be usable.** Curly quotes, em
+  dashes and non-breaking spaces defeat literal comparison on text that is
+  genuinely present. Folding them is not a loosening — the span must still
+  appear word for word — but without it the guard rejects correct nuggets and
+  would be switched off.
+- **The first annotated scope is 39% noise.** Job `aa216228` retained four
+  dictionary/thesaurus entries for the word "consequence", an API-gateway
+  boilerplate stub and a 404 page: 7 of 18 documents carry nothing on the
+  subject. That is a screening finding, not a defect in the reference, and it
+  makes this question a real test of whether the pipeline finds signal in a
+  noisy scope. Worth a look at how "consequence" entered the query plan.
+
+**Next:** annotate the remaining 14 with the committed prompt, spot-check ~25
+nuggets by hand to convert the annotator's error rate from an assumption into
+a number, then baseline the deployed configuration and decide HUB-049's flag.
 
 ### HUB-048 — Knowledge-graph go/no-go, decided by measurement
 
