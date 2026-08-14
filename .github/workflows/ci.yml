@@ -22,10 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check Prometheus config and alert rules
+        # Mounted at /etc/prometheus, not an arbitrary path: prometheus.yml
+        # refers to its rule file by absolute path, so promtool only resolves
+        # it when the layout matches the container's.
         run: |
           docker run --rm --entrypoint promtool \
-            -v "$PWD/observability:/o:ro" prom/prometheus:v3.1.0 \
-            check config /o/prometheus.yml
+            -v "$PWD/observability:/etc/prometheus:ro" prom/prometheus:v3.1.0 \
+            check config /etc/prometheus/prometheus.yml
       - name: Check dashboard JSON parses
         run: |
           for f in observability/grafana/dashboards/*.json; do
