@@ -2,6 +2,64 @@
 
 Last verified: 2026-08-13 on the local Windows 11 workstation.
 
+## The context budget is the constraint; a second packer exists, off (HUB-049, 2026-08-13)
+
+**Deployed behaviour is unchanged.** `EVIDENCE_PACKING` defaults to `rank`
+and the running containers are the HUB-043 build. The alternative packer is
+merged and flagged off.
+
+Measured on real jobs, read-only: raising `REPORT_RETRIEVAL_CANDIDATES` from
+120 to 600 lifts pool source reach a long way — kafka 13 → **20 of 20**,
+microservices 15 → 21 of 22, p-hacking 8 → 15 of 19 — while the packed
+evidence the model actually reads stays pinned at **~19 chunks from 6–8
+sources at every pool size**. Everything upstream of `pack_evidence` is
+invisible downstream.
+
+| Job (sources) | pool @120 → @600 | packed @120 → @600 |
+|---|---|---|
+| p-hacking (19) | 8 → 15 | **6 → 7** |
+| kafka (20) | 13 → 20 | **8 → 8** |
+| microservices (22) | 15 → 21 | **8 → 8** |
+| kubernetes (56) | 39 → 52 | **14 → 15** |
+
+A prior-art pass (16 arXiv papers, 2026-08-13) put names to this and ruled out
+two obvious responses:
+
+- **arXiv:2607.00725** — once a fixed window forces evidence to be discarded,
+  retrieval recall stops predicting accuracy; what survives into context is
+  the quantity that matters. Packing becomes budgeted submodular maximization.
+- **arXiv:2512.25052** — a training-free rule: greedy selection by relevance
+  minus redundancy against what is already packed.
+- **arXiv:2410.05983** — do *not* just raise the context window: more passages
+  helps, then hurts, an inverted-U driven by plausible-but-wrong negatives.
+- **arXiv:2603.22633** — do *not* pack for source coverage: far broader
+  coverage was worth roughly 0.01 F1. Coverage stays a diagnostic (HUB-044).
+
+`pack_by_marginal_gain` implements the selection rule with two conservative
+departures, both recorded in the code: redundancy is lexical token overlap
+rather than embedding cosine, because packed text is a propositional span
+rewritten out of a chunk and the stored chunk vector no longer describes it;
+and the relevance/redundancy weight is budget pressure, so **a budget that
+admits every candidate makes the two packers byte-identical** — no knob, and
+no behaviour change without scarcity.
+
+**Effect, measured on six real jobs at deployed limits: small.** Three jobs
+unchanged (p-hacking identical by construction — all 16 candidates fit).
+Three move by 1–2 chunks and one source: redis 13 → 14, postgres 10 → 11,
+kubernetes 14 → 15. Reported as measured; the weight was not tuned upward to
+produce a better number. Either lexical overlap misses the paraphrase
+redundancy the paper targets, or redundancy is not the binding problem here —
+`propositional_spans` and the per-source cap already remove much of it, and on
+kubernetes-56 the 50 candidates that never pack are dropped by budget, not by
+similarity.
+
+**Not adopted, and deliberately so.** Nothing here says whether the swapped
+chunks are better. That needs answer-level ground truth, which is why HUB-047
+is now the gate on this work rather than a follow-on.
+
+405 tests + 573 subtests green in-container; `docker compose config --quiet`
+clean.
+
 ## Retrieval breadth measured: source coverage at k (HUB-044, 2026-08-13)
 
 **No deployed module changed.** This item adds a number and touches nothing

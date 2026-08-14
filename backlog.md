@@ -1389,6 +1389,66 @@ Three findings the entry had not anticipated:
 Unblocks HUB-045 with a number it can be judged on — and points it at pool
 composition first.
 
+### HUB-049 — The context budget, not retrieval, decides what a report reads
+
+**Status:** 🟡 IMPLEMENTED BEHIND A FLAG, NOT ADOPTED — `EVIDENCE_PACKING`
+defaults to `rank`. Measured effect is small; the measurement that could
+justify flipping it does not exist yet (HUB-047).
+
+**The finding.** Raising `REPORT_RETRIEVAL_CANDIDATES` from 120 to 600 lifts
+pool source reach substantially on real jobs — kafka 13 → 20 of 20,
+microservices 15 → 21 of 22, p-hacking 8 → 15 of 19 — and the packed evidence
+the model actually reads **does not move**: ~19 chunks from 6–8 sources at
+every pool size. Everything upstream of `pack_evidence` is invisible
+downstream. This also explains HUB-044's motivating case, which reproduces at
+the packed stage and not at the retrieval stage.
+
+**Prior art** (checked 2026-08-13, 16 papers read):
+
+- arXiv:2607.00725 names this exact failure: once a fixed window forces
+  evidence to be discarded, retrieval recall stops predicting accuracy, and
+  the quantity that matters is what survives into context. It reframes packing
+  as budgeted submodular maximization and beats top-k truncation at equal or
+  lower token cost.
+- arXiv:2512.25052 (AdaGReS) supplies a training-free rule: greedy selection
+  by relevance minus redundancy against what is already packed, with the
+  trade-off weight derived from pool statistics rather than tuned.
+- arXiv:2410.05983 is the reason **not** to simply raise the context window:
+  more retrieved passages helps and then hurts, an inverted-U driven by
+  plausible-but-wrong hard negatives.
+- arXiv:2603.22633 is the reason **not** to pack for source coverage: its
+  structure-aware method achieved far broader coverage worth roughly 0.01 F1.
+  Coverage stays a diagnostic (HUB-044), never a target.
+
+**Approach.** `pack_by_marginal_gain` in `app/context.py`, selected by
+`EVIDENCE_PACKING=marginal_gain`. Two deliberate departures from the prior
+art, both conservative and both recorded in the code: redundancy is lexical
+token overlap rather than embedding cosine, because what gets packed is a
+propositional *span* rewritten out of a chunk and the stored chunk vector no
+longer describes it; and the relevance/redundancy weight is budget pressure,
+so a budget that admits every candidate makes the two packers **identical** —
+there is no knob and no behaviour change where there is no scarcity.
+
+**Measured, six real jobs, deployed limits.** Three jobs unchanged (p-hacking
+identical by construction — 16 candidates all fit). Three jobs move by 1–2
+chunks and **+1 source**: redis 13 → 14, postgres 10 → 11, kubernetes 14 → 15.
+That is a small effect, reported as measured rather than tuned upward to look
+better. Two readings, and the evidence does not yet separate them:
+
+1. Lexical overlap cannot see paraphrase, so the redundancy the paper targets
+   is largely invisible to this implementation. Embedding-cosine redundancy is
+   the next variant to try.
+2. Redundancy may simply not be the binding problem here: `propositional_spans`
+   already discards non-self-contained text and the per-source cap already
+   limits repetition, so the top of the ranking may genuinely be diverse. On
+   kubernetes-56, 93 selected chunks become 70 propositional spans and 20
+   packed — the 50 dropped are dropped by **budget**, not by redundancy.
+
+**Do not adopt on these numbers.** Both readings predict small movement, and
+nothing here says whether the swapped chunks are better. That requires an
+answer-level evaluation (HUB-047), which every paper read validates on and
+which this system does not have.
+
 ### HUB-045 — Chunk embeddings lose their document context
 
 **Status:** 🔴 OPEN — unblocked by HUB-044, and redirected by it. The coverage
@@ -1440,16 +1500,33 @@ aggregation both need, so this is the cheapest first step toward either.
 
 ### HUB-047 — No end-to-end retrieval evaluation set
 
-**Status:** 🔴 OPEN — the gap the backlog never named.
+**Status:** 🔴 OPEN — **promoted: this is now the gate on retrieval and
+synthesis work, not a follow-on** (2026-08-13, after the HUB-049 prior-art
+pass).
 
 There are benchmarks for exact-term recall, claim support and source
 screening, but nothing measuring whether the knowledge base answers real
 questions well. Every retrieval decision to date has been judged on a proxy.
 
+Two proxies are now known to be insufficient, from the prior art rather than
+from opinion: arXiv:2607.00725 shows retrieval recall stops predicting
+accuracy once a context budget forces evidence to be discarded — which is this
+system's measured condition — and arXiv:2603.22633 shows large source-coverage
+gains worth roughly 0.01 F1, so coverage does not stand in either. HUB-049 is
+implemented and cannot be adopted for exactly this reason; HUB-045 would face
+the same wall.
+
 **Approach.** A held-out question set with known-good source documents,
 scored on answer correctness and source coverage. HUB-044 is its first
-metric. This is what would let HUB-045 and HUB-048 be decided by measurement
-rather than argument.
+metric. This is what would let HUB-045, HUB-048 and HUB-049's flag be decided
+by measurement rather than argument.
+
+**Open design question, unanswered by the prior art.** Every paper read
+validates on short-answer QA with gold spans. This system's output is
+long-form cited synthesis over a private, growing corpus, where "correct" is
+not a string match. Settle the scoring design before building the set — the
+existing sealed judge protocol (v4) is the closest thing already in the repo
+and is the obvious starting point.
 
 ### HUB-048 — Knowledge-graph go/no-go, decided by measurement
 
