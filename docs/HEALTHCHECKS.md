@@ -1,93 +1,36 @@
-Docker healthchecks in this stack are inconsistent because each container image has different available binaries. The general pattern:
+# Healthchecks
 
-## Rules
-
-1. **If the image has bash + the `/healthcheck` mount**: use `bash /healthcheck/healthcheck.sh <port>` (uses bash /dev/tcp, fastest)
-2. **If the image has only sh**: use `python3 /healthcheck/healthcheck-py3.py <port>` (SearXNG)
-3. **If the image has curl**: bake it into the Dockerfile and use that (research-hub)
-4. **If the image has its own CLI**: use it (for example, `redis-cli`)
-5. **Never use wget on slim images**: IPv6/IPv4 resolution fails on `localhost`
-
-## Helper scripts
-
-`healthcheck/healthcheck.sh` — bash /dev/tcp probe
-`healthcheck/healthcheck-py3.py` — Python socket probe
-
-Both mounted via `./healthcheck:/healthcheck:ro` into the container.
-
-## Per-service
+Two services carry Docker healthchecks; the rest are left plain because a
+failing exporter is visible in Prometheus (`up == 0`) and adding a healthcheck
+would only duplicate that signal.
 
 | Service | Method | Why |
 |---|---|---|
-| ollama | bash `/healthcheck/healthcheck.sh 11434` | has bash |
-| qdrant | bash `/healthcheck/healthcheck.sh 6333` | has bash |
-| redis | `redis-cli ping` | built-in |
-| searxng | python3 socket probe | no bash |
-| crawl4ai | bash `/healthcheck/healthcheck.sh 11235` | has bash |
-| research-hub | Dockerfile `curl -f http://localhost:8000/livez` | process liveness; has curl, IPv6-safe |
-| research-worker | Docker restart policy + logs | no HTTP port; Redis leases expire and orphan reconciliation requeues work |
-| claim-verifier | curl `/health` on port 8001 | becomes healthy only after the pinned offline model loads |
-| open-webui | sh `echo > /dev/tcp/localhost/8080` | has bash actually, but compose uses sh-style |
-| dozzle | (none) | no healthcheck section |
-| uptime-kuma | (none) | relies on its own UI |
+| `ollama` | `bash /healthcheck/healthcheck.sh 11434` | The image has bash; the helper uses bash `/dev/tcp`, no extra binaries |
+| `open-webui` | inline bash `/dev/tcp` probe | Same technique, no helper mount needed |
 
-Research Hub also exposes `/readyz?capability=query|rag|research|all` for
-capability-specific dependency readiness. `/health/full` is a diagnostic view
-and remains HTTP 200 when dependencies are degraded.
+`open-webui` also declares `depends_on: ollama: condition: service_healthy`,
+so it will not start until Ollama answers.
 
-`research` and `all` readiness require `claim_verifier`; `query` and `rag` do not. The API
-and worker also validate the model ID and immutable revision returned by verifier health.
+## The helper scripts
 
-These probes run inside their containers and do not require host-published ports.
-Optional Uptime Kuma should likewise use Compose service names (`qdrant:6333`,
-`redis:6379`, and so on); see `SETUP.md`.
+- `healthcheck/healthcheck.sh` — bash `/dev/tcp` probe, mounted read-only
+  into containers that have bash.
+- `healthcheck/healthcheck-py3.py` — Python socket probe, retained for images
+  that ship `sh` and Python but not bash. Nothing currently uses it.
 
-The API research readiness confirms its dependencies, not that a worker is
-currently consuming. Check worker state and recent failures with:
+## Rules learned the hard way
 
-```bash
-docker compose ps research-worker
-docker compose logs --tail=100 research-worker
-docker compose exec redis redis-cli LLEN research:queue:pending
-docker compose exec redis redis-cli LLEN research:queue:processing
-```
+1. **If the image has bash and the `/healthcheck` mount**: use
+   `bash /healthcheck/healthcheck.sh <port>`. Fastest, no dependencies.
+2. **If the image has only `sh` plus Python**: use `healthcheck-py3.py`.
+3. **Never use `wget` on slim images** — IPv4/IPv6 resolution of `localhost`
+   fails inconsistently and produces flapping healthchecks.
 
-## Research-hub startup and Qdrant persistence
+## Liveness is also checked from outside
 
-Before the API becomes live, research-hub checks the configured Qdrant collection. A missing collection is created once. An existing collection must use the configured `EMBEDDING_DIMENSION` (768 by default) and cosine distance. If either setting differs, startup fails with a `migration required` error and leaves the collection and its points untouched.
-
-This validation makes a healthy research-hub container evidence that its collection schema is compatible; it does not recreate or migrate retained vectors. Check a startup failure with:
-
-```bash
-docker compose logs research-hub
-```
-
-Run the collection regression tests from `research-hub/` with:
-
-```bash
-uv run --with-requirements requirements.txt python -m unittest discover -s tests -v
-```
-
-## Why compose-level healthcheck overrides fail
-
-If a compose file has `healthcheck:`, it overrides the Dockerfile's HEALTHCHECK. So once you set `wget` in compose, the Dockerfile's curl version is ignored. The research-hub Dockerfile has a working curl healthcheck but the compose was overriding it — fixed by removing the compose-level block.
-
-## Troubleshooting
-
-Container shows "unhealthy" but the endpoint works:
-
-```bash
-# Check the actual healthcheck command
-docker inspect <container> --format '{{json .Config.Healthcheck}}'
-
-# Run the healthcheck manually inside the container
-docker exec <container> <the-test-command>
-
-# Check the latest health log
-docker inspect <container> --format '{{json .State.Health}}'
-```
-
-Common causes:
-- Binary missing (wget on image that doesn't have it → use curl)
-- IPv6/IPv4 mismatch (wget on localhost resolves to ::1, service listens on 0.0.0.0)
-- Healthcheck runs before start_period expires (default 30s, research-hub needs 60s)
+`blackbox-exporter` probes `hub-ollama:11434` and `hub-open-webui:8080` over
+HTTP every 15s, and the `OllamaNotAnswering` / `OpenWebUINotAnswering` alerts
+fire from those probes. That is a deliberate second opinion: a Docker
+healthcheck tells the daemon whether to restart a container, while the probe
+records history you can look at afterwards in Prometheus.

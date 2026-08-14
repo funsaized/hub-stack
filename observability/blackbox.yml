@@ -1,0 +1,11 @@
+modules:
+  # Ollama answers 200 with "Ollama is running" at /; Open WebUI serves its
+  # app shell. Both are plain reachability checks -- they say the service is
+  # answering HTTP, not that a model will load.
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200]
+      preferred_ip_protocol: ip4
+      follow_redirects: true

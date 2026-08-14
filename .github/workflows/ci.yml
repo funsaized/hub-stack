@@ -1,7 +1,6 @@
-# CI gate (HUB-012): syntax/lint, the unit+Redis suite, Compose validation,
-# and the research-hub image build. The live benchmarks (report retrieval,
-# claim drafting, exact-term hybrid) stay local — they need Ollama and the
-# retained corpus.
+# CI for a Compose-only repository. There is no application source left to
+# lint or test after the 2026-08-14 teardown, so this validates the two things
+# that can still be wrong: the Compose file and the observability configs.
 name: CI
 
 on:
@@ -10,77 +9,28 @@ on:
   pull_request:
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install ruff
-        run: pip install ruff
-      - name: Syntax and error lint
-        run: ruff check --select E9,F research-hub/app research-hub/tests
-      - name: Byte-compile application
-        run: python -m compileall -q research-hub/app
-
-  test:
-    runs-on: ubuntu-latest
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: research-hub/requirements.lock.txt
-      - name: Install locked dependencies
-        run: pip install --require-hashes -r research-hub/requirements.lock.txt
-      - name: Install test runner
-        run: pip install pytest
-      - name: Run the suite (includes Redis DB 15 integration)
-        working-directory: research-hub
-        env:
-          TEST_REDIS_URL: redis://localhost:6379/15
-          # Offline placeholder: config requires a key for the judge gate;
-          # no test makes a metered call.
-          MINIMAX_SUBSCRIPTION_KEY: ci-placeholder
-        run: python -m pytest tests -q
-
   compose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate compose configuration
-        env:
-          # Placeholders satisfy the required ${VAR:?} expansions; real values
-          # live only in the deployment's .env.
-          SEARXNG_SECRET: ci-placeholder
-          CRAWL4AI_API_TOKEN: ci-placeholder
-          MINIMAX_SUBSCRIPTION_KEY: ci-placeholder
+      - name: Validate Compose
+        # Never print interpolated output -- it would echo .env values.
         run: docker compose config --quiet
 
-  build:
+  observability-config:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Build research-hub image
-        uses: docker/build-push-action@v6
-        with:
-          context: research-hub
-          load: true
-          tags: research-hub:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: pip check in built image
-        run: docker run --rm --entrypoint pip research-hub:ci check
+      - name: Check Prometheus config and alert rules
+        # Mounted at /etc/prometheus, not an arbitrary path: prometheus.yml
+        # refers to its rule file by absolute path, so promtool only resolves
+        # it when the layout matches the container's.
+        run: |
+          docker run --rm --entrypoint promtool \
+            -v "$PWD/observability:/etc/prometheus:ro" prom/prometheus:v3.1.0 \
+            check config /etc/prometheus/prometheus.yml
+      - name: Check dashboard JSON parses
+        run: |
+          for f in observability/grafana/dashboards/*.json; do
+            python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f"
+          done

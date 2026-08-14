@@ -1,18 +1,58 @@
+# Alerts for a single-box local LLM hub. Deliberately few: on a machine with
+# one operator who is usually sitting at it, an alert that fires routinely is
+# worse than no alert. These cover the three ways this box actually fails --
+# it runs out of VRAM, it runs out of disk, or Ollama stops answering.
+#
+# Nothing routes these anywhere yet; they surface in Prometheus at /alerts.
+
 groups:
-  - name: research-hub
+  - name: llm-hub
     rules:
-      - alert: ResearchJobFailures
-        expr: increase(hub_jobs_total{outcome="failed"}[15m]) > 0
-        for: 1m
+      - alert: OllamaNotAnswering
+        expr: probe_success{instance="http://hub-ollama:11434/"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Ollama is not answering HTTP on 11434"
+
+      - alert: OpenWebUINotAnswering
+        expr: probe_success{instance="http://hub-open-webui:8080/"} == 0
+        for: 5m
         labels: {severity: warning}
-        annotations: {summary: "A research job failed"}
-      - alert: ResearchApiHighErrorRate
-        expr: sum(rate(hub_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(hub_http_requests_total[5m])), 0.001) > 0.05
+        annotations:
+          summary: "Open WebUI is not answering HTTP on 8080"
+
+      - alert: GpuMemoryNearlyFull
+        expr: >
+          nvidia_smi_memory_used_bytes / clamp_min(nvidia_smi_memory_total_bytes, 1) > 0.95
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "GPU memory above 95% for 5 minutes -- a larger model will not load"
+
+      - alert: GpuSustainedHighTemperature
+        expr: nvidia_smi_temperature_gpu > 85
         for: 10m
         labels: {severity: warning}
-        annotations: {summary: "Research API 5xx rate exceeds 5%"}
-      - alert: ResearchP95GenerationSlow
-        expr: histogram_quantile(0.95, sum by (le) (rate(hub_generation_duration_seconds_bucket[15m]))) > 60
+        annotations:
+          summary: "GPU above 85C for 10 minutes -- expect thermal throttling"
+
+      # /var/lib is the Docker Desktop data disk inside the VM -- where image
+      # layers and the ollama_data volume (the models) actually live. There is
+      # no meaningful "/" to watch on this platform.
+      - alert: ModelDiskNearlyFull
+        expr: >
+          node_filesystem_avail_bytes{mountpoint="/var/lib"} /
+          clamp_min(node_filesystem_size_bytes{mountpoint="/var/lib"}, 1) < 0.10
         for: 15m
         labels: {severity: warning}
-        annotations: {summary: "RAG p95 generation latency exceeds 60 seconds"}
+        annotations:
+          summary: "Less than 10% free on the Docker disk -- model pulls will fail"
+
+      - alert: HostMemoryNearlyExhausted
+        expr: >
+          node_memory_MemAvailable_bytes / clamp_min(node_memory_MemTotal_bytes, 1) < 0.10
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Less than 10% RAM available on the container host"

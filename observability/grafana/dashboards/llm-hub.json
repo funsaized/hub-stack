@@ -1,0 +1,133 @@
+{
+  "uid": "llm-hub",
+  "title": "Local LLM hub",
+  "tags": ["ollama", "gpu"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Ollama",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 }, "1": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "targets": [{ "expr": "probe_success{instance=\"http://hub-ollama:11434/\"}", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "VRAM used",
+      "description": "This card has 12 GB. A model larger than free VRAM is partly offloaded to CPU and gets dramatically slower.",
+      "gridPos": { "h": 4, "w": 5, "x": 4, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 9000000000 }, { "color": "red", "value": 11500000000 }] }
+        }
+      },
+      "targets": [{ "expr": "nvidia_smi_memory_used_bytes", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "GPU utilization",
+      "gridPos": { "h": 4, "w": 5, "x": 9, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "max": 1,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }, { "color": "green", "value": 0.5 }] }
+        }
+      },
+      "targets": [{ "expr": "nvidia_smi_utilization_gpu_ratio", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "GPU temp",
+      "gridPos": { "h": 4, "w": 5, "x": 14, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 75 }, { "color": "red", "value": 85 }] }
+        }
+      },
+      "targets": [{ "expr": "nvidia_smi_temperature_gpu", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Model disk free",
+      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 50000000000 }] }
+        }
+      },
+      "targets": [{ "expr": "node_filesystem_avail_bytes{mountpoint=\"/var/lib\"}", "refId": "A", "instant": true }]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "VRAM used vs total",
+      "description": "The ceiling on model size. When used approaches total, the next model either fails to load or spills to CPU.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "nvidia_smi_memory_used_bytes", "legendFormat": "used", "refId": "A" },
+        { "expr": "nvidia_smi_memory_total_bytes", "legendFormat": "total", "refId": "B" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU utilization and power",
+      "description": "Utilization near 100% with power near the limit is a model running at full tilt. Utilization high but power low usually means it is memory-bound.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "overrides": [
+        { "matcher": { "id": "byName", "options": "utilization" }, "properties": [{ "id": "unit", "value": "percentunit" }, { "id": "max", "value": 1 }] },
+        { "matcher": { "id": "byName", "options": "power draw" }, "properties": [{ "id": "unit", "value": "watt" }] },
+        { "matcher": { "id": "byName", "options": "power limit" }, "properties": [{ "id": "unit", "value": "watt" }] }
+      ],
+      "targets": [
+        { "expr": "nvidia_smi_utilization_gpu_ratio", "legendFormat": "utilization", "refId": "A" },
+        { "expr": "nvidia_smi_power_draw_watts", "legendFormat": "power draw", "refId": "B" },
+        { "expr": "nvidia_smi_power_limit_watts", "legendFormat": "power limit", "refId": "C" }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "GPU temperature and clocks",
+      "description": "A graphics clock that falls while temperature sits above ~83C is thermal throttling.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "overrides": [
+        { "matcher": { "id": "byName", "options": "temperature" }, "properties": [{ "id": "unit", "value": "celsius" }] },
+        { "matcher": { "id": "byName", "options": "graphics clock" }, "properties": [{ "id": "unit", "value": "hertz" }] }
+      ],
+      "targets": [
+        { "expr": "nvidia_smi_temperature_gpu", "legendFormat": "temperature", "refId": "A" },
+        { "expr": "nvidia_smi_clocks_current_graphics_clock_hz", "legendFormat": "graphics clock", "refId": "B" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Host CPU and memory (WSL2 VM)",
+      "description": "This is the Docker Desktop VM, not Windows. Ollama dominates it, so this is a good proxy for what Ollama is costing in CPU and RAM -- including the CPU spill when a model does not fit in VRAM.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0, "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))", "legendFormat": "cpu busy", "refId": "A" },
+        { "expr": "1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)", "legendFormat": "memory used", "refId": "B" }
+      ]
+    }
+  ]
+}
