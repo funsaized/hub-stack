@@ -1,26 +1,41 @@
 name: hub
 
+# Local LLM hub — Ollama, a chat UI, and metrics for how the box is coping.
+#
+# `name: hub` is load-bearing. Compose derives volume names from the project
+# name, so dropping it renames every volume to hub-stack_* and the stack comes
+# up pointing at empty ones -- which silently loses the model store.
+#
+# Everything is on by default: there are no compose profiles here. Compose
+# interpolates the whole file before it filters by profile, so a profile-gated
+# service with a required ${VAR:?} still blocks startup for every other
+# service. Profiles bought nothing once the research stack was removed.
+#
+# All host ports bind to 127.0.0.1. Set *_BIND_ADDRESS to a Tailscale or
+# trusted-LAN address only when remote access is actually intended.
+
 services:
   # =====================================================================
-  # Local LLM server (OpenAI-compatible API on :11434)
+  # Ollama — the reason this machine exists
   # =====================================================================
   ollama:
-    # Pinned to the running digest 2026-08-11 (ollama 0.32.6); HUB-012.
+    # Pinned to the running digest 2026-08-11 (ollama 0.32.6).
     image: ollama/ollama:0.32.6@sha256:b88c73ace3e115f8ec53dc8761ae1c0aabfa675406e3681786b98757ce050f42
     container_name: hub-ollama
     restart: unless-stopped
-    networks: [default, crawler]
     ports:
-      # Localhost by default. Set OLLAMA_BIND_ADDRESS to a trusted LAN or
-      # Tailscale interface address only when remote model access is intended.
       - "${OLLAMA_BIND_ADDRESS:-127.0.0.1}:${OLLAMA_HOST_PORT:-11435}:11434"
     volumes:
       - ollama_data:/root/.ollama
       - ./healthcheck:/healthcheck:ro
     environment:
+      # How long a model stays resident after its last request. Long enough
+      # that a second question does not pay the load cost again.
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-16384}
       - OLLAMA_HOST=0.0.0.0:11434
+      # One model, one request at a time by default: on a single consumer GPU
+      # concurrency trades latency for nothing. Raise deliberately.
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-1}
       - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
     deploy:
@@ -38,364 +53,27 @@ services:
       start_period: 30s
 
   # =====================================================================
-  # Vector database for RAG over crawled content
-  # =====================================================================
-  qdrant:
-    # Pinned to the running digest 2026-08-11 (qdrant v1.19.0); HUB-012.
-    image: qdrant/qdrant:v1.19.0@sha256:057ee3a8da769fe7310dd3537b4dc7583bf87a95ce8ac43c0af5a46bc580d1fc
-    container_name: hub-qdrant
-    restart: unless-stopped
-    volumes:
-      - qdrant_data:/qdrant/storage
-      - ./healthcheck:/healthcheck:ro
-    healthcheck:
-      test: ["CMD", "bash", "/healthcheck/healthcheck.sh", "6333"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
-  # =====================================================================
-  # Redis
-  # =====================================================================
-  redis:
-    image: redis:7-alpine
-    container_name: hub-redis
-    restart: unless-stopped
-    networks: [default, crawler]
-    volumes:
-      - redis_data:/data
-    # Queue/job keys must never be evicted under memory pressure.
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
-  # =====================================================================
-  # Dozzle — Docker log viewer
-  # =====================================================================
-  dozzle:
-    profiles: [logs]
-    # Pinned to the running digest 2026-08-11 (dozzle v10.6.15); HUB-012.
-    image: amir20/dozzle:v10.6.15@sha256:5bb13e26b62f9bc4bd390e3e0c9423263b7df86e3a4167b718cc6e352f96b54f
-    container_name: hub-dozzle
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8888:8080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    environment:
-      DOZZLE_ENABLE_ACTIONS: "false"
-      DOZZLE_NO_ANALYTICS: "true"
-
-  # =====================================================================
-  # Uptime Kuma
-  # =====================================================================
-  uptime-kuma:
-    profiles: [uptime]
-    # Pinned to the running digest 2026-08-11 (uptime-kuma 1.23.17); HUB-012.
-    image: louislam/uptime-kuma:1.23.17@sha256:3d632903e6af34139a37f18055c4f1bfd9b7205ae1138f1e5e8940ddc1d176f9
-    container_name: hub-uptime-kuma
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3001:3001"
-    volumes:
-      - uptime_kuma_data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-
-  prometheus:
-    profiles: [observability]
-    image: prom/prometheus:v3.1.0
-    container_name: hub-prometheus
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:9090:9090"
-    volumes:
-      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
-      - prometheus_data:/prometheus
-
-  grafana:
-    profiles: [observability]
-    image: grafana/grafana:11.4.0
-    container_name: hub-grafana
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:3002:3000"
-    environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    depends_on:
-      - prometheus
-
-  # =====================================================================
-  # SearXNG — private meta-search
-  # =====================================================================
-  searxng:
-    # Pinned to the running digest 2026-08-11 (searxng 2026.8.4-c63835bd2); HUB-012.
-    image: searxng/searxng:2026.8.4-c63835bd2@sha256:f4c8e59de166ed71f6380c0847c312ca51f0d41996e31d0559163b6b09ecde52
-    container_name: hub-searxng
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8889:8080"
-    volumes:
-      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
-      - ./healthcheck:/healthcheck:ro
-    environment:
-      # Required secret from .env — compose refuses to start without it.
-      # Overrides server.secret_key from the settings file.
-      - SEARXNG_SECRET=${SEARXNG_SECRET:?Set SEARXNG_SECRET in .env — generate with openssl rand -hex 32}
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
-    healthcheck:
-      test: ["CMD", "python3", "/healthcheck/healthcheck-py3.py", "8080"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
-  # =====================================================================
-  # Crawl4AI — web crawler
-  # =====================================================================
-  crawl4ai:
-    # Pinned to the running digest 2026-08-11 (crawl4ai 0.9.2); HUB-012.
-    image: unclecode/crawl4ai:0.9.2@sha256:bd36741e7bdd35ddc1a05d9183e1d6d8cefb61dd640d944a25d026b76e917690
-    container_name: hub-crawl4ai
-    restart: unless-stopped
-    # Egress isolation (HUB-006): the crawler fetches untrusted content, so it
-    # sits on the crawler network only. It can reach Ollama and Redis (its own
-    # config depends on both) and the internet, but not Qdrant, SearXNG, or
-    # the observability services.
-    networks: [crawler]
-    volumes:
-      - crawl4ai_data:/app/data
-      - ./healthcheck:/healthcheck:ro
-      - ./crawl4ai-config.yml:/app/config.yml:ro
-    environment:
-      - CRAWL4AI_LLM_PROVIDER=ollama
-      - OLLAMA_BASE_URL=http://hub-ollama:11434
-      - OLLAMA_MODEL=${LLM_MODEL:-qwen3.5:9b}
-      # Required shared token from .env — compose refuses to start without it.
-      - CRAWL4AI_API_TOKEN=${CRAWL4AI_API_TOKEN:?Set CRAWL4AI_API_TOKEN in .env — generate with openssl rand -hex 32}
-      - APP_HOST=0.0.0.0
-    depends_on:
-      ollama:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "bash", "/healthcheck/healthcheck.sh", "11235"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-
-  # The claim-verifier NLI service was decommissioned by HUB-034 (2026-08-12)
-  # after the judge gate passed the sealed v4 blind evaluation; the claim gate
-  # now lives inside research-hub/worker (app/judge_gate.py, MiniMax API).
-
-  # =====================================================================
-  # Research Hub API — FastAPI orchestrator
-  # =====================================================================
-  research-hub:
-    build:
-      context: ./research-hub
-      dockerfile: Dockerfile
-    container_name: hub-research-hub
-    restart: unless-stopped
-    networks: [default, crawler]
-    ports:
-      - "127.0.0.1:8000:8000"
-    volumes:
-      - research_hub_data:/app/data
-    environment:
-      - REDIS_URL=redis://hub-redis:6379/0
-      - QDRANT_URL=http://hub-qdrant:6333
-      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-research_corpus__nomic_embed_text_768}
-      - OLLAMA_URL=http://hub-ollama:11434
-      - LLM_MODEL=${LLM_MODEL:-qwen3.5:9b}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
-      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-768}
-      - SEARXNG_URL=http://hub-searxng:8080
-      - SEARXNG_ENGINES=${SEARXNG_ENGINES:-duckduckgo,bing,brave,startpage,mojeek,qwant}
-      - SEARCH_PACING_SECONDS=${SEARCH_PACING_SECONDS:-2.0}
-      # Optional keyed fallback; unset means SearXNG only (ADR-002).
-      - SERPER_API_KEY=${SERPER_API_KEY:-}
-      - CRAWL4AI_URL=http://hub-crawl4ai:11235
-      - CRAWL4AI_TOKEN=${CRAWL4AI_API_TOKEN:?Set CRAWL4AI_API_TOKEN in .env — generate with openssl rand -hex 32}
-      - LOG_LEVEL=info
-      - DOCUMENT_STORE_PATH=/app/data/documents.sqlite3
-      - MODEL_CONTEXT_TOKENS=${MODEL_CONTEXT_TOKENS:-16384}
-      - ANSWER_RESERVE_TOKENS=${ANSWER_RESERVE_TOKENS:-2048}
-      - ALLOW_CUSTOM_SYSTEM_PROMPTS=${ALLOW_CUSTOM_SYSTEM_PROMPTS:-false}
-      - REPORT_RETRIEVAL_CANDIDATES=${REPORT_RETRIEVAL_CANDIDATES:-120}
-      - REPORT_MAX_CHUNKS_PER_SOURCE=${REPORT_MAX_CHUNKS_PER_SOURCE:-3}
-      - REPORT_RETRIEVAL_MIN_SCORE=${REPORT_RETRIEVAL_MIN_SCORE:-}
-      - REPORT_MAX_SPAN_CLAIMS=${REPORT_MAX_SPAN_CLAIMS:-40}
-      - REPORT_MAX_PAIR_CLAIMS=${REPORT_MAX_PAIR_CLAIMS:-20}
-      - REPORT_MAX_FINDINGS=${REPORT_MAX_FINDINGS:-40}
-      - REPORT_MAX_DISAGREEMENTS=${REPORT_MAX_DISAGREEMENTS:-4}
-      - REPORT_MAX_CORRECTIONS=${REPORT_MAX_CORRECTIONS:-6}
-      - REPORT_HYBRID_RETRIEVAL=${REPORT_HYBRID_RETRIEVAL:-true}
-      - REPORT_RRF_K=${REPORT_RRF_K:-60}
-      # HUB-049: 'rank' (deployed) or 'marginal_gain'. Identical unless
-      # the evidence budget actually binds.
-      - EVIDENCE_PACKING=${EVIDENCE_PACKING:-rank}
-      # HUB-024 adaptive query planning. Off by default: with the master
-      # switch false, acquisition issues the single search it always did.
-      # PLAN_MAX_FACETS is a rail against a pathological planner; breadth is
-      # decided by PLAN_FACET_DISTINCT.
-      - REPORT_QUERY_PLANNING=${REPORT_QUERY_PLANNING:-false}
-      - PLAN_FACET_DISTINCT=${PLAN_FACET_DISTINCT:-0.85}
-      - PLAN_FACET_RELEVANCE=${PLAN_FACET_RELEVANCE:-0.55}
-      - PLAN_SOURCE_RELEVANCE=${PLAN_SOURCE_RELEVANCE:-0.54}
-      - PLAN_MAX_FACETS=${PLAN_MAX_FACETS:-12}
-      - PLAN_MAX_ROUNDS=${PLAN_MAX_ROUNDS:-4}
-      - PLAN_SEARCH_BUDGET=${PLAN_SEARCH_BUDGET:-24}
-      - PLAN_CRAWL_BUDGET=${PLAN_CRAWL_BUDGET:-150}
-      # HUB-034: the claim gate is the MiniMax M3 judge (retained corpus
-      # spans leave the machine for judging — operator-accepted exception).
-      # Required secret from .env — the MiniMax Token Plan Subscription Key.
-      - MINIMAX_SUBSCRIPTION_KEY=${MINIMAX_SUBSCRIPTION_KEY:?Set MINIMAX_SUBSCRIPTION_KEY in .env — MiniMax Token Plan Subscription Key}
-      - JUDGE_BASE_URL=${JUDGE_BASE_URL:-https://api.minimax.io/v1}
-      - JUDGE_MODEL=${JUDGE_MODEL:-MiniMax-M3}
-      - JUDGE_TIMEOUT_SECONDS=${JUDGE_TIMEOUT_SECONDS:-180}
-    depends_on:
-      ollama:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      searxng:
-        condition: service_healthy
-      crawl4ai:
-        condition: service_healthy
-    # Healthcheck defined in Dockerfile (uses curl)
-
-  # Dedicated durable ingestion worker. API replicas only enqueue work; this
-  # process owns crawling, embedding, retries, and lease reconciliation.
-  research-worker:
-    build:
-      context: ./research-hub
-      dockerfile: Dockerfile
-    container_name: hub-research-worker
-    restart: unless-stopped
-    networks: [default, crawler]
-    command: ["python", "-m", "app.worker"]
-    stop_grace_period: 30s
-    # The shared image probes the API's /livez endpoint; the worker has no HTTP
-    # server, so disable that inherited probe. Leases/reconciliation provide its
-    # failure detection and the restart policy restores the process.
-    healthcheck:
-      disable: true
-    environment:
-      - REDIS_URL=redis://hub-redis:6379/0
-      - QDRANT_URL=http://hub-qdrant:6333
-      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-research_corpus__nomic_embed_text_768}
-      - OLLAMA_URL=http://hub-ollama:11434
-      - LLM_MODEL=${LLM_MODEL:-qwen3.5:9b}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
-      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-768}
-      - SEARXNG_URL=http://hub-searxng:8080
-      - SEARXNG_ENGINES=${SEARXNG_ENGINES:-duckduckgo,bing,brave,startpage,mojeek,qwant}
-      - SEARCH_PACING_SECONDS=${SEARCH_PACING_SECONDS:-2.0}
-      # Optional keyed fallback; unset means SearXNG only (ADR-002).
-      - SERPER_API_KEY=${SERPER_API_KEY:-}
-      - CRAWL4AI_URL=http://hub-crawl4ai:11235
-      - CRAWL4AI_TOKEN=${CRAWL4AI_API_TOKEN:?Set CRAWL4AI_API_TOKEN in .env — generate with openssl rand -hex 32}
-      - WORKER_LEASE_SECONDS=${WORKER_LEASE_SECONDS:-60}
-      - WORKER_HEARTBEAT_SECONDS=${WORKER_HEARTBEAT_SECONDS:-15}
-      - JOB_TIMEOUT_SECONDS=${JOB_TIMEOUT_SECONDS:-1800}
-      - JOB_MAX_ATTEMPTS=${JOB_MAX_ATTEMPTS:-3}
-      - LOG_LEVEL=info
-      - DOCUMENT_STORE_PATH=/app/data/documents.sqlite3
-      - EMBEDDING_BATCH_SIZE=${EMBEDDING_BATCH_SIZE:-16}
-      - EMBEDDING_BATCH_CHARS=${EMBEDDING_BATCH_CHARS:-12000}
-      - DEPENDENCY_MAX_ATTEMPTS=${DEPENDENCY_MAX_ATTEMPTS:-3}
-      - MODEL_CONTEXT_TOKENS=${MODEL_CONTEXT_TOKENS:-16384}
-      - ANSWER_RESERVE_TOKENS=${ANSWER_RESERVE_TOKENS:-2048}
-      - RESPECT_ROBOTS_TXT=${RESPECT_ROBOTS_TXT:-true}
-      - CRAWL_MAX_MARKDOWN_CHARS=${CRAWL_MAX_MARKDOWN_CHARS:-2000000}
-      - REPORT_RETRIEVAL_CANDIDATES=${REPORT_RETRIEVAL_CANDIDATES:-120}
-      - REPORT_MAX_CHUNKS_PER_SOURCE=${REPORT_MAX_CHUNKS_PER_SOURCE:-3}
-      - REPORT_RETRIEVAL_MIN_SCORE=${REPORT_RETRIEVAL_MIN_SCORE:-}
-      - REPORT_MAX_SPAN_CLAIMS=${REPORT_MAX_SPAN_CLAIMS:-40}
-      - REPORT_MAX_PAIR_CLAIMS=${REPORT_MAX_PAIR_CLAIMS:-20}
-      - REPORT_MAX_FINDINGS=${REPORT_MAX_FINDINGS:-40}
-      - REPORT_MAX_DISAGREEMENTS=${REPORT_MAX_DISAGREEMENTS:-4}
-      - REPORT_MAX_CORRECTIONS=${REPORT_MAX_CORRECTIONS:-6}
-      - REPORT_HYBRID_RETRIEVAL=${REPORT_HYBRID_RETRIEVAL:-true}
-      - REPORT_RRF_K=${REPORT_RRF_K:-60}
-      # HUB-049: 'rank' (deployed) or 'marginal_gain'. Identical unless
-      # the evidence budget actually binds.
-      - EVIDENCE_PACKING=${EVIDENCE_PACKING:-rank}
-      # HUB-024 adaptive query planning. Off by default: with the master
-      # switch false, acquisition issues the single search it always did.
-      # PLAN_MAX_FACETS is a rail against a pathological planner; breadth is
-      # decided by PLAN_FACET_DISTINCT.
-      - REPORT_QUERY_PLANNING=${REPORT_QUERY_PLANNING:-false}
-      - PLAN_FACET_DISTINCT=${PLAN_FACET_DISTINCT:-0.85}
-      - PLAN_FACET_RELEVANCE=${PLAN_FACET_RELEVANCE:-0.55}
-      - PLAN_SOURCE_RELEVANCE=${PLAN_SOURCE_RELEVANCE:-0.54}
-      - PLAN_MAX_FACETS=${PLAN_MAX_FACETS:-12}
-      - PLAN_MAX_ROUNDS=${PLAN_MAX_ROUNDS:-4}
-      - PLAN_SEARCH_BUDGET=${PLAN_SEARCH_BUDGET:-24}
-      - PLAN_CRAWL_BUDGET=${PLAN_CRAWL_BUDGET:-150}
-      # HUB-034: judge claim gate (see research-hub service).
-      - MINIMAX_SUBSCRIPTION_KEY=${MINIMAX_SUBSCRIPTION_KEY:?Set MINIMAX_SUBSCRIPTION_KEY in .env — MiniMax Token Plan Subscription Key}
-      - JUDGE_BASE_URL=${JUDGE_BASE_URL:-https://api.minimax.io/v1}
-      - JUDGE_MODEL=${JUDGE_MODEL:-MiniMax-M3}
-      - JUDGE_TIMEOUT_SECONDS=${JUDGE_TIMEOUT_SECONDS:-180}
-    volumes:
-      - research_hub_data:/app/data
-    depends_on:
-      ollama:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      searxng:
-        condition: service_healthy
-      crawl4ai:
-        condition: service_healthy
-
-  # =====================================================================
-  # Open WebUI — chat interface
+  # Open WebUI — chat interface, wired to Ollama and nothing else
   # =====================================================================
   open-webui:
-    profiles: [webui]
     image: ghcr.io/open-webui/open-webui:v0.10.0
     container_name: hub-open-webui
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${WEBUI_BIND_ADDRESS:-127.0.0.1}:${WEBUI_HOST_PORT:-8080}:8080"
     volumes:
       - open_webui_data:/app/backend/data
     environment:
       OLLAMA_BASE_URL: http://hub-ollama:11434
-      WEBUI_AUTH: "true"
-      # Optional: when empty, Open WebUI generates a random key on first start
-      # and persists it in the open_webui_data volume. Set a value in .env only
-      # if sessions must survive a volume wipe. (This service is profile-gated,
-      # so a hard-required ${VAR:?} here would break default startup.)
-      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-}
-      ENABLE_OPENAI_API: "true"
-      OPENAI_API_BASE_URLS: http://hub-research-hub:8000/v1
-      OPENAI_API_KEYS: hub-local
-      OPENAI_API_CONFIGS: '{"0":{"enable":true,"model_ids":["research-corpus"],"tags":["Research Hub"]}}'
+      # Single-user box bound to localhost; auth is off by operator decision.
+      # Turn this back on before exposing the port to anything.
+      WEBUI_AUTH: "${WEBUI_AUTH:-false}"
+      # No OpenAI-compatible backends. The research corpus that used to be
+      # served here as a pseudo-model is gone.
+      ENABLE_OPENAI_API: "false"
       ENABLE_PERSISTENT_CONFIG: "false"
     depends_on:
       ollama:
-        condition: service_healthy
-      research-hub:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8080' || exit 1"]
@@ -404,18 +82,111 @@ services:
       retries: 5
       start_period: 60s
 
-networks:
-  # Crawl4AI fetches untrusted web content; this network limits what it can
-  # reach inside the stack (see the crawl4ai service definition).
-  crawler:
+  # =====================================================================
+  # Logs
+  # =====================================================================
+  dozzle:
+    image: amir20/dozzle:v10.6.15
+    container_name: hub-dozzle
+    restart: unless-stopped
+    ports:
+      - "${DOZZLE_BIND_ADDRESS:-127.0.0.1}:${DOZZLE_HOST_PORT:-9999}:8080"
+    volumes:
+      # Read-only socket: Dozzle reads container logs and nothing else.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DOZZLE_NO_ANALYTICS=true
+
+  # =====================================================================
+  # Metrics — what the box is doing while a model runs
+  # =====================================================================
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: hub-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_BIND_ADDRESS:-127.0.0.1}:${PROMETHEUS_HOST_PORT:-9090}:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: hub-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_BIND_ADDRESS:-127.0.0.1}:${GRAFANA_HOST_PORT:-3000}:3000"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    depends_on:
+      - prometheus
+
+  # Liveness of the two things a user touches. cAdvisor would have covered
+  # this and more, but it returns no per-container metrics under Docker
+  # Desktop at all (measured -- see docs/METRICS.md), so an HTTP probe is the
+  # honest way to know whether Ollama is answering.
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: hub-blackbox-exporter
+    restart: unless-stopped
+    volumes:
+      - ./observability/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+
+  # Host CPU, memory, disk and filesystem. Under Docker Desktop this reports
+  # the WSL2 VM rather than Windows itself -- see docs/METRICS.md.
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: hub-node-exporter
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+
+  # GPU utilization, VRAM, temperature and power, scraped from nvidia-smi.
+  #
+  # No explicit `devices:` mapping: under WSL2 there is no /dev/nvidiactl or
+  # /dev/nvidia0 to bind, and naming them makes the container fail to start.
+  # The nvidia driver reservation below is the mechanism that works here (it
+  # is what `--gpus all` resolves to), and `utility` is what puts nvidia-smi
+  # in the container -- `gpu` alone is not enough for this exporter.
+  gpu-exporter:
+    image: utkuozdemir/nvidia_gpu_exporter:1.2.1
+    container_name: hub-gpu-exporter
+    restart: unless-stopped
+    # The fields are pinned rather than auto-detected. With the default AUTO
+    # the exporter enumerates every field this driver offers, and one of them
+    # ("power_smoothing.curr_profile.ramp_down_rate [W/s]") becomes an invalid
+    # Prometheus metric name, which panics the process at startup. Pinning also
+    # means a driver update cannot silently change what is collected.
+    command:
+      - --query-field-names=name,uuid,utilization.gpu,utilization.memory,memory.total,memory.used,memory.free,temperature.gpu,power.draw,power.limit,clocks.current.graphics,clocks.current.memory,pstate
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, utility]
 
 volumes:
   ollama_data:
-  qdrant_data:
-  redis_data:
-  uptime_kuma_data:
-  crawl4ai_data:
-  research_hub_data:
   open_webui_data:
   prometheus_data:
   grafana_data:
