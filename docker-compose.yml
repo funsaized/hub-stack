@@ -18,7 +18,7 @@ services:
   # Open WebUI — chat interface, wired to native Ollama and nothing else
   # =====================================================================
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.11.0
+    image: ghcr.io/open-webui/open-webui:v0.11.1
     container_name: hub-open-webui
     restart: unless-stopped
     ports:
