@@ -4,12 +4,14 @@ A local LLM hub on one machine: native Ollama with a GPU, plus a containerized
 chat UI, logs, and metrics that show what the box is doing while a model runs.
 
 Nothing here calls out to a hosted model. Docker web surfaces bind to
-`127.0.0.1`; Ollama is restricted to the private LAN by UFW.
+`127.0.0.1`; Caddy makes them available to the tailnet, and Ollama is
+restricted to private networks by UFW.
 
 ## Run it
 
 The host needs native Ollama, a working NVIDIA driver, Docker Engine, Compose,
-UFW, and NVIDIA Container Toolkit for the GPU metrics exporter. On Arch Linux:
+UFW, Tailscale, Caddy with the Netlify DNS module, and NVIDIA Container Toolkit
+for the GPU metrics exporter. On Arch Linux:
 
 ```bash
 sudo pacman -S --needed ollama-cuda nvidia-container-toolkit ufw
@@ -45,6 +47,21 @@ live in `systemd/ollama.service.d/override.conf`.
 | Prometheus | http://127.0.0.1:9090 | Raw metrics and alert state. |
 | Dozzle | http://127.0.0.1:9999 | Container logs, live. |
 
+The Caddy routes are available over Tailscale with HTTPS:
+
+| Surface | Vanity URL |
+|---|---|
+| Open WebUI | https://hub.nzxt.dev.s11a.com |
+| Grafana | https://dashboard.nzxt.dev.s11a.com |
+| Ollama API | https://ollama.nzxt.dev.s11a.com |
+| Dozzle | https://logs.nzxt.dev.s11a.com |
+| Prometheus | https://metrics.nzxt.dev.s11a.com |
+
+Product-name aliases (`openwebui`, `grafana`, `models`, `dozzle`, and
+`prometheus`) are also configured. The checked-in
+`caddy/conf.d/hub-stack.caddy` route snippet is imported by the host Caddyfile;
+see `docs/NETWORKING.md` for installation details.
+
 ## What runs
 
 | Service | Purpose |
@@ -57,6 +74,7 @@ live in `systemd/ollama.service.d/override.conf`.
 | `hub-gpu-exporter` | GPU utilization, VRAM, temperature, power |
 | `hub-node-exporter` | Host CPU, memory, disk |
 | `hub-blackbox-exporter` | HTTP liveness probes for Ollama and the UI |
+| `caddy.service` | Tailnet-only HTTPS reverse proxy |
 
 ## Hardware and what actually fits
 
@@ -111,9 +129,12 @@ python3 scripts/benchmark.py
 - Docker web surfaces bind to `127.0.0.1`. Native Ollama intentionally listens
   on `0.0.0.0:11434`; UFW restricts it to this private LAN and Docker networks.
 - **Open WebUI authentication is off** (`WEBUI_AUTH=false`), an explicit
-  choice for a single-user box on localhost. Set `WEBUI_AUTH=true` before
-  exposing port 8080 to anything.
-- Grafana allows anonymous admin with the login form disabled. Same caveat.
+  choice for a single-user box. Caddy exposes it only to the tailnet; enable
+  authentication before allowing access from any less-trusted network.
+- Grafana allows anonymous admin with the login form disabled. Its Caddy route
+  has the same tailnet-only trust boundary.
+- Ollama, Dozzle, and Prometheus also have no application authentication; their
+  Caddy routes rely on the same tailnet boundary.
 - Dozzle mounts the Docker socket **read-only**.
 
 ## History

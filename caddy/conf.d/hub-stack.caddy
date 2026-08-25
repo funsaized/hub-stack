@@ -1,0 +1,32 @@
+hub.nzxt.dev.s11a.com, openwebui.nzxt.dev.s11a.com, dashboard.nzxt.dev.s11a.com, grafana.nzxt.dev.s11a.com, ollama.nzxt.dev.s11a.com, models.nzxt.dev.s11a.com, logs.nzxt.dev.s11a.com, dozzle.nzxt.dev.s11a.com, metrics.nzxt.dev.s11a.com, prometheus.nzxt.dev.s11a.com {
+	bind {args[0]}
+
+	@openwebui host hub.nzxt.dev.s11a.com openwebui.nzxt.dev.s11a.com
+	handle @openwebui {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	@grafana host dashboard.nzxt.dev.s11a.com grafana.nzxt.dev.s11a.com
+	handle @grafana {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	@ollama host ollama.nzxt.dev.s11a.com models.nzxt.dev.s11a.com
+	handle @ollama {
+		reverse_proxy 127.0.0.1:11434
+	}
+
+	@dozzle host logs.nzxt.dev.s11a.com dozzle.nzxt.dev.s11a.com
+	handle @dozzle {
+		reverse_proxy 127.0.0.1:9999
+	}
+
+	@prometheus host metrics.nzxt.dev.s11a.com prometheus.nzxt.dev.s11a.com
+	handle @prometheus {
+		reverse_proxy 127.0.0.1:9090
+	}
+
+	tls {
+		dns netlify {env.NETLIFY_AUTH_TOKEN}
+	}
+}

@@ -6,7 +6,8 @@ Last verified: 2026-08-25 on the native Linux workstation.
 
 A local LLM hub: native Ollama on the GPU, Open WebUI in front of it, and
 containerized observability. Seven containers are running. Docker web surfaces
-use `127.0.0.1`; Ollama is UFW-scoped to the private LAN and Docker networks.
+use `127.0.0.1`; Caddy proxies them over HTTPS to the tailnet, and Ollama is
+UFW-scoped to the private LAN and Docker networks.
 
 ```
 ollama.service        native model server, NVIDIA CUDA backend
@@ -17,11 +18,14 @@ hub-grafana           dashboard "Local LLM hub"
 hub-gpu-exporter      nvidia-smi -> Prometheus
 hub-node-exporter     native Linux host CPU/memory/disk
 hub-blackbox-exporter HTTP liveness for Ollama and the UI
+caddy.service         tailnet-only HTTPS reverse proxy and ACME TLS
 ```
 
 Verified after the rebuild: all five Prometheus targets `up`, both liveness
 probes returning 1, all six alert rules parsing `ok`, Grafana serving the
-dashboard, and inference working end to end.
+dashboard, and inference working end to end. The five Caddy vanity routes and
+their five product-name aliases were subsequently verified over HTTPS; an
+Ollama generation through the proxy returned the expected model response.
 
 ## Hardware and model
 
@@ -117,8 +121,9 @@ and `docker stats` because no current dashboard requires cAdvisor data.
 - **Alerts are not routed.** No Alertmanager; they are a status page at
   `/alerts`.
 - **No application authentication.** Open WebUI auth is off and Grafana allows
-  anonymous admin, both deliberate for loopback-only surfaces. Ollama itself
-  has no authentication; UFW is its access control on the private LAN.
+  anonymous admin. Their reverse-proxy routes are deliberately restricted to
+  the tailnet. Ollama, Dozzle, and Prometheus also have no authentication; UFW
+  and the tailnet-only Caddy listener are their network access controls.
 - **CI validates configuration only.** There is no application source after
   the research stack teardown.
 - **`TODO/` is untracked** and contains hand-written healthcare LLM evaluation

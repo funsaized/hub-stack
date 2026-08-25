@@ -1,6 +1,6 @@
 # CI for a Compose-only repository. There is no application source left to
-# lint or test after the 2026-08-14 teardown, so this validates the two things
-# that can still be wrong: the Compose file and the observability configs.
+# lint or test after the 2026-08-14 teardown, so this validates the Compose,
+# reverse-proxy, and observability configs.
 name: CI
 
 on:
@@ -20,6 +20,28 @@ jobs:
         run: python3 -m py_compile open-webui/start-native-ollama.py
       - name: Check benchmark syntax
         run: python3 -m py_compile scripts/benchmark.py
+
+  caddy-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.x
+      - name: Build Caddy with Netlify DNS
+        run: >-
+          go run github.com/caddyserver/xcaddy/cmd/xcaddy@v0.4.7 build v2.11.4
+          --with github.com/caddy-dns/netlify@v1.2.0
+          --output /tmp/caddy-netlify
+      - name: Validate Caddy routes
+        run: |
+          printf 'import %s/caddy/conf.d/hub-stack.caddy 127.0.0.1\n' "$PWD" > /tmp/Caddyfile
+          /tmp/caddy-netlify validate --config /tmp/Caddyfile
+          if /tmp/caddy-netlify validate --adapter caddyfile \
+            --config caddy/conf.d/hub-stack.caddy >/dev/null 2>&1; then
+            echo "Caddy routes must require an explicit bind argument" >&2
+            exit 1
+          fi
 
   observability-config:
     runs-on: ubuntu-latest
