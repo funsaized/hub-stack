@@ -9,31 +9,30 @@ scrape_configs:
   # whether a model fits and how hard the card is working.
   - job_name: gpu
     static_configs:
-      - targets: [gpu-exporter:9835]
+      - targets: [127.0.0.1:9835]
 
-  # Host CPU, memory, disk. Under Docker Desktop this is the WSL2 VM, which
-  # is the machine Ollama actually runs on.
+  # Native Linux host CPU, memory and disk.
   - job_name: node
     static_configs:
-      - targets: [node-exporter:9100]
+      - targets: [127.0.0.1:9100]
 
-  # Is Ollama answering? Is the UI up? cAdvisor cannot tell us on this
-  # platform (docs/METRICS.md), so probe over HTTP instead.
+  # Is Ollama answering? Is the UI up? Probe over HTTP rather than inferring
+  # liveness from container state.
   - job_name: blackbox
     metrics_path: /probe
     params:
       module: [http_2xx]
     static_configs:
       - targets:
-          - http://hub-ollama:11434/
-          - http://hub-open-webui:8080/
+          - http://127.0.0.1:11434/
+          - http://127.0.0.1:8080/
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
       - source_labels: [__param_target]
         target_label: instance
       - target_label: __address__
-        replacement: blackbox-exporter:9115
+        replacement: 127.0.0.1:9115
 
   - job_name: prometheus
     static_configs:

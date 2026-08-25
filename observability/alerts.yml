@@ -9,14 +9,14 @@ groups:
   - name: llm-hub
     rules:
       - alert: OllamaNotAnswering
-        expr: probe_success{instance="http://hub-ollama:11434/"} == 0
+        expr: probe_success{instance="http://127.0.0.1:11434/"} == 0
         for: 2m
         labels: {severity: critical}
         annotations:
           summary: "Ollama is not answering HTTP on 11434"
 
       - alert: OpenWebUINotAnswering
-        expr: probe_success{instance="http://hub-open-webui:8080/"} == 0
+        expr: probe_success{instance="http://127.0.0.1:8080/"} == 0
         for: 5m
         labels: {severity: warning}
         annotations:
@@ -37,17 +37,15 @@ groups:
         annotations:
           summary: "GPU above 85C for 10 minutes -- expect thermal throttling"
 
-      # /var/lib is the Docker Desktop data disk inside the VM -- where image
-      # layers and the ollama_data volume (the models) actually live. There is
-      # no meaningful "/" to watch on this platform.
+      # Docker data and native Ollama models are on the Linux root filesystem.
       - alert: ModelDiskNearlyFull
         expr: >
-          node_filesystem_avail_bytes{mountpoint="/var/lib"} /
-          clamp_min(node_filesystem_size_bytes{mountpoint="/var/lib"}, 1) < 0.10
+          node_filesystem_avail_bytes{mountpoint="/"} /
+          clamp_min(node_filesystem_size_bytes{mountpoint="/"}, 1) < 0.10
         for: 15m
         labels: {severity: warning}
         annotations:
-          summary: "Less than 10% free on the Docker disk -- model pulls will fail"
+          summary: "Less than 10% free on the host disk -- model pulls will fail"
 
       - alert: HostMemoryNearlyExhausted
         expr: >
@@ -55,4 +53,4 @@ groups:
         for: 10m
         labels: {severity: warning}
         annotations:
-          summary: "Less than 10% RAM available on the container host"
+          summary: "Less than 10% RAM available on the host"

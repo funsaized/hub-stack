@@ -16,6 +16,10 @@ jobs:
       - name: Validate Compose
         # Never print interpolated output -- it would echo .env values.
         run: docker compose config --quiet
+      - name: Check Open WebUI startup wrapper
+        run: python3 -m py_compile open-webui/start-native-ollama.py
+      - name: Check benchmark syntax
+        run: python3 -m py_compile scripts/benchmark.py
 
   observability-config:
     runs-on: ubuntu-latest

@@ -1,22 +1,45 @@
 # hub-stack
 
-A local LLM hub on one machine: Ollama with a GPU, a chat UI, logs, and
-metrics that show what the box is doing while a model runs.
+A local LLM hub on one machine: native Ollama with a GPU, plus a containerized
+chat UI, logs, and metrics that show what the box is doing while a model runs.
 
-Nothing here calls out to a hosted model. Every port binds to `127.0.0.1`.
+Nothing here calls out to a hosted model. Docker web surfaces bind to
+`127.0.0.1`; Ollama is restricted to the private LAN by UFW.
 
 ## Run it
 
+The host needs native Ollama, a working NVIDIA driver, Docker Engine, Compose,
+UFW, and NVIDIA Container Toolkit for the GPU metrics exporter. On Arch Linux:
+
 ```bash
+sudo pacman -S --needed ollama-cuda nvidia-container-toolkit ufw
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+sudo ufw default deny incoming
+sudo ufw allow from 192.168.1.0/24 to any port 11434 proto tcp \
+  comment allow-ollama-private-lan
+sudo ufw allow from 172.16.0.0/12 to any port 11434 proto tcp \
+  comment allow-ollama-docker
+sudo ufw --force enable
+sudo install -Dm644 systemd/ollama.service.d/override.conf \
+  /etc/systemd/system/ollama.service.d/override.conf
+sudo systemctl daemon-reload
+sudo systemctl enable --now ollama
+ollama pull qwen3.5:9b
 docker compose up -d
 ```
 
+Apply the firewall rules before starting Ollama. Adjust the LAN CIDR if yours
+differs. The Docker rule is required for Open WebUI; adjust it too if Docker's
+address pools are outside the default `172.16.0.0/12` range.
+
 No `.env` is required — every variable has a default. Copy `.env.example` if
-you want to change ports, bind addresses or Ollama's runtime settings.
+you want to change Docker web ports or bind addresses. Ollama runtime settings
+live in `systemd/ollama.service.d/override.conf`.
 
 | Surface | URL | What it is |
 |---|---|---|
-| Ollama API | http://127.0.0.1:11435 | The model server. **Note the port: 11435 on the host, 11434 inside.** |
+| Ollama API | http://127.0.0.1:11434 | Native model server; also available on the private LAN. |
 | Open WebUI | http://127.0.0.1:8080 | Chat interface. Auth is **off** — see below. |
 | Grafana | http://127.0.0.1:3000 | Dashboard "Local LLM hub". Anonymous admin, no login. |
 | Prometheus | http://127.0.0.1:9090 | Raw metrics and alert state. |
@@ -24,9 +47,9 @@ you want to change ports, bind addresses or Ollama's runtime settings.
 
 ## What runs
 
-| Container | Purpose |
+| Service | Purpose |
 |---|---|
-| `hub-ollama` | Model server, reserves one NVIDIA GPU |
+| `ollama.service` | Native model server using the NVIDIA GPU |
 | `hub-open-webui` | Chat UI, talks to Ollama and nothing else |
 | `hub-dozzle` | Log viewer over a read-only Docker socket |
 | `hub-prometheus` | Metrics store, 15d retention |
@@ -37,27 +60,56 @@ you want to change ports, bind addresses or Ollama's runtime settings.
 
 ## Hardware and what actually fits
 
-Measured on this machine, 2026-08-14 — an **RTX 3080 Ti with 12 GB VRAM**,
-driver 610.88, WSL2 backend, 20 GB RAM visible to the Docker VM.
+Current host: native Linux, Ryzen 7 5800X, 32 GiB RAM, and an **RTX 3080 Ti
+with 12 GiB VRAM**. The selected model is `qwen3.5:9b` (Q4_K_M, 6.6 GB): it is
+the newest Qwen generation that leaves safe headroom for an 8K KV cache while
+remaining fully GPU-resident.
 
-| Model | Size | Throughput | Fits in VRAM? |
-|---|---|---|---|
-| `qwen3.5:9b` | 6.6 GB | **103 tok/s** | yes (~8.5 GB resident) |
-| `qwen3.6:27b` | 17 GB | **2.8 tok/s** | **no** — spills to CPU |
+| Candidate | Size | Decision |
+|---|---|---|
+| `qwen3:8b` | 5.2 GB | Fits, but is the older Qwen 3 generation |
+| `qwen3.5:9b` | 6.6 GB | **Selected:** newer, multimodal, and fits fully |
+| `qwen3:14b` | 9.3 GB | Too little KV-cache and desktop VRAM headroom |
+| `qwen3.8:27b` | 18 GB | Newest official release, but cannot fit in VRAM |
 
-That difference is 37×, and it is the single most important operating fact
-about this box: **a model larger than about 10 GB will run, and will be too
-slow to use.** The 27B model is installed and should be treated as
-unavailable unless you are willing to wait.
+The official Qwen 3.8 release currently has no small model; its only Ollama
+size is 27B. Keep model weights below about 9 GB on this desktop GPU. Larger
+models can silently spill to CPU and become much slower.
 
-`nomic-embed-text` (274 MB) is retained; it is an embedding model, not a chat
-model, and produces no useful output in the chat UI.
+Flash attention is forced and the default context is 8,192 tokens. Confirm
+full offload after loading the model:
+
+```bash
+ollama ps
+# PROCESSOR must report: 100% GPU
+```
+
+Graded on native Ollama 0.32.15 after sustained warm-up:
+
+| Test | Result | Grade |
+|---|---:|:---:|
+| Deterministic correctness | 4/4 | A |
+| Cold model load | 3.68 s | A |
+| Warm generation | 86.3 tok/s | B |
+| 4,098-token prompt ingestion | 3,174 tok/s | A |
+| Sustained generation (38.7 s) | 86.2 tok/s | B |
+| GPU offload / context | 100% / 8,192 | A |
+| Peak temperature | 74 C | A |
+
+The sustained run reached 96% GPU utilization, 339.6 W, and 7.52 GiB VRAM.
+The card reached 97% of its power limit while remaining below its thermal
+threshold, so this is healthy power-bound operation rather than CPU spill.
+
+Run the graded inference and resource benchmark again with:
+
+```bash
+python3 scripts/benchmark.py
+```
 
 ## Security posture
 
-- Every published port binds to `127.0.0.1`. Set `OLLAMA_BIND_ADDRESS` (or
-  the other `*_BIND_ADDRESS` variables) to a Tailscale or trusted-LAN address
-  only when remote access is genuinely wanted.
+- Docker web surfaces bind to `127.0.0.1`. Native Ollama intentionally listens
+  on `0.0.0.0:11434`; UFW restricts it to this private LAN and Docker networks.
 - **Open WebUI authentication is off** (`WEBUI_AUTH=false`), an explicit
   choice for a single-user box on localhost. Set `WEBUI_AUTH=true` before
   exposing port 8080 to anything.

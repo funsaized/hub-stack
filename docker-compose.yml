@@ -3,8 +3,7 @@ name: hub
 # Local LLM hub — Ollama, a chat UI, and metrics for how the box is coping.
 #
 # `name: hub` is load-bearing. Compose derives volume names from the project
-# name, so dropping it renames every volume to hub-stack_* and the stack comes
-# up pointing at empty ones -- which silently loses the model store.
+# name, so dropping it renames the persistent WebUI and monitoring volumes.
 #
 # Everything is on by default: there are no compose profiles here. Compose
 # interpolates the whole file before it filters by profile, so a profile-gated
@@ -16,44 +15,7 @@ name: hub
 
 services:
   # =====================================================================
-  # Ollama — the reason this machine exists
-  # =====================================================================
-  ollama:
-    # Pinned to the running digest 2026-08-11 (ollama 0.32.6).
-    image: ollama/ollama:0.32.6@sha256:b88c73ace3e115f8ec53dc8761ae1c0aabfa675406e3681786b98757ce050f42
-    container_name: hub-ollama
-    restart: unless-stopped
-    ports:
-      - "${OLLAMA_BIND_ADDRESS:-127.0.0.1}:${OLLAMA_HOST_PORT:-11435}:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-      - ./healthcheck:/healthcheck:ro
-    environment:
-      # How long a model stays resident after its last request. Long enough
-      # that a second question does not pay the load cost again.
-      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
-      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-16384}
-      - OLLAMA_HOST=0.0.0.0:11434
-      # One model, one request at a time by default: on a single consumer GPU
-      # concurrency trades latency for nothing. Raise deliberately.
-      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-1}
-      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "bash", "/healthcheck/healthcheck.sh", "11434"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-
-  # =====================================================================
-  # Open WebUI — chat interface, wired to Ollama and nothing else
+  # Open WebUI — chat interface, wired to native Ollama and nothing else
   # =====================================================================
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.11.0
@@ -63,18 +25,19 @@ services:
       - "${WEBUI_BIND_ADDRESS:-127.0.0.1}:${WEBUI_HOST_PORT:-8080}:8080"
     volumes:
       - open_webui_data:/app/backend/data
+      - ./open-webui/start-native-ollama.py:/start-native-ollama.py:ro
     environment:
-      OLLAMA_BASE_URL: http://hub-ollama:11434
       # Single-user box bound to localhost; auth is off by operator decision.
       # Turn this back on before exposing the port to anything.
       WEBUI_AUTH: "${WEBUI_AUTH:-false}"
+      DEFAULT_MODELS: qwen3.5:9b
       # No OpenAI-compatible backends. The research corpus that used to be
       # served here as a pseudo-model is gone.
       ENABLE_OPENAI_API: "false"
       ENABLE_PERSISTENT_CONFIG: "false"
-    depends_on:
-      ollama:
-        condition: service_healthy
+    # Resolve the current Compose bridge gateway instead of hard-coding a
+    # Docker subnet. Native Ollama listens on the host side of that gateway.
+    command: ["python", "/start-native-ollama.py"]
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8080' || exit 1"]
       interval: 30s
@@ -104,8 +67,7 @@ services:
     image: prom/prometheus:v3.1.0
     container_name: hub-prometheus
     restart: unless-stopped
-    ports:
-      - "${PROMETHEUS_BIND_ADDRESS:-127.0.0.1}:${PROMETHEUS_HOST_PORT:-9090}:9090"
+    network_mode: host
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -113,13 +75,13 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --web.listen-address=${PROMETHEUS_BIND_ADDRESS:-127.0.0.1}:9090
 
   grafana:
     image: grafana/grafana:11.4.0
     container_name: hub-grafana
     restart: unless-stopped
-    ports:
-      - "${GRAFANA_BIND_ADDRESS:-127.0.0.1}:${GRAFANA_HOST_PORT:-3000}:3000"
+    network_mode: host
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
@@ -128,27 +90,32 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_SERVER_HTTP_ADDR=${GRAFANA_BIND_ADDRESS:-127.0.0.1}
+      - GF_SERVER_HTTP_PORT=${GRAFANA_HOST_PORT:-3000}
     depends_on:
       - prometheus
 
-  # Liveness of the two things a user touches. cAdvisor would have covered
-  # this and more, but it returns no per-container metrics under Docker
-  # Desktop at all (measured -- see docs/METRICS.md), so an HTTP probe is the
-  # honest way to know whether Ollama is answering.
+  # Liveness of the two things a user touches. An HTTP probe verifies that the
+  # services answer rather than merely reporting that their containers run.
   blackbox-exporter:
     image: prom/blackbox-exporter:v0.25.0
     container_name: hub-blackbox-exporter
     restart: unless-stopped
+    network_mode: host
     volumes:
       - ./observability/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    command:
+      - --config.file=/etc/blackbox_exporter/config.yml
+      - --web.listen-address=127.0.0.1:9115
 
-  # Host CPU, memory, disk and filesystem. Under Docker Desktop this reports
-  # the WSL2 VM rather than Windows itself -- see docs/METRICS.md.
+  # Native Linux host CPU, memory, disk and filesystem.
   node-exporter:
     image: prom/node-exporter:v1.8.2
     container_name: hub-node-exporter
     restart: unless-stopped
     pid: host
+    ports:
+      - "127.0.0.1:9100:9100"
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -161,20 +128,16 @@ services:
 
   # GPU utilization, VRAM, temperature and power, scraped from nvidia-smi.
   #
-  # No explicit `devices:` mapping: under WSL2 there is no /dev/nvidiactl or
-  # /dev/nvidia0 to bind, and naming them makes the container fail to start.
-  # The nvidia driver reservation below is the mechanism that works here (it
-  # is what `--gpus all` resolves to), and `utility` is what puts nvidia-smi
-  # in the container -- `gpu` alone is not enough for this exporter.
+  # The NVIDIA Container Toolkit resolves this reservation to the host GPU.
+  # `utility` is required because this exporter shells out to nvidia-smi.
   gpu-exporter:
     image: utkuozdemir/nvidia_gpu_exporter:1.2.1
     container_name: hub-gpu-exporter
     restart: unless-stopped
-    # The fields are pinned rather than auto-detected. With the default AUTO
-    # the exporter enumerates every field this driver offers, and one of them
-    # ("power_smoothing.curr_profile.ramp_down_rate [W/s]") becomes an invalid
-    # Prometheus metric name, which panics the process at startup. Pinning also
-    # means a driver update cannot silently change what is collected.
+    ports:
+      - "127.0.0.1:9835:9835"
+    # Pin fields so a driver update cannot add invalid Prometheus metric names
+    # or silently change what is collected.
     command:
       - --query-field-names=name,uuid,utilization.gpu,utilization.memory,memory.total,memory.used,memory.free,temperature.gpu,power.draw,power.limit,clocks.current.graphics,clocks.current.memory,pstate
     deploy:
@@ -186,7 +149,6 @@ services:
               capabilities: [gpu, utility]
 
 volumes:
-  ollama_data:
   open_webui_data:
   prometheus_data:
   grafana_data:

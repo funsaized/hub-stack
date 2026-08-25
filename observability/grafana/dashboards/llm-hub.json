@@ -20,7 +20,7 @@
           "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
         }
       },
-      "targets": [{ "expr": "probe_success{instance=\"http://hub-ollama:11434/\"}", "refId": "A", "instant": true }]
+      "targets": [{ "expr": "probe_success{instance=\"http://127.0.0.1:11434/\"}", "refId": "A", "instant": true }]
     },
     {
       "type": "stat",
@@ -71,7 +71,7 @@
           "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 50000000000 }] }
         }
       },
-      "targets": [{ "expr": "node_filesystem_avail_bytes{mountpoint=\"/var/lib\"}", "refId": "A", "instant": true }]
+      "targets": [{ "expr": "node_filesystem_avail_bytes{mountpoint=\"/\"}", "refId": "A", "instant": true }]
     },
 
     {
@@ -120,8 +120,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Host CPU and memory (WSL2 VM)",
-      "description": "This is the Docker Desktop VM, not Windows. Ollama dominates it, so this is a good proxy for what Ollama is costing in CPU and RAM -- including the CPU spill when a model does not fit in VRAM.",
+      "title": "Host CPU and memory",
+      "description": "Native Linux host utilization. Sustained CPU use during inference can indicate that a model has spilled out of VRAM.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
       "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0, "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
       "targets": [

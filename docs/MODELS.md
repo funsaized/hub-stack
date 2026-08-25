@@ -1,56 +1,78 @@
 # Models
 
-Installed in the `hub_ollama_data` volume, ~28 GB total. Listed with
-`docker exec hub-ollama ollama list`.
+Models are stored by native Ollama under `/var/lib/ollama` and listed with
+`ollama list`.
 
-| Model | Size | Measured throughput | Verdict |
+| Model | Quantization | Size | Verdict |
 |---|---|---|---|
-| `qwen3.5:9b` | 6.6 GB | **103.2 tok/s** | The working default |
-| `qwen3.6:27b` | 17 GB | **2.8 tok/s** | Installed but effectively unusable |
-| `qwen2.5:7b` (= `qwen2.5:latest`) | 4.7 GB | not measured | Two tags, one blob |
-| `nomic-embed-text` | 274 MB | n/a | Embedding model, not for chat |
+| `qwen3.5:9b` | Q4_K_M | 6.6 GB | Selected local chat model |
 
-Measured 2026-08-14 on an RTX 3080 Ti (12 GB), driver 610.88, via
-`/api/generate` with `stream:false`, reading `eval_count` and `eval_duration`
-from the response.
+## Why this model
+
+The Ollama catalog checked on 2026-08-25 lists Qwen 3.8 as the newest release,
+but only at 27B/18 GB. `qwen3.5:9b` has 9.65B parameters, text and image input,
+tool support, and a 256K model limit. The stack deliberately serves only 8K
+context because the runtime context, not the model's theoretical limit,
+determines KV-cache VRAM.
+
+The older `qwen3:8b` model was also considered. It is 5.2 GB and fits, but
+`qwen3.5:9b` provides the newer architecture and multimodal support while still
+fitting. Larger candidates are poor matches:
+
+| Candidate | Ollama size | Reason not selected |
+|---|---:|---|
+| `qwen3:8b` | 5.2 GB | Older generation; less capability headroom |
+| `qwen3:14b` | 9.3 GB | Marginal once KV cache and the desktop use VRAM |
+| `qwen3.5:9b-q8_0` | 11 GB | Weights alone nearly consume available VRAM |
+| `qwen3.8:27b` | 18 GB | Newest official model, but must spill to CPU |
 
 ## The VRAM cliff
 
 This card has **12 GB**. A model whose weights exceed free VRAM still runs —
 Ollama offloads the overflow to CPU — but the cost is severe and silent:
 
-- `qwen3.5:9b`: ~8.5 GB resident, entirely on the GPU, **103 tok/s**
-- `qwen3.6:27b`: VRAM pegged at 12.07 GB with the remainder on CPU, **2.8 tok/s**
+- `qwen3.5:9b`: 7.52 GiB peak card use and **86.2 tok/s sustained** on Linux
+- A 17 GB 27B model: historically **2.8 tok/s** after spilling to CPU
 
-That is a **37x** difference. Nothing errors, nothing warns; the request just
-takes minutes instead of seconds. Watch the "VRAM used vs total" panel on the
-Grafana dashboard — when used approaches total, you are about to pay this.
+The 27B result is historical and not a controlled cross-platform comparison,
+but it demonstrates the scale of the penalty. Nothing errors or warns; the
+request just takes minutes instead of seconds. Watch the "VRAM used vs total"
+panel on the Grafana dashboard before trying a larger model.
 
 Rule of thumb for this machine: **stay under ~10 GB of model weights.** That
 leaves headroom for the KV cache, which grows with context length.
 
 ## Cold start
 
-First request after a model is idle pays a load cost — measured at **31–40 s**
-for both models tested. `OLLAMA_KEEP_ALIVE=30m` keeps a model resident that
-long after its last request, so only the first question in a session pays it.
-Lower it to free VRAM sooner; raise it if you work in long bursts.
+First request after a model is idle pays a load cost, measured at **3.68 s**
+for this native deployment. `OLLAMA_KEEP_ALIVE=30m` keeps the model resident
+that long after its last request. Lower it to free VRAM sooner; raise it if you
+work in long bursts.
 
 ## Context length
 
-`OLLAMA_CONTEXT_LENGTH=16384` is offered to every model. Longer contexts
+`OLLAMA_CONTEXT_LENGTH=8192` is offered to every model and
+`OLLAMA_FLASH_ATTENTION=1` reduces attention memory use. Longer contexts
 consume VRAM for the KV cache on top of the weights, so raising it moves the
-cliff above closer. Raise it and re-check the VRAM panel rather than assuming.
+cliff closer. Raise it and re-check the VRAM panel rather than assuming.
 
 ## Managing models
 
 ```bash
-docker exec hub-ollama ollama list            # what is installed
-docker exec hub-ollama ollama pull <model>    # add one
-docker exec hub-ollama ollama rm <model>      # remove one
-docker exec hub-ollama ollama ps              # what is resident right now
+ollama list            # what is installed
+ollama pull <model>    # add one
+ollama rm <model>      # remove one
+ollama ps              # what is resident right now
 ```
 
-Models live in the `hub_ollama_data` volume. It survives `docker compose down`
-but **not** `docker compose down -v` — that flag would delete all 28 GB and
-require re-pulling everything.
+Models are independent of Docker lifecycle commands. `docker compose down -v`
+removes UI and monitoring data but does not remove native Ollama models.
+
+After any model or context change, generate one response and check the actual
+offload instead of relying on model size:
+
+```bash
+ollama ps
+```
+
+The `PROCESSOR` column must say `100% GPU` for the intended configuration.
