@@ -102,27 +102,45 @@ ollama ps
 # PROCESSOR must report: 100% GPU
 ```
 
-Graded on native Ollama 0.32.15 after sustained warm-up:
-
-| Test | Result | Grade |
-|---|---:|:---:|
-| Deterministic correctness | 4/4 | A |
-| Cold model load | 3.68 s | A |
-| Warm generation | 86.3 tok/s | B |
-| 4,098-token prompt ingestion | 3,174 tok/s | A |
-| Sustained generation (38.7 s) | 86.2 tok/s | B |
-| GPU offload / context | 100% / 8,192 | A |
-| Peak temperature | 74 C | A |
-
-The sustained run reached 96% GPU utilization, 339.6 W, and 7.52 GiB VRAM.
-The card reached 97% of its power limit while remaining below its thermal
-threshold, so this is healthy power-bound operation rather than CPU spill.
-
-Run the graded inference and resource benchmark again with:
+Run the end-to-end inference and resource benchmark with:
 
 ```bash
 python3 scripts/benchmark.py
 ```
+
+The benchmark uses only the Python standard library and emits a versioned JSON
+report. It measures:
+
+- deterministic functional accuracy across arithmetic, reasoning, knowledge,
+  instruction following, extraction, and code understanding;
+- cold-start latency, streaming time to first token, user-visible latency, and
+  Ollama's prompt and decode token rates;
+- synthetic context retrieval and prompt-ingestion scaling at increasing
+  lengths, with Ollama's actual prompt token counts reported;
+- warm-run distributions, sustained throughput and performance drift;
+- concurrent-client latency, request rate, and aggregate token throughput;
+- model offload, context configuration, GPU/host pressure, and estimated GPU
+  energy from Prometheus; and
+- enough model, runtime, hardware, and benchmark metadata to reproduce and
+  compare runs.
+
+Progress goes to stderr and the report goes to stdout, so it can be captured
+directly:
+
+```bash
+python3 scripts/benchmark.py --output benchmark.json > /dev/null
+```
+
+Use `--help` to select another model or endpoint, adjust run counts and
+concurrency, or skip expensive sections. Report raw values rather than the old
+A-F grades: uncalibrated thresholds hide useful differences and do not transfer
+between models or hardware. The included accuracy checks are a deterministic
+regression suite, not a claim of broad model intelligence; use a recognized
+domain benchmark when evaluating a model for a specific workload.
+
+This hub has `OLLAMA_NUM_PARALLEL=1`, so its concurrent test intentionally
+measures queueing and total serving capacity rather than parallel decoding.
+Record that setting whenever comparing concurrency results from another host.
 
 ## Security posture
 
