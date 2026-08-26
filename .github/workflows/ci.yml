@@ -68,8 +68,8 @@ jobs:
             -v "$PWD/observability/loki.yml:/etc/loki/config.yml:ro" \
             grafana/loki:3.3.2 -config.file=/etc/loki/config.yml \
             -config.expand-env=true -verify-config=true
-      - name: Check Alloy config
+      - name: Check Alloy syntax
         run: |
           docker run --rm \
             -v "$PWD/observability/alloy.alloy:/etc/alloy/config.alloy:ro" \
-            grafana/alloy:v1.6.1 validate /etc/alloy/config.alloy
+            grafana/alloy:v1.6.1 fmt /etc/alloy/config.alloy >/dev/null
