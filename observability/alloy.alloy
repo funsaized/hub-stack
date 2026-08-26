@@ -1,0 +1,55 @@
+discovery.docker "local" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker" {
+  targets = discovery.docker.local.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  // Chat content belongs in Open WebUI's database, not retained service logs.
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/hub-open-webui"
+    action        = "drop"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label  = "stream"
+  }
+
+  rule {
+    replacement  = "docker"
+    target_label = "source"
+  }
+}
+
+loki.source.docker "local" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker.output
+  labels     = {}
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.source.journal "ollama" {
+  matches    = "_SYSTEMD_UNIT=ollama.service"
+  labels     = { source = "journal", unit = "ollama.service" }
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.source.journal "caddy" {
+  matches    = "_SYSTEMD_UNIT=caddy.service"
+  labels     = { source = "journal", unit = "caddy.service" }
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://127.0.0.1:3100/loki/api/v1/push"
+  }
+}

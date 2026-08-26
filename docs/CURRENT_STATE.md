@@ -1,11 +1,11 @@
 # Current deployed state
 
-Last verified: 2026-08-25 on the native Linux workstation.
+Last runtime verification: 2026-08-26 on the native Linux workstation.
 
 ## What this machine is now
 
 A local LLM hub: native Ollama on the GPU, Open WebUI in front of it, and
-containerized observability. Seven containers are running. Docker web surfaces
+containerized observability. Ten containers are running. Docker web surfaces
 use `127.0.0.1`; Caddy proxies them over HTTPS to the tailnet, and Ollama is
 UFW-scoped to the private LAN and Docker networks.
 
@@ -13,19 +13,23 @@ UFW-scoped to the private LAN and Docker networks.
 ollama.service        native model server, NVIDIA CUDA backend
 hub-open-webui        chat UI -> Ollama only
 hub-dozzle            container logs, read-only docker socket
+hub-ollama-proxy      instrumented Ollama API -> native backend
+hub-loki              retained searchable logs
+hub-alloy             Docker and systemd log collector
 hub-prometheus        metrics, 15s scrape, 15d retention
-hub-grafana           dashboard "Local LLM hub"
+hub-grafana           four provisioned metrics and logs dashboards
 hub-gpu-exporter      nvidia-smi -> Prometheus
 hub-node-exporter     native Linux host CPU/memory/disk
 hub-blackbox-exporter HTTP liveness for Ollama and the UI
 caddy.service         tailnet-only HTTPS reverse proxy and ACME TLS
 ```
 
-Verified after the rebuild: all five Prometheus targets `up`, both liveness
-probes returning 1, all six alert rules parsing `ok`, Grafana serving the
-dashboard, and inference working end to end. The five Caddy vanity routes and
-their five product-name aliases were subsequently verified over HTTPS; an
-Ollama generation through the proxy returned the expected model response.
+Verified after the observability rollout: Ollama native and OpenAI-compatible
+generation work through the proxy, per-request metrics reach Prometheus, Loki
+contains Docker and Ollama/Caddy journal streams, Grafana provisions all four
+dashboards, and Ollama runs two parallel slots with the model fully GPU-resident.
+The five Caddy vanity routes and their five product-name aliases were previously
+verified over HTTPS.
 
 ## Hardware and model
 
@@ -36,8 +40,9 @@ Ollama generation through the proxy returned the expected model response.
 Host: Ryzen 7 5800X (8 cores/16 threads), 32 GiB RAM, RTX 3080 Ti with
 12 GiB VRAM, NVIDIA driver 610.57.04, and native Docker Engine on Btrfs.
 
-Ollama runs with flash attention, an 8,192-token default context, one parallel
-request, and one loaded model. The selected model must report `100% GPU` in
+Ollama uses two parallel slots so Open WebUI task generations cannot serialize
+visible chat. It runs with flash attention, an 8,192-token default context, and
+one loaded model. The selected model must report `100% GPU` in
 `ollama ps`; a partial CPU/GPU split is considered a failed configuration.
 
 The graded benchmark passed 4/4 deterministic checks, loaded cold in 3.68 s,
@@ -115,9 +120,6 @@ and `docker stats` because no current dashboard requires cAdvisor data.
 
 ## Known gaps
 
-- **No Ollama-level metrics.** Ollama exposes no Prometheus endpoint, so there
-  is no tokens/sec, queue depth or model-load time in Grafana. The figures
-  above were collected by `scripts/benchmark.py` from `/api/generate` fields.
 - **Alerts are not routed.** No Alertmanager; they are a status page at
   `/alerts`.
 - **No application authentication.** Open WebUI auth is off and Grafana allows

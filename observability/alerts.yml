@@ -15,6 +15,45 @@ groups:
         annotations:
           summary: "Ollama is not answering HTTP on 11434"
 
+      - alert: OllamaMetricsProxyDown
+        expr: up{job="ollama"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "The Ollama metrics proxy is down"
+
+      - alert: ModelPartiallyOffloaded
+        expr: >
+          ollama_model_size_bytes > 0 and
+          ollama_model_vram_bytes / ollama_model_size_bytes < 0.99
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.model }} is not fully loaded into GPU memory"
+
+      - alert: OllamaHighErrorRate
+        expr: >
+          sum(rate(ollama_requests_total{status!~"2.."}[5m])) /
+          clamp_min(sum(rate(ollama_requests_total[5m])), 0.001) > 0.10
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 10% of Ollama generation requests are failing"
+
+      - alert: OllamaRequestQueueBacklog
+        expr: ollama_active_requests > 2
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "More requests are active than Ollama has parallel inference slots"
+
+      - alert: ObservabilityComponentDown
+        expr: up{job=~"prometheus|loki|alloy|gpu|node|blackbox"} == 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Observability component {{ $labels.job }} is down"
+
       - alert: OpenWebUINotAnswering
         expr: probe_success{instance="http://127.0.0.1:8080/"} == 0
         for: 5m

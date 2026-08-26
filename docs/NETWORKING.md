@@ -1,12 +1,13 @@
 # Network exposure
 
 Docker web surfaces bind to the Linux host's loopback interface. Caddy proxies
-selected surfaces over HTTPS on the Tailscale interface. Native Ollama is also
-intentionally available directly on the private LAN.
+selected surfaces over HTTPS on the Tailscale interface. The instrumented
+Ollama API is also intentionally available directly on the private LAN.
 
 | Surface | Default host address | Purpose |
 |---|---:|---|
-| Ollama API | `0.0.0.0:11434` | Native server; UFW-scoped to LAN and Docker |
+| Ollama API | `0.0.0.0:11434` | Metrics proxy; UFW-scoped to LAN and Docker |
+| Ollama backend | `127.0.0.1:11435` | Native server; host-only |
 | Open WebUI | `127.0.0.1:8080` | Chat UI |
 | Grafana | `127.0.0.1:3000` | Dashboard |
 | Prometheus | `127.0.0.1:9090` | Metrics and alert state |
@@ -15,7 +16,7 @@ intentionally available directly on the private LAN.
 `gpu-exporter` and `node-exporter` publish metrics only on host loopback.
 Prometheus and `blackbox-exporter` use host networking but also listen only on
 loopback. Open WebUI discovers the current Compose bridge gateway at startup
-and reaches native Ollama there.
+and reaches the instrumented Ollama proxy there.
 
 ## Tailscale HTTPS
 
@@ -78,8 +79,9 @@ existed to sandbox the crawler.
 
 ## Ollama exposure
 
-Ollama binds `0.0.0.0:11434` through the tracked systemd override. UFW limits
-access to the private LAN and local Docker networks:
+Native Ollama binds `127.0.0.1:11435` through the tracked systemd override. The
+unprivileged metrics proxy preserves the public `0.0.0.0:11434` API, and UFW
+limits access to the private LAN and local Docker networks:
 
 ```bash
 sudo ufw allow from 192.168.1.0/24 to any port 11434 proto tcp

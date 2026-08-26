@@ -1,0 +1,232 @@
+{
+  "uid": "host-system",
+  "title": "Host hardware and system",
+  "tags": ["host", "hardware"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "editable": true,
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Uptime",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "dtdurations", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "time() - node_boot_time_seconds", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "CPU busy",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }, { "color": "yellow", "value": 0.7 }, { "color": "red", "value": 0.9 }] }
+        }
+      },
+      "targets": [{ "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Memory used",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.8 }, { "color": "red", "value": 0.9 }] }
+        }
+      },
+      "targets": [{ "expr": "1 - (node_memory_MemAvailable_bytes / clamp_min(node_memory_MemTotal_bytes, 1))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Root disk free",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.1 }, { "color": "green", "value": 0.2 }] }
+        }
+      },
+      "targets": [{ "expr": "node_filesystem_avail_bytes{mountpoint=\"/\"} / clamp_min(node_filesystem_size_bytes{mountpoint=\"/\"}, 1)", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Load / CPU",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.7 }, { "color": "red", "value": 1 }] }
+        }
+      },
+      "targets": [{ "expr": "node_load1 / clamp_min(count(node_cpu_seconds_total{mode=\"idle\"}), 1)", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "GPU util",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }, { "color": "green", "value": 0.5 }] }
+        }
+      },
+      "targets": [{ "expr": "nvidia_smi_utilization_gpu_ratio", "refId": "A", "instant": true }]
+    },
+
+    {
+      "type": "stat",
+      "title": "Metrics targets healthy",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.9 }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "targets": [{ "expr": "sum(up) / clamp_min(count(up), 1)", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "GPU VRAM used",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.8 }, { "color": "red", "value": 0.95 }] }
+        }
+      },
+      "targets": [{ "expr": "nvidia_smi_memory_used_bytes / clamp_min(nvidia_smi_memory_total_bytes, 1)", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "GPU temp",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 75 }, { "color": "red", "value": 85 }] }
+        }
+      },
+      "targets": [{ "expr": "nvidia_smi_temperature_gpu", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "GPU power",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "watt" } },
+      "targets": [{ "expr": "nvidia_smi_power_draw_watts", "refId": "A", "instant": true }]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "CPU and load",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "cpu busy" }, "properties": [{ "id": "unit", "value": "percentunit" }, { "id": "max", "value": 1 }, { "id": "min", "value": 0 }] }
+        ]
+      },
+      "targets": [
+        { "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))", "legendFormat": "cpu busy", "refId": "A" },
+        { "expr": "node_load1 / clamp_min(count(node_cpu_seconds_total{mode=\"idle\"}), 1)", "legendFormat": "load1 / cpu", "refId": "B" },
+        { "expr": "node_load5 / clamp_min(count(node_cpu_seconds_total{mode=\"idle\"}), 1)", "legendFormat": "load5 / cpu", "refId": "C" },
+        { "expr": "node_load15 / clamp_min(count(node_cpu_seconds_total{mode=\"idle\"}), 1)", "legendFormat": "load15 / cpu", "refId": "D" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "RAM and swap",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes", "legendFormat": "ram used", "refId": "A" },
+        { "expr": "node_memory_MemTotal_bytes", "legendFormat": "ram total", "refId": "B" },
+        { "expr": "node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes", "legendFormat": "swap used", "refId": "C" },
+        { "expr": "node_memory_SwapTotal_bytes", "legendFormat": "swap total", "refId": "D" }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Root disk usage and IO",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "used" }, "properties": [{ "id": "unit", "value": "percentunit" }, { "id": "max", "value": 1 }, { "id": "min", "value": 0 }] },
+          { "matcher": { "id": "byRegexp", "options": "read|write" }, "properties": [{ "id": "unit", "value": "Bps" }] }
+        ]
+      },
+      "targets": [
+        { "expr": "1 - (node_filesystem_avail_bytes{mountpoint=\"/\"} / clamp_min(node_filesystem_size_bytes{mountpoint=\"/\"}, 1))", "legendFormat": "used", "refId": "A" },
+        { "expr": "rate(node_disk_read_bytes_total{device=~\"nvme.*|sd.*|vd.*|xvd.*|hd.*|mmcblk.*\"}[5m])", "legendFormat": "read {{device}}", "refId": "B" },
+        { "expr": "rate(node_disk_written_bytes_total{device=~\"nvme.*|sd.*|vd.*|xvd.*|hd.*|mmcblk.*\"}[5m])", "legendFormat": "write {{device}}", "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Network receive / transmit",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "rate(node_network_receive_bytes_total{device!~\"^(lo|veth|br-|docker|tun|cni|flannel|virbr)\"}[5m])", "legendFormat": "rx {{device}}", "refId": "A" },
+        { "expr": "rate(node_network_transmit_bytes_total{device!~\"^(lo|veth|br-|docker|tun|cni|flannel|virbr)\"}[5m])", "legendFormat": "tx {{device}}", "refId": "B" }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "GPU utilization and VRAM",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "utilization" }, "properties": [{ "id": "unit", "value": "percentunit" }, { "id": "max", "value": 1 }] },
+          { "matcher": { "id": "byRegexp", "options": "vram" }, "properties": [{ "id": "unit", "value": "bytes" }] }
+        ]
+      },
+      "targets": [
+        { "expr": "nvidia_smi_utilization_gpu_ratio", "legendFormat": "utilization", "refId": "A" },
+        { "expr": "nvidia_smi_memory_used_bytes", "legendFormat": "vram used", "refId": "B" },
+        { "expr": "nvidia_smi_memory_total_bytes", "legendFormat": "vram total", "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "GPU temp, power and clocks",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "temperature" }, "properties": [{ "id": "unit", "value": "celsius" }] },
+          { "matcher": { "id": "byRegexp", "options": "power" }, "properties": [{ "id": "unit", "value": "watt" }] },
+          { "matcher": { "id": "byRegexp", "options": "clock" }, "properties": [{ "id": "unit", "value": "hertz" }] }
+        ]
+      },
+      "targets": [
+        { "expr": "nvidia_smi_temperature_gpu", "legendFormat": "temperature", "refId": "A" },
+        { "expr": "nvidia_smi_power_draw_watts", "legendFormat": "power draw", "refId": "B" },
+        { "expr": "nvidia_smi_power_limit_watts", "legendFormat": "power limit", "refId": "C" },
+        { "expr": "nvidia_smi_clocks_current_graphics_clock_hz", "legendFormat": "graphics clock", "refId": "D" }
+      ]
+    }
+  ]
+}

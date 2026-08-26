@@ -1,0 +1,261 @@
+{
+  "uid": "model-performance",
+  "title": "Model usage and performance",
+  "tags": ["ollama", "performance"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "editable": true,
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "model",
+        "type": "query",
+        "query": "label_values(ollama_requests_total, model)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Ollama",
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 }, "1": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "targets": [{ "expr": "ollama_up", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Version",
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 },
+      "options": { "textMode": "name", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "expr": "ollama_version_info", "legendFormat": "{{version}}", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Active",
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 },
+      "targets": [{ "expr": "ollama_active_requests", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Request rate",
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [{ "expr": "sum(rate(ollama_requests_total{model=~\"$model\"}[5m]))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Error %",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.1 }] }
+        }
+      },
+      "targets": [{ "expr": "sum(rate(ollama_requests_total{model=~\"$model\",status!~\"2..\"}[5m])) / clamp_min(sum(rate(ollama_requests_total{model=~\"$model\"}[5m])), 0.001)", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Prompt tok/s",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "cps", "decimals": 1 } },
+      "targets": [{ "expr": "sum(rate(ollama_prompt_tokens_total{model=~\"$model\"}[5m]))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Output tok/s",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "cps", "decimals": 1 } },
+      "targets": [{ "expr": "sum(rate(ollama_generated_tokens_total{model=~\"$model\"}[5m]))", "refId": "A", "instant": true }]
+    },
+
+    {
+      "type": "stat",
+      "title": "Weighted decode",
+      "description": "sum(rate(generated tokens)) / sum(rate(generation seconds)).",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "ops", "decimals": 1 } },
+      "targets": [{ "expr": "sum(rate(ollama_generated_tokens_total{model=~\"$model\"}[5m])) / clamp_min(sum(rate(ollama_generation_seconds_total{model=~\"$model\"}[5m])), 0.001)", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "p95 queue",
+      "description": "Time spent waiting before Ollama processes the request.",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(ollama_queue_duration_seconds_bucket{model=~\"$model\"}[5m])))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "p95 duration",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(ollama_request_duration_seconds_bucket{model=~\"$model\"}[5m])))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "p50 TTFT",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [{ "expr": "histogram_quantile(0.50, sum by (le) (rate(ollama_time_to_first_token_seconds_bucket{model=~\"$model\"}[5m])))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "p95 TTFT",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(ollama_time_to_first_token_seconds_bucket{model=~\"$model\"}[5m])))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "GPU resident",
+      "description": "VRAM / size. Below 1 means layers are offloaded to CPU.",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.99 }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "targets": [{ "expr": "ollama_model_vram_bytes{model=~\"$model\"} / clamp_min(ollama_model_size_bytes{model=~\"$model\"}, 1)", "legendFormat": "{{model}}", "refId": "A", "instant": true }]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Request rate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "sum by (model) (rate(ollama_requests_total{model=~\"$model\"}[5m]))", "legendFormat": "{{model}}", "refId": "A" },
+        { "expr": "sum by (model) (rate(ollama_requests_total{model=~\"$model\",status!~\"2..\"}[5m]))", "legendFormat": "errors {{model}}", "refId": "B" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Token rates",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "cps", "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "sum by (model) (rate(ollama_prompt_tokens_total{model=~\"$model\"}[5m]))", "legendFormat": "prompt {{model}}", "refId": "A" },
+        { "expr": "sum by (model) (rate(ollama_generated_tokens_total{model=~\"$model\"}[5m]))", "legendFormat": "output {{model}}", "refId": "B" }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Request duration and TTFT",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (le, model) (rate(ollama_request_duration_seconds_bucket{model=~\"$model\"}[5m])))", "legendFormat": "p50 duration {{model}}", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by (le, model) (rate(ollama_request_duration_seconds_bucket{model=~\"$model\"}[5m])))", "legendFormat": "p95 duration {{model}}", "refId": "B" },
+        { "expr": "histogram_quantile(0.50, sum by (le, model) (rate(ollama_time_to_first_token_seconds_bucket{model=~\"$model\"}[5m])))", "legendFormat": "p50 TTFT {{model}}", "refId": "C" },
+        { "expr": "histogram_quantile(0.95, sum by (le, model) (rate(ollama_time_to_first_token_seconds_bucket{model=~\"$model\"}[5m])))", "legendFormat": "p95 TTFT {{model}}", "refId": "D" },
+        { "expr": "histogram_quantile(0.95, sum by (le, model) (rate(ollama_queue_duration_seconds_bucket{model=~\"$model\"}[5m])))", "legendFormat": "p95 queue {{model}}", "refId": "E" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Decode and prompt rates",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "sum by (model) (rate(ollama_generated_tokens_total{model=~\"$model\"}[5m])) / clamp_min(sum by (model) (rate(ollama_generation_seconds_total{model=~\"$model\"}[5m])), 0.001)", "legendFormat": "weighted decode {{model}}", "refId": "A" },
+        { "expr": "sum by (model) (rate(ollama_prompt_tokens_total{model=~\"$model\"}[5m])) / clamp_min(sum by (model) (rate(ollama_prompt_evaluation_seconds_total{model=~\"$model\"}[5m])), 0.001)", "legendFormat": "weighted prompt {{model}}", "refId": "B" },
+        { "expr": "ollama_last_decode_tokens_per_second{model=~\"$model\"}", "legendFormat": "last decode {{model}}", "refId": "C" },
+        { "expr": "ollama_last_prompt_tokens_per_second{model=~\"$model\"}", "legendFormat": "last prompt {{model}}", "refId": "D" }
+      ]
+    },
+
+    {
+      "type": "table",
+      "title": "Loaded models",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Size" }, "properties": [{ "id": "unit", "value": "bytes" }] },
+          { "matcher": { "id": "byName", "options": "VRAM" }, "properties": [{ "id": "unit", "value": "bytes" }] },
+          { "matcher": { "id": "byName", "options": "GPU" }, "properties": [{ "id": "unit", "value": "percentunit" }] },
+          { "matcher": { "id": "byName", "options": "Offload" }, "properties": [{ "id": "unit", "value": "percentunit" }] },
+          { "matcher": { "id": "byName", "options": "Last decode" }, "properties": [{ "id": "unit", "value": "ops" }] },
+          { "matcher": { "id": "byName", "options": "Last prompt" }, "properties": [{ "id": "unit", "value": "ops" }] },
+          { "matcher": { "id": "byName", "options": "Load time" }, "properties": [{ "id": "unit", "value": "s" }] }
+        ]
+      },
+      "targets": [
+        { "expr": "ollama_model_loaded{model=~\"$model\"}", "format": "table", "instant": true, "refId": "A" },
+        { "expr": "ollama_model_size_bytes{model=~\"$model\"}", "format": "table", "instant": true, "refId": "B" },
+        { "expr": "ollama_model_vram_bytes{model=~\"$model\"}", "format": "table", "instant": true, "refId": "C" },
+        { "expr": "ollama_model_vram_bytes{model=~\"$model\"} / clamp_min(ollama_model_size_bytes{model=~\"$model\"}, 1)", "format": "table", "instant": true, "refId": "D" },
+        { "expr": "1 - (ollama_model_vram_bytes{model=~\"$model\"} / clamp_min(ollama_model_size_bytes{model=~\"$model\"}, 1))", "format": "table", "instant": true, "refId": "E" },
+        { "expr": "ollama_model_context_length{model=~\"$model\"}", "format": "table", "instant": true, "refId": "F" },
+        { "expr": "ollama_last_decode_tokens_per_second{model=~\"$model\"}", "format": "table", "instant": true, "refId": "G" },
+        { "expr": "ollama_last_prompt_tokens_per_second{model=~\"$model\"}", "format": "table", "instant": true, "refId": "H" },
+        { "expr": "rate(ollama_model_load_seconds_total{model=~\"$model\"}[5m]) / clamp_min(sum by (model) (rate(ollama_requests_total{model=~\"$model\"}[5m])), 0.001)", "format": "table", "instant": true, "refId": "I" }
+      ],
+      "transformations": [
+        { "id": "joinByField", "options": { "byField": "model", "mode": "outer" } },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true,
+              "Time 6": true,
+              "Time 7": true,
+              "Time 8": true,
+              "__name__": true,
+              "__name__ 1": true,
+              "__name__ 2": true,
+              "__name__ 3": true,
+              "__name__ 4": true,
+              "__name__ 5": true,
+              "__name__ 6": true,
+              "__name__ 7": true,
+              "__name__ 8": true,
+              "job": true,
+              "job 1": true,
+              "instance": true,
+              "instance 1": true
+            },
+            "renameByName": {
+              "Value #A": "Loaded",
+              "Value #B": "Size",
+              "Value #C": "VRAM",
+              "Value #D": "GPU",
+              "Value #E": "Offload",
+              "Value #F": "Context",
+              "Value #G": "Last decode",
+              "Value #H": "Last prompt",
+              "Value #I": "Load time"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

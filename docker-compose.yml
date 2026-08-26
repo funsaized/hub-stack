@@ -60,6 +60,57 @@ services:
     environment:
       - DOZZLE_NO_ANALYTICS=true
 
+  # Stable :11434 Ollama API with request/token/latency metrics. Native Ollama
+  # is loopback-only on :11435; this is the only public request path.
+  ollama-proxy:
+    image: python:3.14-alpine
+    container_name: hub-ollama-proxy
+    restart: unless-stopped
+    network_mode: host
+    user: "65534:65534"
+    volumes:
+      - ./observability/ollama_proxy.py:/ollama_proxy.py:ro
+    command: ["python", "/ollama_proxy.py"]
+
+  # Retained, searchable logs. Alloy reads Docker through its API and only the
+  # two native systemd units related to this stack.
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: hub-loki
+    restart: unless-stopped
+    network_mode: host
+    # The Loki image uid cannot initialize a fresh root-owned named volume.
+    user: "0"
+    volumes:
+      - ./observability/loki.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    environment:
+      - LOKI_RETENTION=${LOKI_RETENTION:-336h}
+    command:
+      - -config.file=/etc/loki/config.yml
+      - -config.expand-env=true
+
+  alloy:
+    image: grafana/alloy:v1.6.1
+    container_name: hub-alloy
+    restart: unless-stopped
+    network_mode: host
+    user: "0"
+    volumes:
+      - ./observability/alloy.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - alloy_data:/var/lib/alloy/data
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=127.0.0.1:12345
+      - /etc/alloy/config.alloy
+    depends_on:
+      - loki
+
   # =====================================================================
   # Metrics — what the box is doing while a model runs
   # =====================================================================
@@ -94,6 +145,7 @@ services:
       - GF_SERVER_HTTP_PORT=${GRAFANA_HOST_PORT:-3000}
     depends_on:
       - prometheus
+      - loki
 
   # Liveness of the two things a user touches. An HTTP probe verifies that the
   # services answer rather than merely reporting that their containers run.
@@ -152,3 +204,5 @@ volumes:
   open_webui_data:
   prometheus_data:
   grafana_data:
+  loki_data:
+  alloy_data:

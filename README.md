@@ -27,7 +27,7 @@ sudo install -Dm644 systemd/ollama.service.d/override.conf \
   /etc/systemd/system/ollama.service.d/override.conf
 sudo systemctl daemon-reload
 sudo systemctl enable --now ollama
-ollama pull qwen3.5:9b
+OLLAMA_HOST=http://127.0.0.1:11435 ollama pull qwen3.5:9b
 docker compose up -d
 ```
 
@@ -41,9 +41,9 @@ live in `systemd/ollama.service.d/override.conf`.
 
 | Surface | URL | What it is |
 |---|---|---|
-| Ollama API | http://127.0.0.1:11434 | Native model server; also available on the private LAN. |
+| Ollama API | http://127.0.0.1:11434 | Instrumented model API; also available on the private LAN. |
 | Open WebUI | http://127.0.0.1:8080 | Chat interface. Auth is **off** — see below. |
-| Grafana | http://127.0.0.1:3000 | Dashboard "Local LLM hub". Anonymous admin, no login. |
+| Grafana | http://127.0.0.1:3000 | Model, hardware, system, and log dashboards. Anonymous admin, no login. |
 | Prometheus | http://127.0.0.1:9090 | Raw metrics and alert state. |
 | Dozzle | http://127.0.0.1:9999 | Container logs, live. |
 
@@ -67,10 +67,13 @@ see `docs/NETWORKING.md` for installation details.
 | Service | Purpose |
 |---|---|
 | `ollama.service` | Native model server using the NVIDIA GPU |
+| `hub-ollama-proxy` | Stable Ollama API plus request, token, latency, and model metrics |
 | `hub-open-webui` | Chat UI, talks to Ollama and nothing else |
 | `hub-dozzle` | Log viewer over a read-only Docker socket |
 | `hub-prometheus` | Metrics store, 15d retention |
-| `hub-grafana` | Dashboard |
+| `hub-loki` | Searchable logs, 14d retention |
+| `hub-alloy` | Docker and systemd log collector |
+| `hub-grafana` | Provisioned metrics and logs dashboards |
 | `hub-gpu-exporter` | GPU utilization, VRAM, temperature, power |
 | `hub-node-exporter` | Host CPU, memory, disk |
 | `hub-blackbox-exporter` | HTTP liveness probes for Ollama and the UI |
@@ -138,14 +141,16 @@ between models or hardware. The included accuracy checks are a deterministic
 regression suite, not a claim of broad model intelligence; use a recognized
 domain benchmark when evaluating a model for a specific workload.
 
-This hub has `OLLAMA_NUM_PARALLEL=1`, so its concurrent test intentionally
-measures queueing and total serving capacity rather than parallel decoding.
-Record that setting whenever comparing concurrency results from another host.
+This hub has `OLLAMA_NUM_PARALLEL=2`. The model uses about 7.1 GiB of the 12 GiB
+card with one active 8K context, leaving enough VRAM for a second context so
+Open WebUI background tasks do not serialize visible chat. Record that setting
+whenever comparing concurrency results from another host.
 
 ## Security posture
 
-- Docker web surfaces bind to `127.0.0.1`. Native Ollama intentionally listens
-  on `0.0.0.0:11434`; UFW restricts it to this private LAN and Docker networks.
+- Docker web surfaces bind to `127.0.0.1`. The metrics proxy intentionally
+  listens on `0.0.0.0:11434`; UFW restricts it to this private LAN and Docker
+  networks. Native Ollama is reachable only on host loopback `:11435`.
 - **Open WebUI authentication is off** (`WEBUI_AUTH=false`), an explicit
   choice for a single-user box. Caddy exposes it only to the tailnet; enable
   authentication before allowing access from any less-trusted network.
@@ -153,7 +158,14 @@ Record that setting whenever comparing concurrency results from another host.
   has the same tailnet-only trust boundary.
 - Ollama, Dozzle, and Prometheus also have no application authentication; their
   Caddy routes rely on the same tailnet boundary.
-- Dozzle mounts the Docker socket **read-only**.
+- Dozzle mounts the Docker socket read-only.
+- Alloy runs as root with the Docker socket mounted read-only, excludes Open
+  WebUI to avoid retaining chat content, and reads the Ollama and Caddy systemd
+  journals. Proxy request logs contain timings and token counts, never prompts
+  or generated text.
+- Treat Dozzle and Alloy as Docker-daemon privileged despite `:ro`: Unix socket
+  API access is not made read-only by a bind-mount flag. Neither exposes a
+  public control endpoint in this stack.
 
 ## History
 
