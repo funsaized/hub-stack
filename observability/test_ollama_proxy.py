@@ -135,6 +135,12 @@ class OllamaProxyTest(unittest.TestCase):
             with urllib.request.urlopen(request) as response:
                 events = [json.loads(line) for line in response]
             output = ollama_proxy.METRICS.render("ollama_up 1\n").decode()
+            deadline = time.monotonic() + 1
+            while 'ollama_generated_tokens_total{model="test"} 8' not in output:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.01)
+                output = ollama_proxy.METRICS.render("ollama_up 1\n").decode()
 
             self.assertTrue(events[-1]["done"])
             self.assertIn('ollama_generated_tokens_total{model="test"} 8', output)
