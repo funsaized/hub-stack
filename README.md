@@ -141,10 +141,12 @@ between models or hardware. The included accuracy checks are a deterministic
 regression suite, not a claim of broad model intelligence; use a recognized
 domain benchmark when evaluating a model for a specific workload.
 
-This hub has `OLLAMA_NUM_PARALLEL=2`. The model uses about 7.1 GiB of the 12 GiB
-card with one active 8K context, leaving enough VRAM for a second context so
-Open WebUI background tasks do not serialize visible chat. Record that setting
-whenever comparing concurrency results from another host.
+This hub requests `OLLAMA_NUM_PARALLEL=2` so a future dense model can use it.
+Ollama 0.32.15 cannot honor that setting for the hybrid `qwen35` architecture:
+`qwen3.5:9b` starts `llama-server` with `-np 1`, so overlapping Open WebUI work
+serializes the visible stream. This is an architecture limit, not a VRAM limit;
+the model peaks around 7.13 GiB of the 12 GiB card with an 8K context. Record
+both the requested setting and observed server parallelism when comparing runs.
 
 ## Security posture
 

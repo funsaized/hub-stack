@@ -27,7 +27,8 @@ caddy.service         tailnet-only HTTPS reverse proxy and ACME TLS
 Verified after the observability rollout: Ollama native and OpenAI-compatible
 generation work through the proxy, per-request metrics reach Prometheus, Loki
 contains Docker and Ollama/Caddy journal streams, Grafana provisions all four
-dashboards, and Ollama runs two parallel slots with the model fully GPU-resident.
+dashboards, and the model is fully GPU-resident. Although the unit requests
+`OLLAMA_NUM_PARALLEL=2`, Ollama forces `qwen3.5:9b` to `llama-server -np 1`.
 The five Caddy vanity routes and their five product-name aliases were previously
 verified over HTTPS.
 
@@ -40,17 +41,28 @@ verified over HTTPS.
 Host: Ryzen 7 5800X (8 cores/16 threads), 32 GiB RAM, RTX 3080 Ti with
 12 GiB VRAM, NVIDIA driver 610.57.04, and native Docker Engine on Btrfs.
 
-Ollama uses two parallel slots so Open WebUI task generations cannot serialize
-visible chat. It runs with flash attention, an 8,192-token default context, and
-one loaded model. The selected model must report `100% GPU` in
-`ollama ps`; a partial CPU/GPU split is considered a failed configuration.
+Ollama runs with flash attention, an 8,192-token default context, and one loaded
+model. `OLLAMA_NUM_PARALLEL=2` remains requested for future dense models, but
+the hybrid SSM+attention+vision `qwen35` architecture does not support parallel
+requests in Ollama 0.32.15. The server logs the limitation, starts with `-np 1`,
+and serializes overlapping Open WebUI work with visible chat. The selected model
+must report `100% GPU` in `ollama ps`; a partial CPU/GPU split is a failed
+configuration.
 
-The graded benchmark passed 4/4 deterministic checks, loaded cold in 3.68 s,
-ingested a 4,098-token prompt at 3,174 tok/s, and generated at 86.2 tok/s over
-38.7 seconds. The run reached 96% GPU utilization, 339.6 W, 74 C, and 7.52 GiB
-VRAM. Host CPU peaked at 42.3% and memory at 40.0%. `ollama ps` reported `100%
-GPU` and context `8192`; the card was power-bound, not thermally throttled or
-spilling model layers to CPU.
+Four full benchmark runs on 2026-08-26 measured about 111 tok/s wall decode
+(113-121 Ollama eval tok/s), about 2.3 s for a warm 256-token generation, and
+70-100 ms warm TTFT. A true unload took about 3.1 s cold, or about 2.6 s while
+the GGUF remained in page cache; `llama-server` itself started in about 1.8 s.
+The 5,737-token needle prompt ingested in about 1.49 s (about 3,840 tok/s) with
+3/3 retrieval. Deterministic quality was 19/20 at temperature 0 and seed 42;
+the stable miss was `reasoning-converse` (`no` expected, `yes` returned).
+
+`ollama ps` reported `100% GPU` and context `8192`. Peak card use was about
+7.13 GiB of 12 GiB, power peaked near the 350 W TGP (349.6 W), and temperature
+peaked near 76 C. The card was power-bound, not thermally throttled or spilling
+model layers to CPU. Four overlapping generations formed a serial latency
+staircase of about 2.3, 4.6, 6.9, and 9.2 s; aggregate throughput remained about
+the same as sequential throughput because this model has one inference slot.
 
 Official `qwen3.8` is currently only available as a 27B/18 GB model, so it is
 not installed. It cannot fit in this GPU's 12 GiB VRAM.

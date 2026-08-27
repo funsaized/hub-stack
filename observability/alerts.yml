@@ -41,11 +41,11 @@ groups:
           summary: "More than 10% of Ollama generation requests are failing"
 
       - alert: OllamaRequestQueueBacklog
-        expr: ollama_active_requests > 2
-        for: 2m
+        expr: ollama_active_requests > 1
+        for: 30s
         labels: {severity: warning}
         annotations:
-          summary: "More requests are active than Ollama has parallel inference slots"
+          summary: "Requests are waiting for qwen3.5:9b's single inference slot"
 
       - alert: ObservabilityComponentDown
         expr: up{job=~"prometheus|loki|alloy|gpu|node|blackbox"} == 0

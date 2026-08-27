@@ -73,14 +73,14 @@
     },
     {
       "type": "stat",
-      "title": "Prompt tok/s",
+      "title": "Prompt volume/s",
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
       "fieldConfig": { "defaults": { "unit": "cps", "decimals": 1 } },
       "targets": [{ "expr": "sum(rate(ollama_prompt_tokens_total{model=~\"$model\"}[5m]))", "refId": "A", "instant": true }]
     },
     {
       "type": "stat",
-      "title": "Output tok/s",
+      "title": "Output volume/s",
       "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
       "fieldConfig": { "defaults": { "unit": "cps", "decimals": 1 } },
       "targets": [{ "expr": "sum(rate(ollama_generated_tokens_total{model=~\"$model\"}[5m]))", "refId": "A", "instant": true }]
@@ -88,11 +88,11 @@
 
     {
       "type": "stat",
-      "title": "Weighted decode",
-      "description": "sum(rate(generated tokens)) / sum(rate(generation seconds)).",
+      "title": "Last decode",
+      "description": "Last decode rate backed by a native Ollama eval_duration.",
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 4 },
       "fieldConfig": { "defaults": { "unit": "ops", "decimals": 1 } },
-      "targets": [{ "expr": "sum(rate(ollama_generated_tokens_total{model=~\"$model\"}[5m])) / clamp_min(sum(rate(ollama_generation_seconds_total{model=~\"$model\"}[5m])), 0.001)", "refId": "A", "instant": true }]
+      "targets": [{ "expr": "ollama_last_decode_tokens_per_second{model=~\"$model\"}", "refId": "A", "instant": true }]
     },
     {
       "type": "stat",
@@ -179,10 +179,8 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "fillOpacity": 10, "lineWidth": 2 } } },
       "targets": [
-        { "expr": "sum by (model) (rate(ollama_generated_tokens_total{model=~\"$model\"}[5m])) / clamp_min(sum by (model) (rate(ollama_generation_seconds_total{model=~\"$model\"}[5m])), 0.001)", "legendFormat": "weighted decode {{model}}", "refId": "A" },
-        { "expr": "sum by (model) (rate(ollama_prompt_tokens_total{model=~\"$model\"}[5m])) / clamp_min(sum by (model) (rate(ollama_prompt_evaluation_seconds_total{model=~\"$model\"}[5m])), 0.001)", "legendFormat": "weighted prompt {{model}}", "refId": "B" },
-        { "expr": "ollama_last_decode_tokens_per_second{model=~\"$model\"}", "legendFormat": "last decode {{model}}", "refId": "C" },
-        { "expr": "ollama_last_prompt_tokens_per_second{model=~\"$model\"}", "legendFormat": "last prompt {{model}}", "refId": "D" }
+        { "expr": "ollama_last_decode_tokens_per_second{model=~\"$model\"}", "legendFormat": "last decode {{model}}", "refId": "A" },
+        { "expr": "ollama_last_prompt_tokens_per_second{model=~\"$model\"}", "legendFormat": "last prompt {{model}}", "refId": "B" }
       ]
     },
 

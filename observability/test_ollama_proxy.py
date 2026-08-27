@@ -6,7 +6,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
 
-import ollama_proxy
+from observability import ollama_proxy
 
 
 class OllamaProxyTest(unittest.TestCase):
@@ -18,13 +18,14 @@ class OllamaProxyTest(unittest.TestCase):
             endpoint="/api/generate",
             status=200,
             elapsed=2,
-            ttft=0.5,
+            ttft=1.5,
             final={
                 "prompt_eval_count": 10,
                 "prompt_eval_duration": 1_000_000_000,
                 "eval_count": 20,
                 "eval_duration": 2_000_000_000,
-                "total_duration": 1_500_000_000,
+                "load_duration": 200_000_000,
+                "total_duration": 3_200_000_000,
             },
         )
         output = metrics.render("ollama_up 1\n").decode()
@@ -33,7 +34,48 @@ class OllamaProxyTest(unittest.TestCase):
         self.assertIn('ollama_generated_tokens_total{model="model\\\"name"} 20', output)
         self.assertIn('ollama_last_decode_tokens_per_second{model="model\\\"name"} 10', output)
         self.assertIn('ollama_queue_duration_seconds_count{model="model\\\"name",endpoint="/api/generate"} 1', output)
+        self.assertIn('ollama_queue_duration_seconds_sum{model="model\\\"name",endpoint="/api/generate"} 0.3', output)
         self.assertIn("ollama_active_requests 0", output)
+
+    def test_usage_only_response_records_volume_without_timing_metrics(self) -> None:
+        metrics = ollama_proxy.Metrics()
+        metrics.start()
+        metrics.finish(
+            model="test",
+            endpoint="/v1/chat/completions",
+            status=200,
+            elapsed=2,
+            ttft=0.1,
+            final={"prompt_eval_count": 17, "eval_count": 2},
+        )
+        output = metrics.render("ollama_up 1\n").decode()
+
+        self.assertIn('ollama_prompt_tokens_total{model="test"} 17', output)
+        self.assertIn('ollama_generated_tokens_total{model="test"} 2', output)
+        self.assertNotIn('ollama_prompt_evaluation_seconds_total{model="test"}', output)
+        self.assertNotIn('ollama_generation_seconds_total{model="test"}', output)
+        self.assertNotIn('ollama_last_decode_tokens_per_second{model="test"}', output)
+        self.assertNotIn('ollama_last_prompt_tokens_per_second{model="test"}', output)
+        self.assertNotIn('ollama_queue_duration_seconds_count{model="test"', output)
+
+    def test_queue_is_wait_before_compute(self) -> None:
+        metrics = ollama_proxy.Metrics()
+        metrics.start()
+        metrics.finish(
+            model="test",
+            endpoint="/api/generate",
+            status=200,
+            elapsed=11.5,
+            ttft=9,
+            final={
+                "load_duration": 100_000_000,
+                "prompt_eval_duration": 200_000_000,
+                "eval_duration": 2_000_000_000,
+            },
+        )
+        output = metrics.render("ollama_up 1\n").decode()
+
+        self.assertIn('ollama_queue_duration_seconds_sum{model="test",endpoint="/api/generate"} 8.7', output)
 
     def test_extracts_generate_and_chat_text(self) -> None:
         self.assertEqual(ollama_proxy.event_text({"response": "hello"}), "hello")

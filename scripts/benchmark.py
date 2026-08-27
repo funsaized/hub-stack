@@ -926,7 +926,7 @@ def main() -> int:
             "Ollama token counts and internal durations are authoritative for this server but are not directly comparable across tokenizers.",
             "Prometheus resource values are sampled and estimated; brief peaks between scrapes can be missed.",
             "Results include other activity on the host during the measurement window.",
-            "Concurrent latency includes server queueing; record OLLAMA_NUM_PARALLEL when comparing runs.",
+            "Concurrent latency includes server queueing; record requested OLLAMA_NUM_PARALLEL separately from observed server parallelism (-np or the inflight latency staircase).",
         ],
     }
     report["benchmark_wall_seconds"] = time.perf_counter() - benchmark_started

@@ -164,26 +164,29 @@ class Metrics:
                 self._observe("ollama_time_to_first_token_seconds", (model, endpoint), ttft)
             if not final:
                 return
-            ollama_seconds = float(final.get("total_duration") or 0) / 1e9
-            if ollama_seconds:
+            load_seconds = float(final.get("load_duration") or 0) / 1e9
+            prompt_seconds = float(final.get("prompt_eval_duration") or 0) / 1e9
+            if ttft is not None and "load_duration" in final and "prompt_eval_duration" in final:
                 self._observe(
                     "ollama_queue_duration_seconds",
                     (model, endpoint),
-                    max(elapsed - ollama_seconds, 0),
+                    max(ttft - load_seconds - prompt_seconds, 0),
                 )
             prompt_tokens = int(final.get("prompt_eval_count") or 0)
             generated_tokens = int(final.get("eval_count") or 0)
-            prompt_seconds = float(final.get("prompt_eval_duration") or 0) / 1e9
             eval_seconds = float(final.get("eval_duration") or 0) / 1e9
             self.prompt_tokens[model] += prompt_tokens
             self.generated_tokens[model] += generated_tokens
-            self.prompt_seconds[model] += prompt_seconds
-            self.eval_seconds[model] += eval_seconds
-            self.load_seconds[model] += float(final.get("load_duration") or 0) / 1e9
-            if eval_seconds:
-                self.last_decode_rate[model] = generated_tokens / eval_seconds
-            if prompt_seconds:
-                self.last_prompt_rate[model] = prompt_tokens / prompt_seconds
+            if "prompt_eval_duration" in final:
+                self.prompt_seconds[model] += prompt_seconds
+                if prompt_seconds:
+                    self.last_prompt_rate[model] = prompt_tokens / prompt_seconds
+            if "eval_duration" in final:
+                self.eval_seconds[model] += eval_seconds
+                if eval_seconds:
+                    self.last_decode_rate[model] = generated_tokens / eval_seconds
+            if "load_duration" in final:
+                self.load_seconds[model] += load_seconds
 
     def render(self, ollama_state: str) -> bytes:
         lines = [ollama_state.rstrip()]

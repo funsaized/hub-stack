@@ -31,7 +31,7 @@ fitting. Larger candidates are poor matches:
 This card has **12 GB**. A model whose weights exceed free VRAM still runs —
 Ollama offloads the overflow to CPU — but the cost is severe and silent:
 
-- `qwen3.5:9b`: 7.52 GiB peak card use and **86.2 tok/s sustained** on Linux
+- `qwen3.5:9b`: about 7.13 GiB peak card use and **111 tok/s wall decode** on Linux
 - A 17 GB 27B model: historically **2.8 tok/s** after spilling to CPU
 
 The 27B result is historical and not a controlled cross-platform comparison,
@@ -44,10 +44,14 @@ leaves headroom for the KV cache, which grows with context length.
 
 ## Cold start
 
-First request after a model is idle pays a load cost, measured at **3.68 s**
-for this native deployment. `OLLAMA_KEEP_ALIVE=30m` keeps the model resident
-that long after its last request. Lower it to free VRAM sooner; raise it if you
-work in long bursts.
+First request after a true unload takes about **3.1 s**, or about **2.6 s** if
+the GGUF remains in the host page cache; `llama-server` starts in about 1.8 s.
+`OLLAMA_KEEP_ALIVE=30m` keeps the model resident that long after its last
+request. Lower it to free VRAM sooner; raise it if you work in long bursts.
+
+The unit requests `OLLAMA_NUM_PARALLEL=2` for future dense models, but Ollama
+0.32.15 forces this model's hybrid `qwen35` architecture to `-np 1`. Concurrent
+requests serialize even though enough VRAM remains for another context.
 
 ## Context length
 

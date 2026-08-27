@@ -26,9 +26,9 @@ The metrics that decide whether a model is usable.
 | Metric | Why it matters |
 |---|---|
 | `nvidia_smi_memory_used_bytes` / `_total_bytes` | The ceiling on model size. This card has 12 GB. |
-| `nvidia_smi_utilization_gpu_ratio` | 0–1, not a percentage. Peaked at 0.96 during the graded run. |
+| `nvidia_smi_utilization_gpu_ratio` | 0–1, not a percentage; confirms whether generation is using the card. |
 | `nvidia_smi_temperature_gpu` | Above ~83 °C expect the clock to drop. |
-| `nvidia_smi_power_draw_watts` / `_limit_watts` | 350 W limit; 339.6 W benchmark peak. |
+| `nvidia_smi_power_draw_watts` / `_limit_watts` | 350 W limit; 349.6 W benchmark peak. |
 | `nvidia_smi_clocks_current_graphics_clock_hz` | Falling clock + high temp = throttling. |
 
 Two configuration details are load-bearing and easy to get wrong:
@@ -68,8 +68,8 @@ OpenAI-compatible `/v1/chat/completions` JSON or SSE responses.
 | `ollama_prompt_tokens_total` / `ollama_generated_tokens_total` | Input and output volume. |
 | `ollama_request_duration_seconds` | End-to-end latency, including queueing. |
 | `ollama_time_to_first_token_seconds` | User-visible streaming responsiveness. |
-| `ollama_queue_duration_seconds` | Approximate wait outside Ollama's reported processing time. |
-| `ollama_*_evaluation_seconds_total` | Weighted prompt and decode throughput. |
+| `ollama_queue_duration_seconds` | Approximate pre-compute wait from TTFT minus load and prompt evaluation. |
+| `ollama_*_evaluation_seconds_total` | Native Ollama timing volume used for prompt and decode throughput. |
 | `ollama_model_*` | Loaded model size, GPU residency, and context length from `/api/ps`. |
 
 Metrics are in-memory counters and reset when `hub-ollama-proxy` restarts;
@@ -81,6 +81,9 @@ Streaming OpenAI clients must request `stream_options.include_usage=true` for
 token counters; latency, TTFT, status, and request counts work without it. For
 Qwen reasoning through `/v1`, use `reasoning_effort: "none"` when visible output
 matters more than hidden reasoning, and avoid very small `max_tokens` limits.
+OpenAI `usage` supplies token volume but not Ollama evaluation durations, so
+`/v1` responses do not update timing totals, last-throughput gauges, or queue
+observations. User-visible serialized wait remains in TTFT and request duration.
 
 ## Container metrics
 
@@ -118,7 +121,7 @@ none.
 | `OllamaMetricsProxyDown` | Prometheus cannot scrape the instrumented API for 2m |
 | `ModelPartiallyOffloaded` | A loaded model has less than 99% of its bytes in VRAM |
 | `OllamaHighErrorRate` | More than 10% of generation requests fail for 5m |
-| `OllamaRequestQueueBacklog` | More than two requests remain active for 2m |
+| `OllamaRequestQueueBacklog` | More than one request remains active for 30s; `qwen3.5:9b` has one inference slot |
 | `ObservabilityComponentDown` | A Prometheus, exporter, Loki, Alloy, or blackbox target is down for 5m |
 | `OpenWebUINotAnswering` | UI fails HTTP for 5m |
 | `GpuMemoryNearlyFull` | VRAM >95% for 5m — a larger model will not load |
@@ -132,7 +135,7 @@ Grafana provisions four dashboards at http://127.0.0.1:3000:
 
 - **Local LLM hub** keeps the original at-a-glance GPU and host view.
 - **Model usage and performance** shows request/error rates, token volume,
-  weighted throughput, latency/TTFT percentiles, context, and GPU residency.
+  timing-backed throughput, latency/TTFT percentiles, context, and GPU residency.
 - **Host hardware and system** expands CPU, RAM, swap, disk IO, network, GPU,
   thermals, power, and clocks.
 - **Hub logs** searches retained Docker, Ollama, and Caddy logs.
