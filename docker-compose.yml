@@ -68,6 +68,14 @@ services:
     restart: unless-stopped
     network_mode: host
     user: "65534:65534"
+    # Loopback-only: the script defaults to LISTEN_HOST=0.0.0.0 which
+    # exposes the Ollama API on :11434 to the LAN. Caddy is the only
+    # legitimate ingress; binding to 127.0.0.1 forces traffic through it.
+    environment:
+      - LISTEN_HOST=127.0.0.1
+      - LISTEN_PORT=11434
+      - UPSTREAM_HOST=127.0.0.1
+      - UPSTREAM_PORT=11435
     volumes:
       - ./observability/ollama_proxy.py:/ollama_proxy.py:ro
     command: ["python", "/ollama_proxy.py"]
