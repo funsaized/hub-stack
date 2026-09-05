@@ -5,16 +5,26 @@ server:
   http_listen_port: 3100
   grpc_listen_address: 127.0.0.1
 
+# Advertise loopback in the ring so it matches grpc_listen_address. Without
+# this, Loki picks the LAN NIC (enp42s0) and distributor/querier dial
+# 192.168.1.103:9095, which is refused — Grafana's Hub logs dashboard hangs
+# on label_values(source).
 common:
+  instance_addr: 127.0.0.1
   path_prefix: /loki
   replication_factor: 1
   ring:
+    instance_addr: 127.0.0.1
     kvstore:
       store: inmemory
   storage:
     filesystem:
       chunks_directory: /loki/chunks
       rules_directory: /loki/rules
+
+ingester:
+  lifecycler:
+    address: 127.0.0.1
 
 schema_config:
   configs:
