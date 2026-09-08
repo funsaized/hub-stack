@@ -2,11 +2,11 @@
 
 Docker web surfaces bind to the Linux host's loopback interface. Caddy proxies
 selected surfaces over HTTPS on the Tailscale interface. The instrumented
-Ollama API is also intentionally available directly on the private LAN.
+Ollama API and activity viewer share the existing Ollama HTTPS route.
 
 | Surface | Default host address | Purpose |
 |---|---:|---|
-| Ollama API | `0.0.0.0:11434` | Metrics proxy; UFW-scoped to LAN and Docker |
+| Ollama API | `127.0.0.1:11434` | Metrics proxy and activity viewer |
 | Ollama backend | `127.0.0.1:11435` | Native server; host-only |
 | Open WebUI | `127.0.0.1:8080` | Chat UI |
 | Grafana | `127.0.0.1:3000` | Dashboard |
@@ -15,8 +15,10 @@ Ollama API is also intentionally available directly on the private LAN.
 
 `gpu-exporter` and `node-exporter` publish metrics only on host loopback.
 Prometheus and `blackbox-exporter` use host networking but also listen only on
-loopback. Open WebUI discovers the current Compose bridge gateway at startup
-and reaches the instrumented Ollama proxy there.
+loopback. Open WebUI also uses host networking and reaches the instrumented
+Ollama proxy at `127.0.0.1:11434`. Its `HOST` and `PORT` settings preserve the
+configured WebUI bind address and port. This follows Open WebUI’s
+[host-network installation](https://docs.openwebui.com/getting-started/quick-start/).
 
 ## Tailscale HTTPS
 
@@ -80,18 +82,10 @@ existed to sandbox the crawler.
 ## Ollama exposure
 
 Native Ollama binds `127.0.0.1:11435` through the tracked systemd override. The
-unprivileged metrics proxy preserves the public `0.0.0.0:11434` API, and UFW
-limits access to the private LAN and local Docker networks:
-
-```bash
-sudo ufw allow from 192.168.1.0/24 to any port 11434 proto tcp
-sudo ufw allow from 172.16.0.0/12 to any port 11434 proto tcp
-```
-
-UFW must be active with default-deny incoming before Ollama starts. Change the
-first CIDR when the LAN changes, and change the Docker CIDR if custom address
-pools are configured. IPv6 access is intentionally denied. Ollama has no
-authentication; these firewall rules are its access control.
+unprivileged metrics proxy binds `127.0.0.1:11434`. Remote clients use the
+Tailscale HTTPS route; firewall allowances for port 11434 do not expose a
+loopback listener. Requests sent straight to `:11435` bypass metrics and
+transcript capture. The `/activity/` viewer has the same access as the API.
 
 ## Exposing another port deliberately
 

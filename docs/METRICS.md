@@ -58,9 +58,12 @@ service is answering HTTP. They do **not** say a model will load.
 
 Native Ollama listens only on `127.0.0.1:11435`. The transparent proxy owns the
 existing `:11434` API, so Open WebUI, Caddy, benchmarks, OpenAI-compatible
-agents, and private-LAN clients all use one measured path without endpoint
+agents, and Tailscale clients all use one measured path without endpoint
 changes. It instruments native `/api/chat` and `/api/generate` JSON streams and
-OpenAI-compatible `/v1/chat/completions` JSON or SSE responses.
+OpenAI-compatible `/v1/chat/completions` JSON or SSE responses. It also
+records `/api/embed`, `/api/embeddings`, `/v1/embeddings`, `/v1/completions`,
+and `/v1/responses`; raw response events remain available even where an
+endpoint does not provide supported token/timing fields.
 
 | Metric | Why it matters |
 |---|---|
@@ -74,8 +77,10 @@ OpenAI-compatible `/v1/chat/completions` JSON or SSE responses.
 
 Metrics are in-memory counters and reset when `hub-ollama-proxy` restarts;
 Prometheus rate queries handle counter resets. The proxy emits structured JSON
-request logs with model, status, duration, and token counts. It never records
-request bodies, prompts, generated text, headers, or user identities.
+request logs with model, status, duration, and token counts. It also retains full request/response transcripts in a persistent SQLite volume,
+served at `/activity/` on the same API. See [Model activity](../README.md#model-activity-and-transcripts)
+for filters, retention, caller/purpose headers, downloads, and apply commands.
+Only source/purpose headers are retained as labels; prompt content is not redacted.
 
 Streaming OpenAI clients must request `stream_options.include_usage=true` for
 token counters; latency, TTFT, status, and request counts work without it. For

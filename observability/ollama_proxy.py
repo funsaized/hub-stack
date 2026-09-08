@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""Transparent Ollama proxy with low-cardinality Prometheus metrics."""
+"""Transparent Ollama proxy with metrics and persistent invocation transcripts."""
 
 import http.client
 import json
 import os
+import sqlite3
 import threading
 import time
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlsplit
+
+try:
+    from . import activity
+except ImportError:
+    import activity
 
 
 LISTEN_HOST = os.getenv("LISTEN_HOST", "0.0.0.0")
@@ -19,7 +25,21 @@ UPSTREAM_PORT = int(os.getenv("UPSTREAM_PORT", "11435"))
 UPSTREAM_TIMEOUT = float(os.getenv("UPSTREAM_TIMEOUT", "600"))
 MAX_REQUEST_BYTES = int(os.getenv("MAX_REQUEST_BYTES", str(256 * 1024 * 1024)))
 MAX_METRIC_MODELS = int(os.getenv("MAX_METRIC_MODELS", "32"))
-TRACKED_ENDPOINTS = {"/api/chat", "/api/generate", "/v1/chat/completions"}
+TRACKED_ENDPOINTS = {"/api/chat", "/api/generate", "/api/embed", "/api/embeddings",
+                     "/v1/chat/completions", "/v1/completions", "/v1/embeddings", "/v1/responses"}
+ACTIVITY = None
+MAX_CAPTURE_BYTES = int(os.getenv("ACTIVITY_MAX_RESPONSE_BYTES", str(32 * 1024 * 1024)))
+
+def record_activity(method, *args):
+    """A full disk or storage error must not break model inference."""
+    if ACTIVITY is None:
+        return None
+    try:
+        return getattr(ACTIVITY, method)(*args)
+    except (OSError, sqlite3.Error) as error:
+        print(json.dumps({"event": "activity_storage_error", "error": str(error)}), flush=True)
+        return None
+
 HISTOGRAM_BUCKETS = (0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300)
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -40,6 +60,8 @@ def metric_label(value: str) -> str:
 def event_text(event: dict[str, Any]) -> str:
     choices = event.get("choices")
     if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        if choices[0].get("text"):
+            return str(choices[0]["text"])
         message = choices[0].get("delta") or choices[0].get("message")
         if isinstance(message, dict):
             return str(message.get("content") or message.get("reasoning") or "")
@@ -63,7 +85,7 @@ def response_event(chunk: bytes) -> dict[str, Any] | None:
 
 
 def final_measurement(event: dict[str, Any]) -> dict[str, Any] | None:
-    if event.get("done"):
+    if event.get("done") or "prompt_eval_count" in event:
         return event
     usage = event.get("usage")
     if isinstance(usage, dict):
@@ -309,6 +331,8 @@ class ProxyHandler(BaseHTTPRequestHandler):
     server_version = "ollama-metrics-proxy/1"
 
     def do_GET(self) -> None:
+        if activity.serve(self, ACTIVITY):
+            return
         if urlsplit(self.path).path == "/metrics":
             body = METRICS.render(ollama_state_metrics())
             self.send_response(200)
@@ -330,7 +354,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
     def proxy(self) -> None:
         endpoint = urlsplit(self.path).path
-        tracked = endpoint in TRACKED_ENDPOINTS
+        tracked = self.command == "POST" and endpoint in TRACKED_ENDPOINTS
         try:
             content_length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
@@ -363,7 +387,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
             try:
                 candidate = json.loads(body)
                 payload = candidate if isinstance(candidate, dict) else {}
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 pass
         model = str(payload.get("model") or "unknown")
         started = time.monotonic()
@@ -371,6 +395,17 @@ class ProxyHandler(BaseHTTPRequestHandler):
         final: dict[str, Any] | None = None
         status = 502
         headers_sent = False
+        captured = bytearray()
+        truncated = False
+        error_message = None
+        identifier = None
+        upstream = None
+        stream_complete = False
+        if tracked:
+            source = self.headers.get("X-Hub-Source") or f"{self.headers.get('User-Agent', 'Unknown client')} ({self.client_address[0]})"
+            purpose = self.headers.get("X-Hub-Purpose") or ""
+            identifier = record_activity("start", model, endpoint, source, purpose,
+                                         body.decode("utf-8", errors="replace") if isinstance(body, bytes) else "")
         if tracked:
             METRICS.start()
         try:
@@ -400,11 +435,20 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
             if tracked:
                 while chunk := response.readline():
+                    available = max(0, MAX_CAPTURE_BYTES - len(captured))
+                    captured.extend(chunk[:available])
+                    truncated = truncated or len(chunk) > available
                     self.wfile.write(chunk)
                     self.wfile.flush()
+                    if chunk.strip() == b"data: [DONE]":
+                        stream_complete = True
                     event = response_event(chunk)
                     if event is None:
                         continue
+                    if event.get("done"):
+                        stream_complete = True
+                    if event.get("error"):
+                        error_message = str(event["error"])
                     if first_token_at is None and event_text(event):
                         first_token_at = time.monotonic()
                     measurement = final_measurement(event)
@@ -416,18 +460,38 @@ class ProxyHandler(BaseHTTPRequestHandler):
             upstream.close()
         except (BrokenPipeError, ConnectionResetError):
             status = 499
+            error_message = "Connection closed before response completed"
         except RequestBodyError as error:
             status = 400
+            error_message = str(error)
             if not headers_sent:
                 self.send_error(400, str(error))
         except (OSError, http.client.HTTPException) as error:
             status = 502
+            error_message = str(error)
             if not headers_sent:
                 self.send_error(502, f"Ollama upstream unavailable: {error}")
         finally:
+            if upstream is not None:
+                upstream.close()
             self.close_connection = True
             if tracked:
                 elapsed = time.monotonic() - started
+                # JSON responses may be pretty-printed across multiple lines.
+                if not truncated and captured:
+                    event = response_event(bytes(captured))
+                    if event:
+                        final = final_measurement(event) or final
+                        if event.get("error"):
+                            error_message = str(event["error"])
+                if status < 400 and payload.get("stream", not endpoint.startswith("/v1/")) and endpoint in {
+                    "/api/chat", "/api/generate", "/v1/chat/completions", "/v1/completions"
+                } and not stream_complete:
+                    error_message = error_message or "Upstream stream ended without a completion marker"
+                if identifier:
+                    record_activity("finish", identifier, status, elapsed,
+                                    None if first_token_at is None else first_token_at - started,
+                                    final, captured.decode("utf-8", errors="replace"), truncated, error_message)
                 METRICS.finish(
                     model=model,
                     endpoint=endpoint,
@@ -440,6 +504,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     json.dumps(
                         {
                             "event": "ollama_request",
+                            "request_id": identifier,
+                            "source": source,
+                            "purpose": purpose,
                             "model": model,
                             "endpoint": endpoint,
                             "status": status,
@@ -453,11 +520,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 )
 
     def log_message(self, format: str, *args: Any) -> None:
-        if urlsplit(self.path).path != "/metrics":
+        if urlsplit(self.path).path != "/metrics" and not urlsplit(self.path).path.startswith("/activity"):
             print(json.dumps({"event": "proxy_access", "message": format % args}, separators=(",", ":")), flush=True)
 
 
 if __name__ == "__main__":
+    try:
+        ACTIVITY = activity.ActivityStore(os.getenv("ACTIVITY_DB", "/data/activity.sqlite3"),
+                                          int(os.getenv("ACTIVITY_RETENTION_DAYS", "30")))
+    except (OSError, sqlite3.Error) as error:
+        print(json.dumps({"event": "activity_storage_error", "error": str(error)}), flush=True)
     print(
         json.dumps(
             {

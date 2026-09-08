@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Model activity · Hub</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font: 15px system-ui;
+      background: #10151e;
+      color: #e7edf7;
+    }
+    body {
+      max-width: 1500px;
+      margin: auto;
+      padding: 28px;
+    }
+    h1 {
+      margin-bottom: 6px;
+    }
+    p {
+      color: #aab9ce;
+    }
+    a {
+      color: #89b9ff;
+    }
+    button,
+    input,
+    select {
+      font: inherit;
+      color: inherit;
+      background: #1b2535;
+      border: 1px solid #40516c;
+      border-radius: 6px;
+      padding: 9px;
+    }
+    button {
+      cursor: pointer;
+    }
+    button:hover {
+      background: #30425b;
+    }
+    input {
+      min-width: 240px;
+    }
+    form,
+    .stats,
+    nav {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 20px 0;
+    }
+    .stat {
+      background: #1b2535;
+      border-radius: 8px;
+      padding: 16px;
+      min-width: 125px;
+    }
+    .stat strong {
+      display: block;
+      font-size: 25px;
+    }
+    .stat span {
+      color: #aab9ce;
+      font-size: 13px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+      gap: 24px;
+    }
+    .scroll {
+      overflow: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th,
+    td {
+      text-align: left;
+      padding: 12px 8px;
+      border-bottom: 1px solid #2c394c;
+      vertical-align: top;
+    }
+    th {
+      color: #aab9ce;
+    }
+    td small {
+      display: block;
+      margin-top: 5px;
+      color: #aab9ce;
+    }
+    #detail {
+      min-width: 0;
+      background: #151e2c;
+      padding: 20px;
+      border-radius: 8px;
+      align-self: start;
+      position: sticky;
+      top: 16px;
+      max-height: 85vh;
+      overflow: auto;
+    }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font:
+        13px/1.6 ui-monospace,
+        monospace;
+      background: #0d131d;
+      padding: 14px;
+      border-radius: 6px;
+    }
+    summary {
+      cursor: pointer;
+      margin: 16px 0;
+    }
+    #notice {
+      color: #ffcc81;
+      min-height: 20px;
+    }
+    .running {
+      color: #8bcdff;
+    }
+    .error,
+    .interrupted {
+      color: #ffb1a8;
+    }
+    .completed {
+      color: #a8e0b0;
+    }
+    .muted {
+      color: #aab9ce;
+    }
+    label {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+    }
+    @media (max-width: 1000px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      #detail {
+        position: static;
+        max-height: none;
+      }
+      body {
+        padding: 16px;
+      }
+    }
+  </style>
+  <h1>Model activity</h1>
+  <p>
+    Every invocation through the hub proxy. Inspect prompts, responses,
+    reasoning, tools, and timing.
+  </p>
+  <form id="filters">
+    <input
+      id="q"
+      aria-label="Search transcripts"
+      placeholder="Search transcripts or purpose…"
+    />
+    <select id="model" aria-label="Model">
+      <option value="">All models</option>
+    </select>
+    <select id="source" aria-label="Caller">
+      <option value="">All callers</option>
+    </select>
+    <select id="state" aria-label="State">
+      <option value="">All states</option>
+      <option>running</option>
+      <option>completed</option>
+      <option>error</option>
+      <option>interrupted</option>
+    </select>
+    <select id="period" aria-label="Time range">
+      <option value="24">Last 24 hours</option>
+      <option value="1">Last hour</option>
+      <option value="168">Last 7 days</option>
+      <option value="0">All retained history</option>
+    </select>
+    <button>Search</button
+    ><label
+      ><input type="checkbox" id="live" checked style="min-width: 0" />Refresh
+      every 3s</label
+    >
+  </form>
+  <div id="notice" role="status"></div>
+  <div id="stats" class="stats"></div>
+  <div class="layout">
+    <section>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>When / model</th>
+              <th>Caller / purpose</th>
+              <th>State / duration</th>
+              <th>Tokens in / out</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <nav>
+        <button id="prev">← Newer</button><span id="page"></span
+        ><button id="next">Older →</button>
+      </nav>
+      <p id="retention"></p>
+    </section>
+    <aside id="detail">
+      <h2>Invocation transcript</h2>
+      <p>Select an invocation to inspect it.</p>
+    </aside>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let offset = 0,
+      selected = location.hash.slice(1),
+      busy = false;
+    const fmt = (n) =>
+      n == null
+        ? "—"
+        : Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    function node(tag, text, parent, cls) {
+      const el = document.createElement(tag);
+      el.textContent = text;
+      if (cls) el.className = cls;
+      if (parent) parent.append(el);
+      return el;
+    }
+    async function get(url) {
+      const r = await fetch(url);
+      const data = await r.json();
+      if (!r.ok) throw Error(data.error || `HTTP ${r.status}`);
+      return data;
+    }
+    function options(id, values, label) {
+      const el = $(id),
+        old = el.value;
+      el.replaceChildren(new Option(label, ""));
+      for (const v of values) el.add(new Option(v, v));
+      el.value = old;
+    }
+    async function refresh() {
+      if (busy) return;
+      busy = true;
+      try {
+        const params = new URLSearchParams({ offset });
+        for (const k of ["q", "model", "source", "state"])
+          params.set(k, $(k).value);
+        const hours = Number($("period").value);
+        if (hours) params.set("since", Date.now() / 1000 - hours * 3600);
+        const d = await get("/activity/api/requests?" + params);
+        $("notice").textContent = "";
+        options("model", d.models, "All models");
+        options("source", d.sources, "All callers");
+        $("stats").replaceChildren();
+        for (const [label, value] of [
+          ["Invocations", d.stats.requests],
+          ["Running", d.stats.running],
+          ["Errors / interrupted", d.stats.errors],
+          ["Input tokens", d.stats.prompt_tokens],
+          ["Output tokens", d.stats.generated_tokens],
+          ["Avg duration (s)", d.stats.average_duration],
+        ]) {
+          const card = node("div", "", $("stats"), "stat");
+          node("strong", fmt(value), card);
+          node("span", label, card);
+        }
+        $("rows").replaceChildren();
+        for (const r of d.rows) {
+          const tr = node("tr", "", $("rows"));
+          const a = node("td", "", tr);
+          const b = node(
+            "button",
+            new Date(r.started * 1000).toLocaleString(),
+            a,
+          );
+          b.onclick = () => {
+            selected = r.id;
+            location.hash = r.id;
+            detail().catch(showError);
+          };
+          node("small", r.model, a);
+          const c = node("td", r.source, tr);
+          node("small", r.purpose || "No purpose supplied", c);
+          const e = node("td", r.state, tr, r.state);
+          node(
+            "small",
+            r.duration == null ? "In progress" : fmt(r.duration) + " s",
+            e,
+          );
+          node(
+            "td",
+            fmt(r.prompt_tokens) + " / " + fmt(r.generated_tokens),
+            tr,
+          );
+        }
+        $("empty")?.remove();
+        if (!d.rows.length)
+          node(
+            "p",
+            "No matching invocations. New requests will appear here.",
+            $("rows").parentElement.parentElement,
+          ).id = "empty";
+        else $("empty")?.remove();
+        $("prev").disabled = offset === 0;
+        $("next").disabled = offset + 50 >= d.stats.requests;
+        $("page").textContent =
+          `${d.rows.length ? offset + 1 : 0}–${offset + d.rows.length} of ${d.stats.requests}`;
+        $("retention").textContent =
+          `Retention: ${d.retention_days > 0 ? d.retention_days + " days" : "unlimited"}. Tokens show — when the upstream did not report usage. Direct calls to :11435 bypass this history.`;
+        if (selected) await detail();
+      } catch (e) {
+        showError(e);
+      } finally {
+        busy = false;
+      }
+    }
+    function showError(e) {
+      $("notice").textContent = e.message;
+    }
+    function block(parent, title, text) {
+      node("h3", title, parent);
+      node(
+        "pre",
+        typeof text === "string" ? text : JSON.stringify(text, null, 2),
+        parent,
+      );
+    }
+    let renderedDetail = "";
+    async function detail() {
+      const id = selected;
+      const r = await get("/activity/api/requests/" + encodeURIComponent(id));
+      if (id !== selected) return;
+      const version = `${r.id}:${r.state}:${r.duration}:${r.response?.length}`;
+      if (version === renderedDetail) return;
+      renderedDetail = version;
+      const p = $("detail");
+      p.replaceChildren();
+      node("h2", r.purpose || r.model, p);
+      node(
+        "p",
+        `${new Date(r.started * 1000).toLocaleString()} · ${r.source} · ${r.endpoint}`,
+        p,
+      );
+      node(
+        "p",
+        `${r.state} · HTTP ${r.status ?? "—"} · ${fmt(r.duration)}s · First token ${fmt(r.ttft)}s · Tokens ${fmt(r.prompt_tokens)} / ${fmt(r.generated_tokens)}`,
+        p,
+      );
+      const download = node("a", "Download complete record (JSON)", p);
+      download.href = "/activity/api/requests/" + encodeURIComponent(r.id);
+      download.download = r.id + ".json";
+      if (r.error) block(p, "Error", r.error);
+      if (r.truncated)
+        node(
+          "p",
+          "Response capture reached its size limit; the transcript below is partial.",
+          p,
+          "error",
+        );
+      let req;
+      try {
+        req = JSON.parse(r.request);
+        if (!req || typeof req !== "object") req = { raw: r.request };
+      } catch {
+        req = { raw: r.request };
+      }
+      if (req.system) block(p, "System", req.system);
+      if (Array.isArray(req.messages))
+        for (const m of req.messages) block(p, m.role || "Message", m);
+      if (req.prompt != null) block(p, "Prompt / input", req.prompt);
+      if (req.input != null) block(p, "Input", req.input);
+      let content = "",
+        thinking = "",
+        events = [],
+        lines = (r.response || "").split("\n");
+      try {
+        lines = [JSON.stringify(JSON.parse(r.response))];
+      } catch {}
+      for (let line of lines) {
+        line = line.replace(/^data:\s*/, "").trim();
+        try {
+          const e = JSON.parse(line);
+          events.push(e);
+          const m =
+            e.message || e.choices?.[0]?.delta || e.choices?.[0]?.message || {};
+          content += m.content || e.response || e.choices?.[0]?.text || "";
+          thinking +=
+            m.thinking ||
+            m.reasoning ||
+            m.reasoning_content ||
+            e.thinking ||
+            "";
+        } catch {}
+      }
+      if (thinking) block(p, "Reasoning", thinking);
+      if (content) block(p, "Response", content);
+      if (!r.response)
+        node(
+          "p",
+          r.state === "running"
+            ? "Request is running. Response is saved when the stream ends."
+            : "No response body received.",
+          p,
+        );
+      const tools = events.filter(
+        (e) =>
+          e.message?.tool_calls ||
+          e.choices?.some((c) => c.delta?.tool_calls || c.message?.tool_calls),
+      );
+      if (tools.length) block(p, "Tool calls (stream events)", tools);
+      for (const [label, value] of [
+        ["Full request (including options, tools, images)", req],
+        ["Raw response (all stream events)", r.response || ""],
+        [
+          "Invocation metadata",
+          Object.fromEntries(
+            Object.entries(r).filter(
+              ([k]) => !["request", "response"].includes(k),
+            ),
+          ),
+        ],
+      ]) {
+        const section = node("details", "", p);
+        node("summary", label, section);
+        node(
+          "pre",
+          typeof value === "string" ? value : JSON.stringify(value, null, 2),
+          section,
+        );
+      }
+    }
+    $("filters").onsubmit = (e) => {
+      e.preventDefault();
+      offset = 0;
+      refresh();
+    };
+    $("prev").onclick = () => {
+      offset = Math.max(0, offset - 50);
+      refresh();
+    };
+    $("next").onclick = () => {
+      offset += 50;
+      refresh();
+    };
+    window.onhashchange = () => {
+      selected = location.hash.slice(1);
+      if (selected) detail().catch(showError);
+    };
+    setInterval(() => {
+      if ($("live").checked && !document.hidden) refresh();
+    }, 3000);
+    refresh();
+  </script>
+</html>

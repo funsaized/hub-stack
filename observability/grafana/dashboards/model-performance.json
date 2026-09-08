@@ -22,6 +22,7 @@
       }
     ]
   },
+  "links": [{"title": "Model activity (this machine)", "type": "link", "url": "http://127.0.0.1:11434/activity/", "targetBlank": true}, {"title": "Model activity (Tailscale)", "type": "link", "url": "https://ollama.nzxt.dev.s11a.com/activity/", "targetBlank": true}],
   "panels": [
     {
       "type": "stat",

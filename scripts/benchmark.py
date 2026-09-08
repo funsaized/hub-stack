@@ -235,7 +235,8 @@ def request_json(url: str, payload: Any = None, timeout: float = 300) -> Any:
     request = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers={"Content-Type": "application/json", "Accept": "application/json",
+                 "X-Hub-Source": "hub-benchmark", "X-Hub-Purpose": "Benchmark setup / model control"},
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -275,6 +276,8 @@ def generate(
         headers={
             "Content-Type": "application/json",
             "Accept": "application/x-ndjson",
+            "X-Hub-Source": "hub-benchmark",
+            "X-Hub-Purpose": "Model accuracy and performance benchmark",
         },
     )
     started = time.perf_counter()

@@ -5,7 +5,7 @@ chat UI, logs, and metrics that show what the box is doing while a model runs.
 
 Nothing here calls out to a hosted model. Docker web surfaces bind to
 `127.0.0.1`; Caddy makes them available to the tailnet, and Ollama is
-restricted to private networks by UFW.
+reachable through the loopback proxy or Tailscale HTTPS.
 
 ## Run it
 
@@ -32,8 +32,8 @@ docker compose up -d
 ```
 
 Apply the firewall rules before starting Ollama. Adjust the LAN CIDR if yours
-differs. The Docker rule is required for Open WebUI; adjust it too if Docker's
-address pools are outside the default `172.16.0.0/12` range.
+differs. Open WebUI uses host networking to reach the loopback proxy; LAN/Docker
+firewall allowances alone do not expose that loopback listener.
 
 No `.env` is required — every variable has a default. Copy `.env.example` if
 you want to change Docker web ports or bind addresses. Ollama runtime settings
@@ -41,7 +41,8 @@ live in `systemd/ollama.service.d/override.conf`.
 
 | Surface | URL | What it is |
 |---|---|---|
-| Ollama API | http://127.0.0.1:11434 | Instrumented model API; also available on the private LAN. |
+| Ollama API | http://127.0.0.1:11434 | Instrumented model API; also available through Tailscale HTTPS. |
+| Model activity | http://127.0.0.1:11434/activity/ | Searchable invocation history, transcripts, caller labels, and stats. |
 | Open WebUI | http://127.0.0.1:8080 | Chat interface. Auth is **off** — see below. |
 | Grafana | http://127.0.0.1:3000 | Model, hardware, system, and log dashboards. Anonymous admin, no login. |
 | Prometheus | http://127.0.0.1:9090 | Raw metrics and alert state. |
@@ -78,6 +79,58 @@ see `docs/NETWORKING.md` for installation details.
 | `hub-node-exporter` | Host CPU, memory, disk |
 | `hub-blackbox-exporter` | HTTP liveness probes for Ollama and the UI |
 | `caddy.service` | Tailnet-only HTTPS reverse proxy |
+
+## Model activity and transcripts
+
+Open **http://127.0.0.1:11434/activity/**, or
+**https://ollama.nzxt.dev.s11a.com/activity/** over Tailscale. The main Grafana
+and model-performance dashboards link to both addresses.
+
+The existing Ollama proxy records new generation and embedding requests:
+
+- when they started, model, endpoint, caller, purpose, and running/error state;
+- full input payloads, outputs, reasoning, tool calls, and model options;
+- duration, time to first token, and input/output tokens when supplied upstream;
+- searchable history, filters, aggregate stats, and JSON download per invocation.
+
+Requests appear while running; responses are saved when the stream ends.
+Caller defaults to User-Agent plus peer IP. To label an agent or job explicitly,
+set `X-Hub-Source` and `X-Hub-Purpose` on its API requests. Purpose is a supplied
+label, not an inferred claim about what a prompt does. The included benchmark
+sets both headers automatically. For example:
+
+```bash
+curl http://127.0.0.1:11434/api/generate \
+  -H 'Content-Type: application/json' \
+  -H 'X-Hub-Source: my-agent' \
+  -H 'X-Hub-Purpose: Summarize project notes' \
+  -d '{"model":"qwen3.5:9b","prompt":"Summarize: the deploy succeeded.","stream":false}'
+```
+
+SQLite history lives in the `hub_activity_data` named volume, with 30-day
+retention (`ACTIVITY_RETENTION_DAYS=0` keeps it indefinitely). Full requests
+are retained; response capture defaults to 32 MiB per invocation, with larger
+responses explicitly marked partial. Change `ACTIVITY_MAX_RESPONSE_BYTES` to
+raise that limit. Model streaming continues beyond the capture limit. There
+is no prompt redaction. No extra model is called to classify requests.
+
+History starts after applying this change; earlier discarded transcripts
+cannot be recovered. Calls directly to native Ollama on `:11435` bypass
+capture, so clients should use `:11434` or the Tailscale Ollama URL. Streaming
+OpenAI clients need `stream_options.include_usage=true` for token stats.
+
+Apply changes from this repository:
+
+```bash
+sudo docker compose up -d activity-init ollama-proxy open-webui
+sudo docker compose restart grafana
+curl -fsS http://127.0.0.1:11434/activity/api/requests
+```
+
+No Caddy or native Ollama restart is needed. Open WebUI now uses host
+networking to reach the loopback proxy while preserving its data volume,
+configured bind address, and port. Restarting the proxy interrupts any requests
+currently running; those records are marked interrupted on startup.
 
 ## Hardware and what actually fits
 
@@ -150,9 +203,8 @@ both the requested setting and observed server parallelism when comparing runs.
 
 ## Security posture
 
-- Docker web surfaces bind to `127.0.0.1`. The metrics proxy intentionally
-  listens on `0.0.0.0:11434`; UFW restricts it to this private LAN and Docker
-  networks. Native Ollama is reachable only on host loopback `:11435`.
+- Docker web surfaces and the instrumented API bind to `127.0.0.1`.
+  Native Ollama is reachable only on host loopback `:11435`.
 - **Open WebUI authentication is off** (`WEBUI_AUTH=false`), an explicit
   choice for a single-user box. Caddy exposes it only to the tailnet; enable
   authentication before allowing access from any less-trusted network.
@@ -163,8 +215,8 @@ both the requested setting and observed server parallelism when comparing runs.
 - Dozzle mounts the Docker socket read-only.
 - Alloy runs as root with the Docker socket mounted read-only, excludes Open
   WebUI to avoid retaining chat content, and reads the Ollama and Caddy systemd
-  journals. Proxy request logs contain timings and token counts, never prompts
-  or generated text.
+  journals. Proxy logs contain timings, token counts, and caller/purpose labels. Full
+  prompts and generated text are retained in the activity SQLite volume.
 - Treat Dozzle and Alloy as Docker-daemon privileged despite `:ro`: Unix socket
   API access is not made read-only by a bind-mount flag. Neither exposes a
   public control endpoint in this stack.

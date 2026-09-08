@@ -21,8 +21,7 @@ services:
     image: ghcr.io/open-webui/open-webui:v0.11.1
     container_name: hub-open-webui
     restart: unless-stopped
-    ports:
-      - "${WEBUI_BIND_ADDRESS:-127.0.0.1}:${WEBUI_HOST_PORT:-8080}:8080"
+    network_mode: host
     volumes:
       - open_webui_data:/app/backend/data
       - ./open-webui/start-native-ollama.py:/start-native-ollama.py:ro
@@ -30,16 +29,17 @@ services:
       # Single-user box bound to localhost; auth is off by operator decision.
       # Turn this back on before exposing the port to anything.
       WEBUI_AUTH: "${WEBUI_AUTH:-false}"
+      HOST: "${WEBUI_BIND_ADDRESS:-127.0.0.1}"
+      PORT: "${WEBUI_HOST_PORT:-8080}"
       DEFAULT_MODELS: qwen3.5:9b
       # No OpenAI-compatible backends. The research corpus that used to be
       # served here as a pseudo-model is gone.
       ENABLE_OPENAI_API: "false"
       ENABLE_PERSISTENT_CONFIG: "false"
-    # Resolve the current Compose bridge gateway instead of hard-coding a
-    # Docker subnet. Native Ollama listens on the host side of that gateway.
+    # Host networking reaches the loopback-only instrumented proxy.
     command: ["python", "/start-native-ollama.py"]
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8080' || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/$${HOST}/$${PORT}' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -76,9 +76,27 @@ services:
       - LISTEN_PORT=11434
       - UPSTREAM_HOST=127.0.0.1
       - UPSTREAM_PORT=11435
+      - ACTIVITY_DB=/data/history/activity.sqlite3
+      - ACTIVITY_RETENTION_DAYS=${ACTIVITY_RETENTION_DAYS:-30}
+      - ACTIVITY_MAX_RESPONSE_BYTES=${ACTIVITY_MAX_RESPONSE_BYTES:-33554432}
     volumes:
       - ./observability/ollama_proxy.py:/ollama_proxy.py:ro
+      - ./observability/activity.py:/activity.py:ro
+      - ./observability/activity.html:/activity.html:ro
+      - activity_data:/data
     command: ["python", "/ollama_proxy.py"]
+    depends_on:
+      activity-init:
+        condition: service_completed_successfully
+
+  # Initialize only the transcript directory for the unprivileged proxy.
+  activity-init:
+    image: python:3.14-alpine
+    network_mode: none
+    user: "0:0"
+    volumes:
+      - activity_data:/data
+    command: ["python", "-c", "import os; os.makedirs('/data/history', exist_ok=True); os.chown('/data/history', 65534, 65534)"]
 
   # Retained, searchable logs. Alloy reads Docker through its API and only the
   # two native systemd units related to this stack.
@@ -209,6 +227,7 @@ services:
               capabilities: [gpu, utility]
 
 volumes:
+  activity_data:
   open_webui_data:
   prometheus_data:
   grafana_data:
